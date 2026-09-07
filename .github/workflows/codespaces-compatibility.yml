@@ -1,0 +1,97 @@
+name: Codespaces Compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+
+      - name: Run project doctor
+        run: npm run doctor
+
+      - name: Validate docs
+        run: npm run docs:validate
+
+  verify-codespaces-flow:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install native dependencies used in Codespaces
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            python3 \
+            pkg-config \
+            libcairo2-dev \
+            libjpeg-dev \
+            libpango1.0-dev \
+            libgif-dev \
+            librsvg2-dev \
+            libpixman-1-dev \
+            libvips-dev \
+            libsqlite3-dev \
+            postgresql-client \
+            curl
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Lint (non-blocking, report-only)
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Typecheck (non-blocking, tracked)
+        id: typecheck
+        continue-on-error: true
+        run: npm run check
+
+      - name: Report typecheck status
+        if: always()
+        run: |
+          if [ "${{ steps.typecheck.outcome }}" != "success" ]; then
+            echo "::warning::Typecheck failed (currently expected while cleanup is in progress)."
+          else
+            echo "Typecheck passed."
+          fi
+
+      - name: Ensure Docker is available
+        run: |
+          docker --version
+          if docker compose version >/dev/null 2>&1; then
+            docker compose version
+          else
+            docker-compose --version
+          fi
+
+      - name: Runtime harness (contracts + deep-links)
+        run: |
+          chmod +x scripts/test-runtime.sh
+          ./scripts/test-runtime.sh

@@ -1,0 +1,12 @@
+---
+description: Integration scripts under scripts/test-*.ts must share HTTP helpers
+globs: scripts/test-*.ts
+---
+
+# Integration test scripts
+
+- **Do not** copy `fetch` blocks, `/api/auth/login` + `/api/login`, or cookie handling into new scripts.
+- **Do** import from [`scripts/test-http.ts`](scripts/test-http.ts): `apiJsonRequest`, `apiRawRequest`, `loginForTests`, `getTestBaseUrl`, `isConnectionRefused`, and extend that module if you need JSON unwrap or retries.
+- **Do not** treat “no rows” as success when the script is meant to exercise APIs — seed or create minimal data first, then assert (see `test-supplier-portal.ts` + `ensureSupplierPurchaseOrder`).
+- **Rate limits**: login scripts may see HTTP 429; warn and exit 0 is acceptable so reruns are not confused with broken auth.
+- CSV/unit tests: assert **structure** (e.g. locate header row by content), not fixed line indices, when generators emit title/metadata before headers.

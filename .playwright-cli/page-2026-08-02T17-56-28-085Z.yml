@@ -1,0 +1,158 @@
+- generic [ref=f5e2]:
+  - generic [ref=f5e4]:
+    - link "Skip to main content" [ref=f5e5] [cursor=pointer]:
+      - /url: "#main-content"
+    - generic [ref=f5e6]:
+      - complementary [ref=f5e7]:
+        - generic [ref=f5e9]:
+          - heading "ISSSourcing" [level=1] [ref=f5e16]
+          - button "Collapse navigation sidebar" [ref=f5e18] [cursor=pointer]
+        - navigation [ref=f5e22]:
+          - generic [ref=f5e23]:
+            - generic [ref=f5e24]:
+              - paragraph [ref=f5e25]: Operations
+              - link "Overview" [ref=f5e26] [cursor=pointer]:
+                - /url: /operations
+                - generic "Overview" [ref=f5e34]
+              - link "Control tower" [ref=f5e35] [cursor=pointer]:
+                - /url: /operations/control-tower
+                - generic "Control tower" [ref=f5e45]
+              - link "Logistics" [ref=f5e46] [cursor=pointer]:
+                - /url: /operations/logistics
+                - generic "Logistics" [ref=f5e54]
+              - link "Exceptions" [ref=f5e55] [cursor=pointer]:
+                - /url: /operations/exceptions
+                - generic "Exceptions" [ref=f5e60]
+            - generic [ref=f5e61]:
+              - paragraph [ref=f5e62]: Inventory
+              - link "Inventory" [ref=f5e63] [cursor=pointer]:
+                - /url: /inventory
+                - generic "Inventory" [ref=f5e69]
+              - link "Warehouse ops" [ref=f5e70] [cursor=pointer]:
+                - /url: /inventory/warehouse-operations
+                - generic "Warehouse ops" [ref=f5e79]
+              - link "Cycle counts" [ref=f5e80] [cursor=pointer]:
+                - /url: /inventory/cycle-counts
+                - generic "Cycle counts" [ref=f5e88]
+              - link "Reorder requests" [ref=f5e89] [cursor=pointer]:
+                - /url: /inventory/reorder
+                - generic "Reorder requests" [ref=f5e95]
+              - link "Barcode scanner" [ref=f5e96] [cursor=pointer]:
+                - /url: /inventory/barcodes
+                - generic "Barcode scanner" [ref=f5e105]
+            - generic [ref=f5e106]:
+              - paragraph [ref=f5e107]: Procurement
+              - link "Sourcing & RFQs" [ref=f5e108] [cursor=pointer]:
+                - /url: /procurement/sourcing
+                - generic "Sourcing & RFQs" [ref=f5e115]
+              - link "Purchase orders" [ref=f5e116] [cursor=pointer]:
+                - /url: /procurement/orders
+                - generic "Purchase orders" [ref=f5e123]
+              - link "Requisitions" [ref=f5e124] [cursor=pointer]:
+                - /url: /procurement/requisitions
+                - generic "Requisitions" [ref=f5e130]
+              - link "Suppliers" [ref=f5e131] [cursor=pointer]:
+                - /url: /procurement/suppliers
+                - generic "Suppliers" [ref=f5e139]
+              - link "Contracts" [ref=f5e140] [cursor=pointer]:
+                - /url: /procurement/contracts
+                - generic "Contracts" [ref=f5e146]
+              - link "Supplier portal" [ref=f5e147] [cursor=pointer]:
+                - /url: /procurement/supplier-portal
+                - generic "Supplier portal" [ref=f5e155]
+            - generic [ref=f5e156]:
+              - paragraph [ref=f5e157]: Finance
+              - link "Accounts payable" [ref=f5e158] [cursor=pointer]:
+                - /url: /finance/accounts-payable
+                - generic "Accounts payable" [ref=f5e163]
+              - link "Invoices" [ref=f5e164] [cursor=pointer]:
+                - /url: /finance/invoices
+                - generic "Invoices" [ref=f5e170]
+            - generic [ref=f5e171]:
+              - paragraph [ref=f5e172]: Analytics
+              - link "Overview" [ref=f5e173] [cursor=pointer]:
+                - /url: /analytics/overview
+                - generic "Overview" [ref=f5e177]
+              - link "Reports" [ref=f5e178] [cursor=pointer]:
+                - /url: /analytics/reports
+                - generic "Reports" [ref=f5e184]
+              - link "Saved reports" [ref=f5e185] [cursor=pointer]:
+                - /url: /analytics/saved-reports
+                - generic "Saved reports" [ref=f5e190]
+              - link "Export center" [ref=f5e191] [cursor=pointer]:
+                - /url: /analytics/export-center
+                - generic "Export center" [ref=f5e196]
+            - generic [ref=f5e197]:
+              - paragraph [ref=f5e198]: Admin
+              - link "Settings" [ref=f5e199] [cursor=pointer]:
+                - /url: /admin/settings
+                - generic "Settings" [ref=f5e205]
+              - link "Document extractor" [ref=f5e206] [cursor=pointer]:
+                - /url: /admin/document-extractor
+                - generic "Document extractor" [ref=f5e216]
+              - link "Integrations" [ref=f5e217] [cursor=pointer]:
+                - /url: /admin/integrations
+                - generic "Integrations" [ref=f5e222]
+              - link "Audit logs" [ref=f5e223] [cursor=pointer]:
+                - /url: /admin/audit-logs
+                - generic "Audit logs" [ref=f5e228]
+              - link "Subscription" [ref=f5e229] [cursor=pointer]:
+                - /url: /admin/subscription
+                - generic "Subscription" [ref=f5e234]
+              - generic [ref=f5e235]:
+                - paragraph [ref=f5e236]: Files & recognition
+                - link "Documents" [ref=f5e237] [cursor=pointer]:
+                  - /url: /admin/documents
+                  - generic "Documents" [ref=f5e242]
+                - link "Downloads" [ref=f5e243] [cursor=pointer]:
+                  - /url: /admin/downloads
+                  - generic "Downloads" [ref=f5e248]
+                - link "Image recognition" [ref=f5e249] [cursor=pointer]:
+                  - /url: /admin/image-recognition
+                  - generic "Image recognition" [ref=f5e255]
+              - paragraph [ref=f5e257]: People & access
+              - generic [ref=f5e258]:
+                - paragraph [ref=f5e259]: System & profile
+                - link "System diagnostics" [ref=f5e260] [cursor=pointer]:
+                  - /url: /admin/system-diagnostics
+                  - generic "System diagnostics" [ref=f5e270]
+                - link "Profile" [ref=f5e271] [cursor=pointer]:
+                  - /url: /admin/profile
+                  - generic "Profile" [ref=f5e277]
+            - generic [ref=f5e278]:
+              - paragraph [ref=f5e279]: Learning
+              - link "Get Educated" [ref=f5e280] [cursor=pointer]:
+                - /url: /get-educated
+                - generic "Get Educated" [ref=f5e286]
+        - button "Dark Mode" [ref=f5e288] [cursor=pointer]
+      - generic [ref=f5e292]:
+        - banner [ref=f5e293]:
+          - generic [ref=f5e294]:
+            - paragraph [ref=f5e295]: Inventory / Warehouse operations
+            - search [ref=f5e296]:
+              - combobox "Global search" [ref=f5e297]
+          - generic [ref=f5e298]:
+            - button "Jump to..." [ref=f5e299] [cursor=pointer]
+            - generic "System status" [ref=f5e303]: LIVE
+            - generic [ref=f5e304]: DEV
+            - generic [ref=f5e305]: GUEST
+            - button "Toggle theme" [ref=f5e306] [cursor=pointer]
+            - button "Cycle accent palette" [ref=f5e310] [cursor=pointer]
+            - button "Notifications" [ref=f5e318] [cursor=pointer]
+            - button "U Open user menu" [ref=f5e323] [cursor=pointer]:
+              - generic [ref=f5e324]: U
+              - generic [ref=f5e326]: Open user menu
+        - main [ref=f5e327]:
+          - generic [ref=f5e328]:
+            - generic [ref=f5e332]:
+              - text: New here?
+              - strong [ref=f5e333]: This SKU
+              - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+            - generic [ref=f5e334]:
+              - button "Open lesson" [ref=f5e335] [cursor=pointer]
+              - button "Spotlight tour" [ref=f5e338] [cursor=pointer]
+              - button "Dismiss" [ref=f5e339] [cursor=pointer]
+          - generic [ref=f5e343]: Checking product setup…
+        - button "Help & Tutorials" [ref=f5e348] [cursor=pointer]
+  - region "Notifications (F8)":
+    - list

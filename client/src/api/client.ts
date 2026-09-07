@@ -1,0 +1,1039 @@
+import { apiRequest, buildRequestHeaders, requestJson } from "@/lib/queryClient";
+import { setFallbackState } from "@/lib/fallback-store";
+import { toastStore } from "@/lib/toast-store";
+import { addDiagnosticEvent, redactDiagnosticDetails } from "@/lib/diagnostics/diagnostics-store";
+import type { DiagnosticFinding } from "@shared/diagnostics/findings";
+import type { GovernedApprovalEntityType } from "@shared/authority-catalogs";
+import type { InventorySummary, PaginatedResponse } from "@shared/schema";
+import type {
+  ActivityRecord,
+  ApiErrorPayload,
+  ApiResponse,
+  ControlTowerOverview,
+  ControlTowerDashboardData,
+  DeepHealthCheck,
+  DemoDataSummary,
+  DemoWalkthroughResult,
+  HealthCheck,
+  IntegrationRun,
+  InventoryDetail,
+  InventoryDetailBySku,
+  InventoryListItem,
+  OperationalException,
+  PurchaseOrderDetail,
+  PurchaseOrder,
+  SupplierPortalInvoice,
+  PurchaseOrderListItem,
+  PurchaseReceiveResult,
+  ShipmentDetail,
+  ShipmentListItem,
+  ShipmentPage,
+  TutorialStartResult,
+  TutorialStatus,
+  GasDashboardSummary,
+  GasComplianceAlertsResult,
+  MobileScanResolveResult,
+} from "./types";
+import { normalizeShipmentFilters } from "@shared/logistics-shipment-filters";
+export type {
+  ActivityRecord,
+  ActivityItem,
+  ApiErrorPayload,
+  ControlTowerOverview,
+  ControlTowerDashboardData,
+  GasDashboardSummary,
+  GasComplianceAlertsResult,
+  MobileScanResolveResult,
+  DemoWalkthroughResult,
+  ExceptionCase,
+  InventoryDetail,
+  InventoryItem,
+  IntegrationRun,
+  InventoryListItem,
+  OperationalException,
+  PurchaseOrder,
+  SupplierPortalInvoice,
+  PurchaseOrderDetail,
+  PurchaseOrderListItem,
+  PurchaseReceiveResult,
+  Shipment,
+  ShipmentDetail,
+  ShipmentListItem,
+} from "./types";
+
+export class ApiError extends Error {
+  readonly code: string;
+  readonly hint?: string;
+  readonly details?: unknown;
+  readonly status: number;
+
+  constructor(payload: ApiErrorPayload, status = 400) {
+    super(payload.message);
+    this.name = "ApiError";
+    this.code = payload.code;
+    this.hint = payload.hint;
+    this.details = payload.details;
+    this.status = status;
+  }
+}
+
+function isApiEnvelope<T>(value: unknown): value is ApiResponse<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "ok" in value &&
+    typeof (value as { ok?: unknown }).ok === "boolean"
+  );
+}
+
+async function parseJsonOrNull(response: Response): Promise<unknown | null> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function unwrapEnvelope<T>(response: Response): Promise<T> {
+  const payload = await parseJsonOrNull(response);
+
+  if (isApiEnvelope<T>(payload)) {
+    if (payload.ok) {
+      return payload.data as T;
+    }
+    toastStore.push({
+      type: "error",
+      title: payload.error.code || "Request failed",
+      message: payload.error.message,
+    });
+    throw new ApiError(payload.error, response.status || 400);
+  }
+
+  if (!response.ok) {
+    const fallbackMessage =
+      typeof payload === "object" &&
+      payload !== null &&
+      "message" in payload &&
+      typeof (payload as { message?: unknown }).message === "string"
+        ? String((payload as { message: string }).message)
+        : `Request failed: ${response.status}`;
+    throw new ApiError(
+      {
+        code: "UNEXPECTED_RESPONSE",
+        message: fallbackMessage,
+      },
+      response.status,
+    );
+  }
+
+  return payload as T;
+}
+
+/** Align with server operational timeout (8s); client gives up at 12s */
+const API_TIMEOUT_MS = 12000;
+
+export type ApiEnvelopeResult<T> = {
+  data: T;
+  meta?: {
+    fallback?: string;
+    appliedFilters?: Record<string, string | number | boolean | null | undefined>;
+    resultCount?: number;
+    queryMs?: number;
+    /** ISO timestamp when the server assembled this payload */
+    generatedAt?: string;
+  };
+};
+
+function recordApiClientDiagnostic(params: {
+  method: string;
+  url: string;
+  status?: number;
+  durationMs?: number;
+  title: string;
+  message: string;
+  severity?: "warning" | "error";
+  details?: unknown;
+}) {
+  addDiagnosticEvent({
+    severity: params.severity ?? (params.status != null && params.status < 500 ? "warning" : "error"),
+    source: params.status == null ? "network" : "api",
+    title: params.title,
+    message: params.message,
+    endpoint: params.url.split("?")[0],
+    method: params.method.toUpperCase(),
+    status: params.status,
+    durationMs: params.durationMs,
+    details: redactDiagnosticDetails(params.details),
+  });
+}
+
+function recordApiClientSlowRequest(method: string, url: string, status: number | undefined, durationMs: number) {
+  if (durationMs < 3_000) return;
+  recordApiClientDiagnostic({
+    method,
+    url,
+    status,
+    durationMs,
+    title: "Slow API request",
+    message: `${method.toUpperCase()} ${url.split("?")[0]} took ${Math.round(durationMs)}ms.`,
+    severity: "warning",
+  });
+}
+
+async function fetchWithMeta<T>(url: string, init?: RequestInit): Promise<ApiEnvelopeResult<T>> {
+  const startedAt = performance.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  if (init?.signal) {
+    init.signal.addEventListener("abort", () => controller.abort());
+  }
+  try {
+    const method = init?.method ?? "GET";
+    const headers = await buildRequestHeaders(method, init?.headers, {
+      contentType:
+        init?.body && !(init.body instanceof FormData) && !(init.body instanceof URLSearchParams)
+          ? "application/json"
+          : false,
+    });
+    const response = await fetch(url, {
+      credentials: "include",
+      ...init,
+      headers,
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    const headerFallback = response.headers.get("X-InvTrack-Fallback") ?? null;
+    const headerEndpoint = response.headers.get("X-InvTrack-Endpoint") ?? null;
+    const payload = await parseJsonOrNull(response);
+    const durationMs = performance.now() - startedAt;
+    if (isApiEnvelope<T>(payload)) {
+      if (payload.ok) {
+        const meta = (payload as { meta?: ApiEnvelopeResult<T>["meta"] }).meta;
+        const fallback = headerFallback ?? meta?.fallback ?? null;
+        setFallbackState(fallback, headerEndpoint);
+        recordApiClientSlowRequest(method, url, response.status, durationMs);
+        return { data: payload.data as T, meta };
+      }
+      recordApiClientDiagnostic({
+        method,
+        url,
+        status: response.status,
+        durationMs,
+        title: `API request failed (${response.status || "unknown"})`,
+        message: payload.error.message,
+        details: payload.error,
+      });
+      toastStore.push({
+        type: "error",
+        title: payload.error.code || "Request failed",
+        message: payload.error.message,
+      });
+      throw new ApiError(payload.error, response.status || 400);
+    }
+    if (!response.ok) {
+      if (headerFallback != null || headerEndpoint != null) {
+        setFallbackState(headerFallback, headerEndpoint);
+      }
+      const fallbackMessage =
+        typeof payload === "object" &&
+        payload !== null &&
+        "message" in payload &&
+        typeof (payload as { message?: unknown }).message === "string"
+          ? String((payload as { message: string }).message)
+          : `Request failed: ${response.status}`;
+      recordApiClientDiagnostic({
+        method,
+        url,
+        status: response.status,
+        durationMs,
+        title: `API request failed (${response.status})`,
+        message: fallbackMessage,
+        details: payload,
+      });
+      throw new ApiError(
+        { code: "UNEXPECTED_RESPONSE", message: fallbackMessage },
+        response.status,
+      );
+    }
+    setFallbackState(headerFallback, headerEndpoint);
+    recordApiClientSlowRequest(method, url, response.status, durationMs);
+    return { data: payload as T, meta: undefined };
+  } catch (err) {
+    const durationMs = performance.now() - startedAt;
+    if (err instanceof Error && err.name === "AbortError") {
+      recordApiClientDiagnostic({
+        method: init?.method ?? "GET",
+        url,
+        status: 408,
+        durationMs,
+        title: "API request timed out",
+        message: `Request timed out after ${API_TIMEOUT_MS / 1000}s.`,
+        details: err,
+      });
+      toastStore.push({
+        type: "error",
+        title: "Request timeout",
+        message: `Request timed out after ${API_TIMEOUT_MS / 1000}s. Check network or try again.`,
+      });
+      throw new ApiError(
+        { code: "REQUEST_TIMEOUT", message: `Request timed out after ${API_TIMEOUT_MS / 1000}s` },
+        408,
+      );
+    }
+    if (err instanceof TypeError) {
+      recordApiClientDiagnostic({
+        method: init?.method ?? "GET",
+        url,
+        durationMs,
+        title: "Network request failed",
+        message: err.message,
+        details: err,
+      });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  const { data } = await fetchWithMeta<T>(url, init);
+  return data;
+}
+
+async function apiMutate<T>(method: string, url: string, data?: unknown): Promise<T> {
+  const response = await apiRequest(method, url, data);
+  return unwrapEnvelope<T>(response);
+}
+
+export type ReadyState = {
+  dbReady: boolean;
+  schemaReady: boolean;
+  sessionStoreReady?: boolean;
+  websocketReady?: boolean;
+  uploadPathReady?: boolean;
+  emailServiceReady?: boolean;
+};
+
+export async function fetchReady(): Promise<ReadyState> {
+  return requestJson<ReadyState>("GET", "/api/ready");
+}
+
+export async function fetchHealth(): Promise<HealthCheck> {
+  const startedAt = performance.now();
+  const response = await fetch("/health", { credentials: "include" });
+  const durationMs = performance.now() - startedAt;
+  if (!response.ok) {
+    recordApiClientDiagnostic({
+      method: "GET",
+      url: "/health",
+      status: response.status,
+      durationMs,
+      title: "Health check failed",
+      message: `Health request failed: ${response.status}`,
+    });
+    throw new ApiError({
+      code: "HEALTH_REQUEST_FAILED",
+      message: `Health request failed: ${response.status}`,
+    });
+  }
+  recordApiClientSlowRequest("GET", "/health", response.status, durationMs);
+  return (await response.json()) as HealthCheck;
+}
+
+export async function fetchDeepHealth(): Promise<DeepHealthCheck> {
+  const startedAt = performance.now();
+  const response = await fetch("/health/deep", { credentials: "include" });
+  const durationMs = performance.now() - startedAt;
+  if (!response.ok) {
+    const payload = await parseJsonOrNull(response);
+    const message =
+      typeof payload === "object" &&
+      payload !== null &&
+      "message" in payload &&
+      typeof (payload as { message?: unknown }).message === "string"
+        ? String((payload as { message: string }).message)
+        : `Deep health request failed: ${response.status}`;
+    recordApiClientDiagnostic({
+      method: "GET",
+      url: "/health/deep",
+      status: response.status,
+      durationMs,
+      title: "Deep health check failed",
+      message,
+      details: payload,
+    });
+    throw new ApiError({
+      code: "DEEP_HEALTH_REQUEST_FAILED",
+      message,
+    });
+  }
+  recordApiClientSlowRequest("GET", "/health/deep", response.status, durationMs);
+  return (await response.json()) as DeepHealthCheck;
+}
+
+export async function resetDemoData(): Promise<DemoDataSummary> {
+  return apiMutate<DemoDataSummary>("POST", "/admin/demo/reset");
+}
+
+export async function runDemoWalkthrough(): Promise<DemoWalkthroughResult> {
+  return apiMutate<DemoWalkthroughResult>("POST", "/api/operations/demo-walkthrough");
+}
+
+export async function getTutorialStatus(): Promise<TutorialStatus> {
+  return apiFetch<TutorialStatus>("/api/tutorial/status");
+}
+
+export async function startTutorialPrep(): Promise<TutorialStartResult> {
+  return apiMutate<TutorialStartResult>("POST", "/api/tutorial/start");
+}
+
+export async function fetchInventoryDetail(sku: string): Promise<InventoryDetailBySku> {
+  const raw = await apiFetch<Record<string, unknown>>(
+    `/api/inventory/${encodeURIComponent(sku)}`,
+  );
+  const d = raw as Record<string, unknown>;
+  const item = d.item as Record<string, unknown> | undefined;
+  const summary = d.summary as Record<string, unknown> | undefined;
+  const onHand = Number(summary?.onHand ?? d.onHand ?? d.quantity ?? 0);
+  const allocated = Number(summary?.allocated ?? d.allocated ?? 0);
+  const rawAvailable = summary?.available ?? d.available;
+  const parsedAvailable = Number(rawAvailable);
+  const available =
+    rawAvailable !== undefined &&
+    rawAvailable !== null &&
+    Number.isFinite(parsedAvailable)
+      ? parsedAvailable
+      : onHand - allocated;
+  return {
+    id: Number(d.id ?? item?.id ?? 0),
+    sku: String(d.sku ?? item?.sku ?? sku),
+    name: String(d.name ?? item?.name ?? ""),
+    summary: { onHand, allocated, available },
+    positions: Array.isArray(d.positions) ? d.positions as InventoryDetail["positions"] : [],
+    movements: Array.isArray(d.movements) ? d.movements as InventoryDetail["movements"] : [],
+    warehouses: Array.isArray(d.warehouses) ? d.warehouses as Array<{ id: number; name: string }> : [],
+    warehouseQuantity: Number(d.warehouseQuantity ?? 0),
+    unassignedQuantity: Number(d.unassignedQuantity ?? 0),
+    quantityMismatch: Boolean(d.quantityMismatch),
+    location: (d.location ?? item?.location) as string | null | undefined,
+    description: (d.description ?? item?.description) as string | null | undefined,
+    categoryId: d.categoryId == null && item?.categoryId == null ? null : Number(d.categoryId ?? item?.categoryId),
+    price: Number(d.price ?? item?.price ?? 0),
+    cost: d.cost == null && item?.cost == null ? null : Number(d.cost ?? item?.cost),
+    lowStockThreshold: d.lowStockThreshold == null && item?.lowStockThreshold == null ? null : Number(d.lowStockThreshold ?? item?.lowStockThreshold),
+    barcode: (d.barcode ?? item?.barcode) as string | null | undefined,
+    barcodeType: (d.barcodeType ?? item?.barcodeType) as string | null | undefined,
+    unitOfMeasure: (d.unitOfMeasure ?? item?.unitOfMeasure) as string | null | undefined,
+    supplierPartNumber: (d.supplierPartNumber ?? item?.supplierPartNumber) as string | null | undefined,
+    defaultWarehouseId: d.defaultWarehouseId == null && item?.defaultWarehouseId == null ? null : Number(d.defaultWarehouseId ?? item?.defaultWarehouseId),
+    minOrderQuantity: d.minOrderQuantity == null && item?.minOrderQuantity == null ? null : Number(d.minOrderQuantity ?? item?.minOrderQuantity),
+    leadTime: d.leadTime == null && item?.leadTime == null ? null : Number(d.leadTime ?? item?.leadTime),
+    reorderPoint: d.reorderPoint == null && item?.reorderPoint == null ? null : Number(d.reorderPoint ?? item?.reorderPoint),
+    maxStockLevel: d.maxStockLevel == null && item?.maxStockLevel == null ? null : Number(d.maxStockLevel ?? item?.maxStockLevel),
+    status: (d.status ?? item?.status) as string | null | undefined,
+  };
+}
+
+function isoDateField(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "string" && v.trim()) return v;
+  return null;
+}
+
+export async function fetchInventory(params?: {
+  location?: string;
+  q?: string;
+  category?: string;
+  /** Alias for operational inventory category filter */
+  categoryId?: string;
+  lowStock?: boolean;
+}): Promise<InventoryListItem[]> {
+  const search = new URLSearchParams();
+  if (params?.location) {
+    search.set("location", params.location);
+  }
+  if (params?.q) {
+    search.set("q", params.q);
+  }
+  const category = params?.category ?? params?.categoryId;
+  if (category) {
+    search.set("category", category);
+  }
+  if (typeof params?.lowStock === "boolean") {
+    search.set("low", params.lowStock ? "1" : "0");
+  }
+
+  const url = search.size > 0 ? `/api/inventory?${search.toString()}` : "/api/inventory";
+  const rawItems = await apiFetch<Array<Record<string, unknown>>>(url);
+
+  return rawItems.map((item) => {
+    const onHand = Number(item.onHand ?? item.quantity ?? 0);
+    const allocated = Number(item.allocated ?? 0);
+    const lowStockThreshold = Number(item.lowStockThreshold ?? item.low_stock_threshold ?? 0);
+
+    return {
+      id: typeof item.id === "number" ? item.id : undefined,
+      name: String(item.name ?? ""),
+      sku: String(item.sku ?? ""),
+      categoryId:
+        typeof item.categoryId === "number"
+          ? item.categoryId
+          : typeof item.category_id === "number"
+            ? item.category_id
+            : null,
+      quantity: typeof item.quantity === "number" ? item.quantity : undefined,
+      price: (() => {
+        const p = typeof item.price === "number" ? item.price : Number(item.price);
+        return Number.isFinite(p) ? p : 0;
+      })(),
+      lowStockThreshold,
+      onHand,
+      allocated,
+      available: Number(item.available ?? onHand - allocated),
+      location: typeof item.location === "string" ? item.location : null,
+      warehouseQuantity: Number.isFinite(Number(item.warehouseQuantity))
+        ? Number(item.warehouseQuantity)
+        : Number.isFinite(Number(item.warehouse_quantity))
+          ? Number(item.warehouse_quantity)
+          : undefined,
+      positionCount: Number.isFinite(Number(item.positionCount))
+        ? Number(item.positionCount)
+        : Number.isFinite(Number(item.position_count))
+          ? Number(item.position_count)
+          : undefined,
+      lastMovementAt:
+        typeof item.lastMovementAt === "string" || item.lastMovementAt instanceof Date
+          ? item.lastMovementAt
+          : typeof item.last_movement_at === "string" || item.last_movement_at instanceof Date
+            ? item.last_movement_at
+            : null,
+      lastMovementReason:
+        typeof item.lastMovementReason === "string"
+          ? item.lastMovementReason
+          : typeof item.last_movement_reason === "string"
+            ? item.last_movement_reason
+            : null,
+      lastReceiptRef:
+        typeof item.lastReceiptRef === "string"
+          ? item.lastReceiptRef
+          : typeof item.last_receipt_ref === "string"
+            ? item.last_receipt_ref
+            : null,
+      updatedAt:
+        typeof item.updatedAt === "string" || item.updatedAt instanceof Date
+          ? item.updatedAt
+          : typeof item.updated_at === "string" || item.updated_at instanceof Date
+            ? item.updated_at
+            : null,
+      expiryDate: isoDateField(item.expiryDate ?? item.expiry_date),
+      manufacturingDate: isoDateField(item.manufacturingDate ?? item.manufacturing_date),
+    } satisfies InventoryListItem;
+  });
+}
+
+export type InventoryPage = PaginatedResponse<InventoryListItem, InventorySummary>;
+
+export async function fetchInventoryPage(params: {
+  page?: number; pageSize?: number; q?: string; location?: string;
+  category?: string; low?: boolean; sort?: string;
+} = {}): Promise<InventoryPage> {
+  const search = new URLSearchParams();
+  if (params.page) search.set("page", String(params.page));
+  if (params.pageSize) search.set("pageSize", String(params.pageSize));
+  if (params.q) search.set("q", params.q);
+  if (params.location) search.set("location", params.location);
+  if (params.category) search.set("category", params.category);
+  if (params.low) search.set("low", "1");
+  if (params.sort) search.set("sort", params.sort);
+  const response = await apiFetch<InventoryPage>(`/api/v2/inventory?${search.toString()}`);
+  return { ...response, items: response.items.map((item) => ({
+    ...item,
+    onHand: Number(item.onHand), allocated: Number(item.allocated), available: Number(item.available),
+    quantity: Number(item.quantity ?? 0), price: Number(item.price ?? 0),
+    lowStockThreshold: Number(item.lowStockThreshold), warehouseQuantity: Number(item.warehouseQuantity ?? 0),
+    unassignedQuantity: Number(item.unassignedQuantity ?? 0), warehousePositionCount: Number(item.warehousePositionCount ?? 0),
+  })) };
+}
+
+export type ApprovalSuggestionsResult = {
+  entityType: string;
+  amount: number;
+  applicablePolicies: Array<{
+    id: number;
+    name: string;
+    amountMin: number;
+    amountMax: number | null;
+    approvalLevel: number;
+    approverRole: string | null;
+    approverUserId: number | null;
+  }>;
+  suggestedApprovers: Array<{
+    userId: number;
+    username: string;
+    fullName: string | null;
+    email: string;
+    role: string | null;
+    approverAmountLimit: number | null;
+    matchedPolicyId: number;
+    matchedPolicyName: string;
+    approvalLevel: number;
+  }>;
+};
+
+export async function fetchApprovalSuggestions(params: {
+  entityType: GovernedApprovalEntityType;
+  amount: number;
+}): Promise<ApprovalSuggestionsResult> {
+  const search = new URLSearchParams();
+  search.set("entityType", params.entityType);
+  search.set("amount", String(params.amount));
+  return apiFetch<ApprovalSuggestionsResult>(`/api/approval-suggestions?${search.toString()}`);
+}
+
+export {
+  fetchPurchaseOrders,
+  fetchPurchaseOrdersEnvelope,
+  fetchPurchaseOrder,
+  downloadPurchaseOrderSignedPdf,
+  approvePurchaseOrder,
+  sendPurchaseOrder,
+  receivePurchaseOrder,
+  transitionPurchaseOrderStatus,
+} from "@/features/purchase-orders/api/purchase-orders.api";
+
+export async function fetchShipments(params?: {
+  status?: string;
+  po?: string;
+  supplier?: string;
+  carrier?: string;
+  risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
+  tracking?: string;
+  direction?: string;
+  sourceType?: string;
+}): Promise<ShipmentListItem[]> {
+  const { data } = await fetchShipmentsEnvelope(params);
+  return data;
+}
+
+export async function fetchShipmentsEnvelope(params?: {
+  status?: string;
+  po?: string;
+  supplier?: string;
+  carrier?: string;
+  risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
+  tracking?: string;
+  direction?: string;
+  sourceType?: string;
+}): Promise<ApiEnvelopeResult<ShipmentListItem[]>> {
+  const n = normalizeShipmentFilters(params ?? {});
+  const search = new URLSearchParams();
+  if (n.status) search.set("status", n.status);
+  if (n.po) search.set("po", n.po);
+  if (n.supplier) search.set("supplier", n.supplier);
+  if (n.carrier) search.set("carrier", n.carrier);
+  if (n.risk) search.set("risk", n.risk);
+  if (n.etaFrom) search.set("etaFrom", n.etaFrom);
+  if (n.etaTo) search.set("etaTo", n.etaTo);
+  if (n.tracking) search.set("tracking", n.tracking);
+  if (n.direction) search.set("direction", n.direction);
+  if (n.sourceType) search.set("sourceType", n.sourceType);
+  const url =
+    search.size > 0 ? `/api/logistics/shipments?${search.toString()}` : "/api/logistics/shipments";
+  return fetchWithMeta<ShipmentListItem[]>(url);
+}
+
+export async function fetchShipmentsPage(params: {
+  page: number;
+  pageSize: 25 | 50 | 100;
+  q?: string;
+  status?: string;
+  po?: string;
+  supplier?: string;
+  carrier?: string;
+  risk?: string;
+  etaFrom?: string;
+  etaTo?: string;
+  tracking?: string;
+  direction?: string;
+  sourceType?: string;
+  sort?: "updated_desc" | "updated_asc" | "eta_asc" | "eta_desc" | "status_asc" | "po_asc";
+}): Promise<ShipmentPage> {
+  const search = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+  for (const [key, value] of Object.entries(params)) {
+    if (key !== "page" && key !== "pageSize" && typeof value === "string" && value.trim()) search.set(key, value.trim());
+  }
+  return apiFetch<ShipmentPage>(`/api/v2/logistics/shipments?${search.toString()}`);
+}
+
+export async function fetchShipment(id: string | number): Promise<ShipmentDetail> {
+  return apiFetch<ShipmentDetail>(`/api/logistics/shipments/${id}`);
+}
+
+export async function updateShipmentStatus(input: {
+  id: string | number;
+  toStatus: string;
+  note?: string;
+}): Promise<ShipmentDetail> {
+  return apiMutate<ShipmentDetail>(`POST`, `/api/logistics/shipments/${input.id}/status`, {
+    toStatus: input.toStatus,
+    note: input.note,
+  });
+}
+
+export async function createShipment(input: {
+  poNumber: string;
+  carrier?: string;
+  carrierId?: number;
+  eta?: string;
+  trackingNumber?: string;
+  transportMode?: string;
+  freightCost?: number;
+  deliveryNoteRef?: string;
+  vehicle?: string;
+  driver?: string;
+  direction?: string;
+  sourceType?: string;
+}): Promise<ShipmentListItem> {
+  return apiMutate<ShipmentListItem>("POST", "/api/logistics/shipments", input);
+}
+
+export async function patchShipmentMeta(input: {
+  id: string | number;
+  carrier?: string | null;
+  carrierId?: number | null;
+  eta?: string | null;
+  trackingNumber?: string | null;
+  transportMode?: string | null;
+  freightCost?: number | null;
+  vehicle?: string | null;
+  driver?: string | null;
+  deliveryNoteRef?: string | null;
+  grnNumber?: string | null;
+}): Promise<ShipmentDetail> {
+  return apiMutate<ShipmentDetail>("PATCH", `/api/logistics/shipments/${input.id}`, {
+    carrier: input.carrier,
+    carrierId: input.carrierId,
+    eta: input.eta,
+    trackingNumber: input.trackingNumber,
+    transportMode: input.transportMode,
+    freightCost: input.freightCost,
+    vehicle: input.vehicle,
+    driver: input.driver,
+    deliveryNoteRef: input.deliveryNoteRef,
+    grnNumber: input.grnNumber,
+  });
+}
+
+export async function deleteShipment(id: string | number): Promise<{ id: number }> {
+  return apiMutate<{ id: number }>("DELETE", `/api/logistics/shipments/${id}`);
+}
+
+export async function fetchSupplierPortalOrders(supplierId?: number): Promise<PurchaseOrder[]> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0 ? `/api/supplier/orders?${search.toString()}` : "/api/supplier/orders";
+  return apiFetch<PurchaseOrder[]>(url);
+}
+
+export async function confirmSupplierPortalOrder(id: number, supplierId?: number): Promise<PurchaseOrder> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0
+    ? `/api/supplier/orders/${id}/confirm?${search.toString()}`
+    : `/api/supplier/orders/${id}/confirm`;
+  return apiMutate<PurchaseOrder>("POST", url);
+}
+
+export async function updateSupplierPortalDelivery(
+  id: number,
+  expectedDeliveryDate: string,
+  supplierId?: number,
+): Promise<PurchaseOrder> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0
+    ? `/api/supplier/orders/${id}/delivery?${search.toString()}`
+    : `/api/supplier/orders/${id}/delivery`;
+  return apiMutate<PurchaseOrder>("PATCH", url, {
+    expectedDeliveryDate,
+  });
+}
+
+export async function fetchSupplierPortalInvoices(supplierId?: number): Promise<SupplierPortalInvoice[]> {
+  const search = new URLSearchParams();
+  if (typeof supplierId === "number" && Number.isFinite(supplierId) && supplierId > 0) {
+    search.set("supplierId", String(supplierId));
+  }
+  const url = search.size > 0 ? `/api/supplier/invoices?${search.toString()}` : "/api/supplier/invoices";
+  return apiFetch<SupplierPortalInvoice[]>(url);
+}
+
+export async function uploadDocumentFile(formData: FormData): Promise<Record<string, unknown>> {
+  const headers = await buildRequestHeaders("POST");
+  const response = await fetch("/api/documents/upload", {
+    method: "POST",
+    headers,
+    body: formData,
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ message: "Upload failed" }));
+    throw new Error(body.message || "Upload failed");
+  }
+  return response.json();
+}
+
+export async function runRetentionJob(): Promise<{ archivedCount: number }> {
+  return apiMutate<{ archivedCount: number }>("POST", "/api/retention-policies/run");
+}
+
+export async function fetchSpendAnalytics(params?: {
+  from?: string;
+  to?: string;
+  departmentId?: number;
+}): Promise<{
+  spendBySupplier: Array<{ supplierName: string; totalSpend: number }>;
+  inventoryTurnover: Array<{ sku: string; turnover: number }>;
+  warehouseUtilization: Array<{ warehouseName: string; utilization: number }>;
+  supplierPerformance: Array<{ supplierName: string; onTimeDeliveryRate: number; ordersMeasured: number }>;
+  exceptionSummary: Array<{ type: string; openCount: number }>;
+}> {
+  const search = new URLSearchParams();
+  if (params?.from) search.set("from", params.from);
+  if (params?.to) search.set("to", params.to);
+  if (typeof params?.departmentId === "number" && Number.isFinite(params.departmentId)) {
+    search.set("departmentId", String(params.departmentId));
+  }
+  const url = search.size > 0 ? `/api/reports/analytics?${search.toString()}` : "/api/reports/analytics";
+  return apiFetch(url);
+}
+
+export async function fetchExceptions(params?: {
+  severity?: string;
+  status?: string;
+  type?: string;
+}): Promise<OperationalException[]> {
+  const { data } = await fetchExceptionsEnvelope(params);
+  return data;
+}
+
+export async function fetchExceptionsEnvelope(params?: {
+  severity?: string;
+  status?: string;
+  type?: string;
+}): Promise<ApiEnvelopeResult<OperationalException[]>> {
+  const search = new URLSearchParams();
+  if (params?.severity) search.set("severity", params.severity);
+  if (params?.status) search.set("status", params.status);
+  if (params?.type) search.set("type", params.type);
+  const url = search.size > 0 ? `/api/exceptions?${search.toString()}` : "/api/exceptions";
+  return fetchWithMeta<OperationalException[]>(url);
+}
+
+export type ExceptionPage = PaginatedResponse<OperationalException, {
+  total: number;
+  active: number;
+  byStatus: Record<string, number>;
+}>;
+
+export async function fetchExceptionsPageEnvelope(params: {
+  page: number;
+  pageSize: 25 | 50 | 100;
+  severity?: string;
+  status?: string;
+  type?: string;
+  sort?: "created_desc" | "created_asc" | "severity_desc";
+}): Promise<ApiEnvelopeResult<ExceptionPage>> {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+    sort: params.sort ?? "created_desc",
+  });
+  if (params.severity) search.set("severity", params.severity);
+  if (params.status) search.set("status", params.status);
+  if (params.type) search.set("type", params.type);
+  return fetchWithMeta<ExceptionPage>(`/api/v2/exceptions?${search.toString()}`);
+}
+
+export async function fetchException(id: string | number): Promise<OperationalException> {
+  return apiFetch<OperationalException>(`/api/exceptions/${id}`);
+}
+
+export async function updateExceptionStatus(
+  id: string | number,
+  toStatus: string,
+  note?: string,
+): Promise<OperationalException> {
+  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/status`, { toStatus, note });
+}
+
+export async function assignException(
+  id: string | number,
+  assignee: string,
+): Promise<OperationalException> {
+  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/assign`, { assignee });
+}
+
+export async function addExceptionComment(
+  id: string | number,
+  comment: string,
+): Promise<OperationalException> {
+  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/comment`, { comment });
+}
+
+export async function fetchIntegrationRuns(): Promise<IntegrationRun[]> {
+  const { data } = await fetchIntegrationRunsEnvelope();
+  return data;
+}
+
+export async function fetchIntegrationRunsEnvelope(): Promise<ApiEnvelopeResult<IntegrationRun[]>> {
+  return fetchWithMeta<IntegrationRun[]>("/api/integrations/runs");
+}
+
+export async function runIntegration(connector: string): Promise<IntegrationRun> {
+  return apiMutate<IntegrationRun>(
+    "POST",
+    `/api/integrations/${encodeURIComponent(connector)}/run`,
+  );
+}
+
+export async function fetchGasDashboardSummary(): Promise<GasDashboardSummary> {
+  const { data } = await fetchGasDashboardSummaryEnvelope();
+  return data;
+}
+
+export async function fetchGasDashboardSummaryEnvelope(): Promise<ApiEnvelopeResult<GasDashboardSummary>> {
+  return fetchWithMeta<GasDashboardSummary>("/api/gas/dashboard-summary");
+}
+
+export async function runGasComplianceAlerts(): Promise<GasComplianceAlertsResult> {
+  return apiMutate<GasComplianceAlertsResult>("POST", "/api/gas/run-compliance-alerts");
+}
+
+export async function resolveMobileScan(body: {
+  value: string;
+  intent?: string | null;
+}): Promise<MobileScanResolveResult> {
+  return apiMutate<MobileScanResolveResult>("POST", "/api/mobile/scan/resolve", body);
+}
+
+export async function fetchControlTowerOverview(): Promise<ControlTowerOverview> {
+  const { data } = await fetchControlTowerOverviewEnvelope();
+  return data;
+}
+
+export async function fetchControlTowerOverviewEnvelope(): Promise<
+  ApiEnvelopeResult<ControlTowerOverview>
+> {
+  return fetchWithMeta<ControlTowerOverview>("/api/control-tower/overview");
+}
+
+export async function fetchControlTowerDashboardEnvelope(params?: {
+  days?: 7 | 30 | 90;
+  area?: string;
+}): Promise<ApiEnvelopeResult<ControlTowerDashboardData>> {
+  const search = new URLSearchParams();
+  if (params?.days != null) search.set("days", String(params.days));
+  if (params?.area) search.set("area", params.area);
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return fetchWithMeta<ControlTowerDashboardData>(`/api/dashboard/control-tower${suffix}`);
+}
+
+export async function fetchControlTowerDashboard(
+  params?: { days?: 7 | 30 | 90; area?: string },
+): Promise<ControlTowerDashboardData> {
+  const { data } = await fetchControlTowerDashboardEnvelope(params);
+  return data;
+}
+
+export async function fetchActivity(params?: {
+  limit?: number;
+  entityType?: string;
+  entityId?: string | number;
+}): Promise<ActivityRecord[]> {
+  const { data } = await fetchActivityEnvelope(params);
+  return data;
+}
+
+export async function fetchActivityEnvelope(params?: {
+  limit?: number;
+  entityType?: string;
+  entityId?: string | number;
+}): Promise<ApiEnvelopeResult<ActivityRecord[]>> {
+  const search = new URLSearchParams();
+  if (typeof params?.limit === "number" && Number.isFinite(params.limit)) {
+    search.set("limit", String(params.limit));
+  }
+  if (params?.entityType) {
+    search.set("entity_type", params.entityType);
+  }
+  if (params?.entityId !== undefined && params?.entityId !== null) {
+    search.set("entity_id", String(params.entityId));
+  }
+  const url = search.size > 0 ? `/api/activity?${search.toString()}` : "/api/activity";
+  return fetchWithMeta<ActivityRecord[]>(url);
+}
+
+export type DiagnosticsScanResult = {
+  database: string[];
+  configuration: string[];
+  data: string[];
+  system: string[];
+};
+
+export async function fetchDiagnosticsScan(): Promise<DiagnosticsScanResult> {
+  return apiFetch<DiagnosticsScanResult>("/api/diagnostics/scan");
+}
+
+export type StructuredDiagnosticsScanResult = {
+  findings: DiagnosticFinding[];
+  byCategory: Record<string, number>;
+  scannedAt: string;
+};
+
+export async function fetchStructuredDiagnosticsScan(): Promise<StructuredDiagnosticsScanResult> {
+  return apiFetch<StructuredDiagnosticsScanResult>("/api/v2/diagnostics/scan");
+}
+
+export type DiagnosticsFixResult = {
+  success: boolean;
+  message?: string;
+  fixed?: string[];
+};
+
+export type DiagnosticsSnapshotResult = {
+  generatedAt: string;
+  uptimeSeconds: number;
+  nodeVersion: string;
+  environment: string;
+  runtimeProfile: string;
+  deploymentMode: string;
+  build?: Record<string, unknown>;
+  readiness?: Record<string, boolean>;
+  paths?: Record<string, unknown>;
+  env?: Record<string, boolean>;
+  routeCount?: number;
+  events?: unknown[];
+};
+
+export async function fetchDiagnosticsSnapshot(): Promise<DiagnosticsSnapshotResult> {
+  return apiFetch<DiagnosticsSnapshotResult>("/api/diagnostics/snapshot");
+}
+
+export async function fixDiagnostics(category: string): Promise<DiagnosticsFixResult> {
+  const response = await apiRequest("POST", "/api/diagnostics/fix", { category });
+  const data = await response.json();
+  return data as DiagnosticsFixResult;
+}

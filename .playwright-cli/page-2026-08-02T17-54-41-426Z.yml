@@ -1,0 +1,1013 @@
+- generic:
+  - generic:
+    - generic:
+      - generic:
+        - link:
+          - /url: "#main-content"
+          - text: Skip to main content
+        - generic:
+          - complementary:
+            - generic:
+              - generic:
+                - generic:
+                  - heading [level=1]: ISSSourcing
+                - generic:
+                  - button
+            - navigation:
+              - generic:
+                - generic:
+                  - paragraph: Operations
+                  - link:
+                    - /url: /operations
+                    - generic: Overview (Preview)
+                  - link:
+                    - /url: /operations/control-tower
+                    - generic: Control tower (Preview)
+                  - link:
+                    - /url: /operations/logistics
+                    - generic: Logistics (Preview)
+                  - link:
+                    - /url: /operations/exceptions
+                    - generic: Exceptions (Preview)
+                - generic:
+                  - paragraph: Inventory
+                  - link:
+                    - /url: /inventory
+                    - generic: Inventory (Preview)
+                  - link:
+                    - /url: /inventory/warehouse-operations
+                    - generic: Warehouse ops (Preview)
+                  - link:
+                    - /url: /inventory/cycle-counts
+                    - generic: Cycle counts (Preview)
+                  - link:
+                    - /url: /inventory/reorder
+                    - generic: Reorder requests (Preview)
+                  - link:
+                    - /url: /inventory/barcodes
+                    - generic: Barcode scanner (Preview)
+                - generic:
+                  - paragraph: Procurement
+                  - link:
+                    - /url: /procurement/sourcing
+                    - generic: Sourcing & RFQs
+                  - link:
+                    - /url: /procurement/orders
+                    - generic: Purchase orders
+                  - link:
+                    - /url: /procurement/requisitions
+                    - generic: Requisitions
+                  - link:
+                    - /url: /procurement/suppliers
+                    - generic: Suppliers
+                  - link:
+                    - /url: /procurement/contracts
+                    - generic: Contracts
+                  - link:
+                    - /url: /procurement/supplier-portal
+                    - generic: Supplier portal
+                - generic:
+                  - paragraph: Finance
+                  - link:
+                    - /url: /finance/accounts-payable
+                    - generic: Accounts payable (Preview)
+                  - link:
+                    - /url: /finance/invoices
+                    - generic: Invoices (Preview)
+                - generic:
+                  - paragraph: Analytics
+                  - link:
+                    - /url: /analytics/overview
+                    - generic: Overview
+                  - link:
+                    - /url: /analytics/reports
+                    - generic: Reports
+                  - link:
+                    - /url: /analytics/saved-reports
+                    - generic: Saved reports
+                  - link:
+                    - /url: /analytics/export-center
+                    - generic: Export center
+                - generic:
+                  - paragraph: Admin
+                  - link:
+                    - /url: /admin/settings
+                    - generic: Settings
+                  - link:
+                    - /url: /admin/document-extractor
+                    - generic: Document extractor
+                  - link:
+                    - /url: /admin/integrations
+                    - generic: Integrations
+                  - link:
+                    - /url: /admin/audit-logs
+                    - generic: Audit logs
+                  - link:
+                    - /url: /admin/subscription
+                    - generic: Subscription
+                  - generic:
+                    - paragraph: Files & recognition
+                    - link:
+                      - /url: /admin/documents
+                      - generic: Documents
+                    - link:
+                      - /url: /admin/downloads
+                      - generic: Downloads
+                    - link:
+                      - /url: /admin/image-recognition
+                      - generic: Image recognition
+                  - generic:
+                    - paragraph: People & access
+                  - generic:
+                    - paragraph: System & profile
+                    - link:
+                      - /url: /admin/system-diagnostics
+                      - generic: System diagnostics
+                    - link:
+                      - /url: /admin/profile
+                      - generic: Profile
+                - generic:
+                  - paragraph: Learning
+                  - link:
+                    - /url: /get-educated
+                    - generic: Get Educated
+            - generic:
+              - button:
+                - generic: Dark Mode
+          - generic:
+            - banner:
+              - generic:
+                - paragraph: Inventory
+                - search:
+                  - combobox
+              - generic:
+                - button:
+                  - generic: Jump to...
+                - generic: LIVE
+                - generic: DEV
+                - generic: ADMIN
+                - button:
+                  - generic: Toggle theme
+                - button:
+                  - generic: Cycle accent palette
+                - button:
+                  - generic: 99+
+                  - generic: Notifications
+                - button:
+                  - generic: SA
+                  - generic: Open user menu
+            - main:
+              - generic:
+                - generic:
+                  - generic:
+                    - text: New here?
+                    - strong: Inventory
+                    - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+                - generic:
+                  - button: Open lesson
+                  - button: Spotlight tour
+                  - button
+              - alert:
+                - heading [level=5]: Controlled preview
+                - generic: This module is outside the procurement-only V1 production boundary. Use it for testing, not production execution.
+              - generic:
+                - generic:
+                  - generic: Inventory / Overview
+                  - generic:
+                    - generic:
+                      - generic:
+                        - heading [level=1]: Inventory
+                        - paragraph: Operational inventory overview
+                        - paragraph: Track on-hand, allocated, and available stock with location-aware filtering.
+                    - generic:
+                      - generic:
+                        - button: Add item
+                        - button: Export CSV (browser — visible rows)
+                        - button: Server CSV
+                        - button: Refresh
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: "Learning: Inventory"
+                          - paragraph: "The Inventory module is the master list of what you stock: SKUs, quantities, locations, and stock health signals such as low or negative availability."
+                      - generic:
+                        - button "Learn this tab"
+                        - button "Dismiss training panel for this visit"
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Total SKUs
+                    - generic: "441"
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Low stock
+                    - generic: "441"
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Negative availability
+                    - generic: "0"
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Total on hand
+                    - generic: "1605"
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Total allocated
+                    - generic: "10"
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Total available
+                    - generic: "1595"
+                - generic:
+                  - generic:
+                    - textbox:
+                      - /placeholder: Search SKU or item name
+                  - combobox:
+                    - generic: All locations
+                  - combobox:
+                    - generic: All categories
+                  - generic:
+                    - generic:
+                      - combobox:
+                        - generic: Name A-Z
+                      - generic:
+                        - button: Table
+                        - button: Cards
+                      - button: Clear filters
+                      - generic:
+                        - button: Low stock only
+                - generic:
+                  - generic: "Active filters:"
+                  - button: Low stock only
+                - generic:
+                  - generic:
+                    - table:
+                      - rowgroup:
+                        - row:
+                          - columnheader: Item
+                          - columnheader: Location
+                          - columnheader: Category
+                          - columnheader:
+                            - generic:
+                              - generic: Stock position
+                              - generic: On hand / Alloc / Avail
+                          - columnheader: Warehouse / unassigned
+                          - columnheader: Last movement
+                          - columnheader: Threshold
+                          - columnheader: Status
+                          - columnheader: Updated
+                          - columnheader: Actions
+                      - rowgroup:
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 00262198
+                            - generic: DEP-ITEM-00262198
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 04/07/2026, 23:24:22
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-00262198
+                              - button:
+                                - generic: Open DEP-ITEM-00262198
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 00404573
+                            - generic: DEP-ITEM-00404573
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 04/07/2026, 23:26:44
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-00404573
+                              - button:
+                                - generic: Open DEP-ITEM-00404573
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 02221196
+                            - generic: DEP-ITEM-02221196
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 04/07/2026, 23:57:01
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-02221196
+                              - button:
+                                - generic: Open DEP-ITEM-02221196
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 02586521
+                            - generic: DEP-ITEM-02586521
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 05/07/2026, 00:03:06
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-02586521
+                              - button:
+                                - generic: Open DEP-ITEM-02586521
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 19692414
+                            - generic: DEP-ITEM-19692414
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 21:14:52
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-19692414
+                              - button:
+                                - generic: Open DEP-ITEM-19692414
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 19776593
+                            - generic: DEP-ITEM-19776593
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 21:16:16
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-19776593
+                              - button:
+                                - generic: Open DEP-ITEM-19776593
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 20019884
+                            - generic: DEP-ITEM-20019884
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 21:20:20
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-20019884
+                              - button:
+                                - generic: Open DEP-ITEM-20019884
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 20101424
+                            - generic: DEP-ITEM-20101424
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 21:21:41
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-20101424
+                              - button:
+                                - generic: Open DEP-ITEM-20101424
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 20389521
+                            - generic: DEP-ITEM-20389521
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 21:26:29
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-20389521
+                              - button:
+                                - generic: Open DEP-ITEM-20389521
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 20467856
+                            - generic: DEP-ITEM-20467856
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 21:27:48
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-20467856
+                              - button:
+                                - generic: Open DEP-ITEM-20467856
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 23206869
+                            - generic: DEP-ITEM-23206869
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 22:13:27
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-23206869
+                              - button:
+                                - generic: Open DEP-ITEM-23206869
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 23296383
+                            - generic: DEP-ITEM-23296383
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 22:14:56
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-23296383
+                              - button:
+                                - generic: Open DEP-ITEM-23296383
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 23534970
+                            - generic: DEP-ITEM-23534970
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 22:18:55
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-23534970
+                              - button:
+                                - generic: Open DEP-ITEM-23534970
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 23602274
+                            - generic: DEP-ITEM-23602274
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 02/07/2026, 22:20:02
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-23602274
+                              - button:
+                                - generic: Open DEP-ITEM-23602274
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 29732884
+                            - generic: DEP-ITEM-29732884
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 20:15:33
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-29732884
+                              - button:
+                                - generic: Open DEP-ITEM-29732884
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 32391840
+                            - generic: DEP-ITEM-32391840
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 20:59:52
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-32391840
+                              - button:
+                                - generic: Open DEP-ITEM-32391840
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 32483504
+                            - generic: DEP-ITEM-32483504
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 21:01:23
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-32483504
+                              - button:
+                                - generic: Open DEP-ITEM-32483504
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 32843710
+                            - generic: DEP-ITEM-32843710
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 21:07:23
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-32843710
+                              - button:
+                                - generic: Open DEP-ITEM-32843710
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 32983503
+                            - generic: DEP-ITEM-32983503
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 21:09:43
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-32983503
+                              - button:
+                                - generic: Open DEP-ITEM-32983503
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 33634977
+                            - generic: DEP-ITEM-33634977
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 21:20:35
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-33634977
+                              - button:
+                                - generic: Open DEP-ITEM-33634977
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 33711190
+                            - generic: DEP-ITEM-33711190
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 21:21:51
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-33711190
+                              - button:
+                                - generic: Open DEP-ITEM-33711190
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 34010607
+                            - generic: DEP-ITEM-34010607
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 21:26:50
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-34010607
+                              - button:
+                                - generic: Open DEP-ITEM-34010607
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 34087994
+                            - generic: DEP-ITEM-34087994
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 21:28:08
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-34087994
+                              - button:
+                                - generic: Open DEP-ITEM-34087994
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 38276316
+                            - generic: DEP-ITEM-38276316
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 22:37:56
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-38276316
+                              - button:
+                                - generic: Open DEP-ITEM-38276316
+                        - row:
+                          - cell:
+                            - generic: Dependency Item 38324493
+                            - generic: DEP-ITEM-38324493
+                          - cell: Unassigned
+                          - cell: Uncategorised
+                          - cell:
+                            - generic:
+                              - generic: "10"
+                              - generic: /
+                              - generic: "0"
+                              - generic: /
+                              - generic: "10"
+                          - cell:
+                            - generic: 0 / 10
+                            - generic: 0 canonical positions
+                          - cell:
+                            - generic: No movements
+                          - cell: "10"
+                          - cell:
+                            - generic: Low
+                          - cell: 01/07/2026, 22:38:44
+                          - cell:
+                            - generic:
+                              - button:
+                                - generic: Preview DEP-ITEM-38324493
+                              - button:
+                                - generic: Open DEP-ITEM-38324493
+                - generic:
+                  - paragraph: Showing 1-25 of 441
+                  - generic:
+                    - combobox:
+                      - generic: 25 rows
+                    - button [disabled]: First
+                    - button [disabled]: Previous
+                    - generic: Page 1 of 18
+                    - button: Next
+                    - button: Last
+            - generic:
+              - button:
+                - generic: Help & Tutorials
+    - generic:
+      - button: Diagnostics 11
+    - list
+  - dialog [ref=f4e1632]:
+    - generic [ref=f4e1633]:
+      - heading "Dependency Item 00262198" [level=2] [ref=f4e1634]
+      - paragraph [ref=f4e1635]: SKU DEP-ITEM-00262198
+    - generic [ref=f4e1636]:
+      - generic [ref=f4e1637]:
+        - generic [ref=f4e1638]: Location
+        - generic [ref=f4e1639]: Unassigned
+      - generic [ref=f4e1640]:
+        - generic [ref=f4e1641]: Category
+        - generic [ref=f4e1642]: Uncategorised
+      - generic [ref=f4e1643]:
+        - generic [ref=f4e1644]: On hand
+        - generic [ref=f4e1645]: "10"
+      - generic [ref=f4e1646]:
+        - generic [ref=f4e1647]: Allocated
+        - generic [ref=f4e1648]: "0"
+      - generic [ref=f4e1649]:
+        - generic [ref=f4e1650]: Available
+        - generic [ref=f4e1651]: "10"
+      - generic [ref=f4e1652]:
+        - generic [ref=f4e1653]: Low stock threshold
+        - generic [ref=f4e1654]: "10"
+    - alert [ref=f4e1655]:
+      - heading "Low Low stock" [level=5] [ref=f4e1656]:
+        - generic [ref=f4e1657]: Low
+        - text: Low stock
+      - generic [ref=f4e1658]:
+        - paragraph [ref=f4e1659]: This item is at or below its reorder threshold.
+        - paragraph [ref=f4e1660]: "Recommended next action: Create or review a reorder request for replenishment."
+        - paragraph [ref=f4e1661]: Updated 04/07/2026, 23:24:22
+    - generic [ref=f4e1662]:
+      - button "Close" [active] [ref=f4e1663] [cursor=pointer]
+      - button "Open full item page" [ref=f4e1664] [cursor=pointer]
+    - button "Close" [ref=f4e1665] [cursor=pointer]

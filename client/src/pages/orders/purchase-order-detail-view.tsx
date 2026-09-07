@@ -1,0 +1,1227 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  Activity,
+  ArrowLeft,
+  Briefcase,
+  CheckCircle2,
+  ClipboardList,
+  FileBadge,
+  FileDown,
+  Loader2,
+  Package,
+  Printer,
+  Send,
+  ShieldCheck,
+  Truck,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { APP_ROUTES } from "@/lib/routes/app-routes";
+import { DataState } from "@/components/ui/data-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { useReportingMoney } from "@/hooks/use-reporting-money";
+import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
+import { REPORTING_CURRENCY_FALLBACK_CODE } from "@/lib/reporting-currency-fallback";
+import { ToastAction } from "@/components/ui/toast";
+import { invalidatePurchaseOrderDomain } from "@/lib/domain-invalidation";
+import {
+  MASTER_CURRENCIES_QUERY_KEY,
+  currencyOptionsForSelect,
+  fetchActiveMasterCurrencies,
+} from "@/lib/currencies-query";
+import { formatMutationError, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { downloadBlobAsFile } from "@/lib/utils";
+import { Can } from "@/components/auth/can";
+import {
+  downloadPurchaseOrderSignedPdf,
+  fetchPurchaseOrderRecordById,
+  normalizeBatchInput,
+  normalizeOperationalPoParam,
+  normalizeSerialTokensCsv,
+  useApprovePurchaseOrderMutation,
+  usePurchaseOrderOperationalDetailQuery,
+  useReceivePurchaseOrderMutation,
+  useSendPurchaseOrderMutation,
+  validateReceiveLines,
+  validateReceivePutaway,
+  type ReceiveLineFieldError,
+  type ReceivePutawayWarehouse,
+} from "@/features/purchase-orders";
+import { fetchApprovalSuggestions, fetchShipments } from "@/api/client";
+import type { PurchaseReceiveResult } from "@/api/types";
+import { EntityActivityPanel } from "@/components/activity/entity-activity-panel";
+import {
+  procurementPoCommercialUrl,
+  procurementPoReceiveUrl,
+  procurementPoRevisionsUrl,
+} from "@/api/procurement-purchase-order-paths";
+import { useAuth } from "@/hooks/use-auth";
+import { PoReceivePanel } from "./po-receive-panel";
+import { PoRevisionHistoryCard } from "./po-revision-history-card";
+import { PoApprovalPolicyCard } from "./po-approval-policy-card";
+import { PoCommercialTermsCard } from "./po-commercial-terms-card";
+import { PoLastReceiveSummaryCard } from "./po-last-receive-summary-card";
+import {
+  approveActionDisabledReason,
+  canApprove,
+  canApproveWithRole,
+  canReceive,
+  canSend,
+  canSendWithRole,
+  canUpdatePurchaseOrder,
+  poWorkflowRoleAllowed,
+  formatDate,
+  formatDateTime,
+  openPurchaseOrderPrintView,
+  sendActionDisabledReason,
+} from "./purchase-order-shared";
+
+export function PurchaseOrderDetailView({ po }: { po: string }) {
+  const [pathname, setLocation] = useLocation();
+  const backToPoList = () => {
+    if (pathname.startsWith("/procurement")) setLocation(APP_ROUTES.procurement.orders);
+    else if (pathname.startsWith("/orders")) setLocation("/orders");
+    else setLocation("/purchase");
+  };
+  const { toast } = useToast();
+  const { formatMoney } = useReportingMoney();
+  const { user } = useAuth();
+  const poNumber = normalizeOperationalPoParam(po);
+
+  const [receiveState, setReceiveState] = useState<Record<string, number>>({});
+  const [batchState, setBatchState] = useState<Record<string, string>>({});
+  const [serialState, setSerialState] = useState<Record<string, string>>({});
+  const [receiverName, setReceiverName] = useState("");
+  const [receivePutaway, setReceivePutaway] = useState<{
+    warehouseId: number | null;
+    aisle: string;
+    binCode: string;
+  }>({ warehouseId: null, aisle: "", binCode: "" });
+  const [lastChangeSummary, setLastChangeSummary] = useState<PurchaseReceiveResult | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [departmentId, setDepartmentId] = useState<string>("none");
+  const [contractId, setContractId] = useState<string>("none");
+  const [paymentTermsId, setPaymentTermsId] = useState<string>("none");
+  const [incotermId, setIncotermId] = useState<string>("none");
+  const [taxCodeId, setTaxCodeId] = useState<string>("none");
+  const [currencyCode, setCurrencyCode] = useState("ZAR");
+  const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
+  const [approvalReason, setApprovalReason] = useState("");
+  const [dispatchEmail, setDispatchEmail] = useState("");
+  const [receiveShipmentChoice, setReceiveShipmentChoice] = useState<string>("auto");
+  const [receiveGrn, setReceiveGrn] = useState("");
+  const [commercialSaveError, setCommercialSaveError] = useState<string | null>(null);
+  const [commercialApplyHint, setCommercialApplyHint] = useState<string | null>(null);
+  const purchaseOrderIdRef = useRef<number | null>(null);
+
+  const detailQuery = usePurchaseOrderOperationalDetailQuery(po);
+  const approvePurchaseOrderMutation = useApprovePurchaseOrderMutation(po);
+  const sendPurchaseOrderMutation = useSendPurchaseOrderMutation(po);
+  const receivePurchaseOrderMutation = useReceivePurchaseOrderMutation(po);
+  const statusMutationPending =
+    approvePurchaseOrderMutation.isPending || sendPurchaseOrderMutation.isPending;
+  const loading = detailQuery.isLoading;
+  const error =
+    detailQuery.error instanceof Error
+      ? detailQuery.error
+      : detailQuery.error
+        ? new Error(String(detailQuery.error))
+        : null;
+  const data = detailQuery.data ?? null;
+  const refetch = async () => {
+    await detailQuery.refetch();
+  };
+
+  useEffect(() => {
+    setReceiveShipmentChoice("auto");
+    setReceiveGrn("");
+  }, [poNumber]);
+
+  const { data: poShipments = [] } = useQuery({
+    queryKey: ["/api/logistics/shipments", poNumber],
+    enabled: Boolean(poNumber && data),
+    queryFn: () => fetchShipments({ po: poNumber }),
+    throwOnError: false,
+  });
+
+  const shipmentsForReceiveLink = useMemo(() => {
+    const grnFromDetail = new Map((data?.shipments ?? []).map((x) => [x.id, x.grnNumber ?? null]));
+    return poShipments
+      .filter((s) => String(s.status).toLowerCase() !== "delivered")
+      .map((s) => ({
+        id: s.id,
+        status: s.status,
+        carrier: s.carrier,
+        eta: s.eta != null ? String(s.eta) : null,
+        trackingNumber: s.trackingNumber ?? null,
+        transportMode: s.transportMode ?? null,
+        freightCost: s.freightCost ?? null,
+        grnNumber: (grnFromDetail.get(s.id) as string | null | undefined) ?? null,
+      }));
+  }, [poShipments, data?.shipments]);
+
+  useEffect(() => {
+    purchaseOrderIdRef.current = data?.id ?? null;
+  }, [data?.id]);
+  const { data: revisions = [], isError: revisionsError } = useQuery({
+    queryKey: ["/api/procurement/purchase-orders/records/revisions", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () =>
+      requestJson<
+        Array<{
+          id: number;
+          revisionNumber: number;
+          createdBy: number | null;
+          createdAt: string;
+          snapshot: Record<string, unknown>;
+        }>
+      >("GET", procurementPoRevisionsUrl(data!.id)),
+  });
+  const { data: approvalHistory = [], isError: approvalHistoryError } = useQuery({
+    queryKey: ["/api/approval-history/purchase-order", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () =>
+      requestJson<
+        Array<{
+          id: number;
+          action: string;
+          level: number;
+          performedBy: number;
+          comment: string | null;
+          previousStatus: string | null;
+          newStatus: string | null;
+          performedAt: string;
+        }>
+      >("GET", `/api/approval-history/purchase_order/${data?.id}`),
+  });
+  const { data: purchaseOrderRecord, isError: purchaseOrderRecordError } = useQuery({
+    queryKey: ["/api/procurement/purchase-orders/records", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: ({ signal }) => fetchPurchaseOrderRecordById(Number(data?.id), { signal }),
+  });
+  const workflowQuery = useQuery({
+    queryKey: ["/api/v2/procurement/purchase-orders/workflow", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () => requestJson<{ status: string; approvalStatus: string; nextAction: string; confirmationStatus: string | null; confirmationReason: string | null; linkedRecords: Record<string, number | null>; receiptCount: number; invoiceCount: number; exceptionCount: number }>("GET", `/api/v2/procurement/purchase-orders/${data?.id}/workflow`),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const confirmationsQuery = useQuery({
+    queryKey: ["/api/v2/procurement/purchase-orders/confirmations", data?.id],
+    enabled: Boolean(data?.id),
+    queryFn: () => requestJson<Array<{ id: number; status: string; reason: string | null; promisedDeliveryDate: string | null; source: string; createdAt: string }>>("GET", `/api/v2/procurement/purchase-orders/${data?.id}/supplier-confirmations`),
+  });
+  const poContextQuery = useQuery({
+    queryKey: ["/api/mdm/defaults/po-context"],
+    queryFn: () => requestJson<{
+      departments: Array<{ id: number; code: string; name: string }>;
+      contracts: Array<{ id: number; title: string; supplierId: number; currency?: string | null; paymentTermsId?: number | null; payment_terms_id?: number | null; incotermId?: number | null; incoterm_id?: number | null; defaultTaxCodeId?: number | null; default_tax_code_id?: number | null }>;
+      currencies: Array<{ id: number; code: string; name: string; symbol?: string; active?: boolean | null }>;
+      paymentTerms: Array<{ id: number; code: string; name: string }>;
+      incoterms: Array<{ id: number; code: string; name: string }>;
+      taxCodes: Array<{ id: number; code: string; name: string; active?: boolean | null }>;
+      warehouses: Array<{ id: number; name: string; isDefault?: boolean | null; aisles?: string[] | null; bins?: Array<{ code: string; aisle?: string | null }> | null }>;
+      supplierDefaults: Array<{ id: number; paymentTermsId?: number | null; defaultCurrencyCode?: string | null }>;
+    }>("GET", "/api/mdm/defaults/po-context"),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const departments = useMemo(() => poContextQuery.data?.departments ?? [], [poContextQuery.data?.departments]);
+  const contracts = useMemo(() => poContextQuery.data?.contracts ?? [], [poContextQuery.data?.contracts]);
+  const currenciesList = useMemo(() => poContextQuery.data?.currencies ?? [], [poContextQuery.data?.currencies]);
+  const paymentTerms = useMemo(() => poContextQuery.data?.paymentTerms ?? [], [poContextQuery.data?.paymentTerms]);
+  const incoterms = useMemo(() => poContextQuery.data?.incoterms ?? [], [poContextQuery.data?.incoterms]);
+  const taxCodes = useMemo(() => poContextQuery.data?.taxCodes ?? [], [poContextQuery.data?.taxCodes]);
+  const warehousesForReceive = useMemo(() => poContextQuery.data?.warehouses ?? [], [poContextQuery.data?.warehouses]);
+  const supplierRow = poContextQuery.data?.supplierDefaults.find((supplier) => supplier.id === data?.supplierId);
+  const departmentsError = poContextQuery.isError;
+  const contractsError = poContextQuery.isError;
+  const currenciesError = poContextQuery.isError;
+  const paymentTermsError = poContextQuery.isError;
+  const incotermsError = poContextQuery.isError;
+  const taxCodesError = poContextQuery.isError;
+
+  const contractCurrencyCodesForSupplier = useMemo(() => {
+    const sid = data?.supplierId;
+    if (!sid) return [] as string[];
+    return contracts
+      .filter((contractRow) => contractRow.supplierId === sid)
+      .map((c) => c.currency)
+      .filter((x): x is string => typeof x === "string" && String(x).trim().length > 0);
+  }, [contracts, data?.supplierId]);
+
+  const currenciesForPoSelect = useMemo(
+    () =>
+      currencyOptionsForSelect(currenciesList, [
+        purchaseOrderRecord?.currencyCode,
+        supplierRow?.defaultCurrencyCode,
+        ...contractCurrencyCodesForSupplier,
+      ]),
+    [
+      currenciesList,
+      purchaseOrderRecord?.currencyCode,
+      supplierRow?.defaultCurrencyCode,
+      contractCurrencyCodesForSupplier,
+    ],
+  );
+
+  const activeTaxCodes = useMemo(
+    () => taxCodes.filter((t) => t.active !== false),
+    [taxCodes],
+  );
+
+  const receiveWarehouses = useMemo((): ReceivePutawayWarehouse[] => {
+    return warehousesForReceive.map((w) => ({
+      id: w.id,
+      name: w.name,
+      isDefault: w.isDefault,
+      aisles: w.aisles ?? null,
+      bins: w.bins ?? null,
+    }));
+  }, [warehousesForReceive]);
+
+  useEffect(() => {
+    if (receiveWarehouses.length === 0) return;
+    setReceivePutaway((p) => {
+      if (p.warehouseId != null) return p;
+      const def = receiveWarehouses.find((w) => w.isDefault) ?? receiveWarehouses[0];
+      return { ...p, warehouseId: def?.id ?? null };
+    });
+  }, [receiveWarehouses]);
+  const { data: approvalPoliciesRaw, isError: approvalPoliciesError } = useQuery({
+    queryKey: ["/api/approval-policies"],
+    queryFn: async () => {
+      const raw = await requestJson<unknown>("GET", "/api/approval-policies");
+      return normalizeApiList<{
+        id: number;
+        name: string;
+        entityType: string;
+        amountMin: number;
+        amountMax: number | null;
+        approvalLevel: number;
+        approverRole: string | null;
+        isActive: boolean | null;
+      }>(raw);
+    },
+  });
+  const poApprovalPolicies = useMemo(() => {
+    const rows = approvalPoliciesRaw ?? [];
+    return rows
+      .filter((p) => String(p.entityType).toLowerCase() === "purchase_order" && p.isActive !== false)
+      .slice()
+      .sort((a, b) => a.approvalLevel - b.approvalLevel || a.amountMin - b.amountMin);
+  }, [approvalPoliciesRaw]);
+
+  const { data: poApproverSuggestions, isError: approvalSuggestionsError } = useQuery({
+    queryKey: ["/api/approval-suggestions", "purchase_order", data?.totalAmount, data?.status],
+    enabled: Boolean(data && canApprove(data.status)),
+    queryFn: () =>
+      fetchApprovalSuggestions({
+        entityType: "purchase_order",
+        amount: Number(data?.totalAmount ?? 0),
+      }),
+  });
+
+  const saveCommercialTerms = useMutation({
+    mutationFn: () => {
+      const id = purchaseOrderIdRef.current;
+      if (!id) throw new Error("Purchase order ID missing");
+      return requestJson("PATCH", procurementPoCommercialUrl(id), {
+        departmentId: departmentId === "none" ? null : Number(departmentId),
+        contractId: contractId === "none" ? null : Number(contractId),
+        paymentTermsId: paymentTermsId === "none" ? null : Number(paymentTermsId),
+        incotermId: incotermId === "none" ? null : Number(incotermId),
+        taxCodeId: taxCodeId === "none" ? null : Number(taxCodeId),
+        currencyCode: currencyCode.trim().toUpperCase(),
+      });
+    },
+    onSuccess: async () => {
+      const id = purchaseOrderIdRef.current;
+      if (id) {
+        await queryClient.invalidateQueries({ queryKey: ["/api/procurement/purchase-orders/records", id] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/procurement/purchase-orders/records/revisions", id] });
+      }
+      await invalidatePurchaseOrderDomain(queryClient);
+      await refetch();
+      setCommercialSaveError(null);
+      setCommercialApplyHint(null);
+      toast({ title: "PO commercial terms updated" });
+    },
+    onError: (e) => {
+      const description = e instanceof Error ? e.message : String(e);
+      setCommercialSaveError(description);
+      toast({
+        title: "Failed to update PO terms",
+        description,
+        variant: "destructive",
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (!purchaseOrderRecord) return;
+    setDepartmentId(
+      purchaseOrderRecord.departmentId == null ? "none" : String(purchaseOrderRecord.departmentId),
+    );
+    setContractId(purchaseOrderRecord.contractId == null ? "none" : String(purchaseOrderRecord.contractId));
+    setPaymentTermsId(
+      purchaseOrderRecord.paymentTermsId == null ? "none" : String(purchaseOrderRecord.paymentTermsId),
+    );
+    setIncotermId(
+      purchaseOrderRecord.incotermId == null ? "none" : String(purchaseOrderRecord.incotermId),
+    );
+    setTaxCodeId(
+      purchaseOrderRecord.taxCodeId == null ? "none" : String(purchaseOrderRecord.taxCodeId),
+    );
+    const rawCc = purchaseOrderRecord.currencyCode;
+    setCurrencyCode(
+      typeof rawCc === "string" && /^[A-Za-z]{3}$/.test(rawCc) ? rawCc.toUpperCase() : "ZAR",
+    );
+  }, [purchaseOrderRecord]);
+
+  useEffect(() => {
+    setReceiveLineIssues([]);
+  }, [receiveState, batchState, serialState]);
+
+  const receivePayload = useMemo(
+    () =>
+      Object.entries(receiveState)
+        .filter(([, qty]) => qty > 0)
+        .map(([sku, qty]) => {
+          const batchRaw = batchState[sku];
+          const batchNorm = normalizeBatchInput(batchRaw);
+          const serials = serialState[sku] ? normalizeSerialTokensCsv(serialState[sku]) : undefined;
+          return {
+            sku,
+            qtyReceivedNow: qty,
+            ...(batchNorm ? { batchNumber: batchNorm } : {}),
+            ...(serials?.length ? { serialNumbers: serials } : {}),
+          };
+        }),
+    [batchState, receiveState, serialState],
+  );
+
+  const updateStatus = (action: "approve" | "send") => {
+    if (!poNumber || !data) return;
+    const normalizedStatus = String(data.status).trim().toLowerCase();
+    const onErr = (statusError: Error) => {
+      const err = statusError as Error & { status?: number };
+      const actionLabel = action === "approve"
+        ? normalizedStatus === "draft" ? "Submit PO" : "Approve PO"
+        : "Dispatch PO";
+      toast({
+        title: "Update failed",
+        description: formatMutationError(
+          actionLabel,
+          "POST",
+          action === "approve"
+            ? `/api/purchase-orders/${data.id}/${normalizedStatus === "draft" ? "submit" : "approve"}`
+            : `/api/purchase-orders/${data.id}/send-email`,
+          err,
+        ),
+        variant: "destructive",
+        action: (
+          <ToastAction altText="Retry" onClick={() => updateStatus(action)}>
+            Retry
+          </ToastAction>
+        ),
+      });
+    };
+
+    if (action === "approve") {
+      if (approvePurchaseOrderMutation.isPending) return;
+      const workflowAction = normalizedStatus === "draft" ? "submit" : "approve";
+      approvePurchaseOrderMutation.mutate(
+        { purchaseOrderId: data.id, action: workflowAction, reason: approvalReason },
+        {
+          onError: onErr,
+          onSuccess: () => {
+            setApprovalReason("");
+            toast({ title: workflowAction === "submit" ? "PO submitted" : "PO approved" });
+          },
+        },
+      );
+      return;
+    }
+    if (sendPurchaseOrderMutation.isPending) return;
+    sendPurchaseOrderMutation.mutate(
+      { purchaseOrderId: data.id, email: dispatchEmail },
+      {
+        onError: onErr,
+        onSuccess: () => toast({ title: "PO dispatched", description: `Delivery accepted for ${dispatchEmail.trim()}.` }),
+      },
+    );
+  };
+
+  const submitReceive = () => {
+    if (!data || !poNumber) return;
+    if (receivePurchaseOrderMutation.isPending) return;
+
+    const putawayCheck = validateReceivePutaway(receiveWarehouses, receivePutaway);
+    if (!putawayCheck.ok) {
+      setReceiveLineIssues([]);
+      setReceiveError(putawayCheck.message);
+      toast({
+        title: "Putaway required",
+        description: putawayCheck.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const checked = validateReceiveLines(data, receivePayload);
+    if (!checked.ok) {
+      setReceiveLineIssues(checked.errors);
+      const combined = checked.errors
+        .map((e) => (e.sku ? `${e.sku}: ${e.message}` : e.message))
+        .join(" ")
+        .trim();
+      setReceiveError(combined || "Receive validation failed.");
+      const toastParts = checked.errors.map((e) => (e.sku ? `${e.sku}: ${e.message}` : e.message)).filter(Boolean);
+      if (toastParts.length) {
+        toast({
+          title: "Receive validation failed",
+          description: toastParts.join(" "),
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
+    setReceiveError(null);
+    setReceiveLineIssues([]);
+
+    const shipIdParsed =
+      receiveShipmentChoice !== "auto" && receiveShipmentChoice.trim()
+        ? Number(receiveShipmentChoice)
+        : NaN;
+    const shipmentIdOpt =
+      Number.isFinite(shipIdParsed) && shipIdParsed > 0 ? shipIdParsed : undefined;
+
+    receivePurchaseOrderMutation.mutate(
+      {
+        lines: checked.lines,
+        receiveOptions: {
+          receiverUserId: typeof user?.id === "number" ? user.id : undefined,
+          receiverName: receiverName.trim() || undefined,
+          warehouseId: receivePutaway.warehouseId ?? undefined,
+          aisle: receivePutaway.aisle.trim() || undefined,
+          binCode: receivePutaway.binCode.trim() || undefined,
+          receivedAt: new Date().toISOString(),
+          ...(shipmentIdOpt != null ? { shipmentId: shipmentIdOpt } : {}),
+          ...(receiveGrn.trim() ? { grnNumber: receiveGrn.trim() } : {}),
+        },
+      },
+      {
+        onSuccess: (result) => {
+          setLastChangeSummary(result);
+          setReceiveState({});
+          setBatchState({});
+          setSerialState({});
+          setReceiveGrn("");
+          setReceivePutaway((p) => ({
+            warehouseId: p.warehouseId,
+            aisle: "",
+            binCode: "",
+          }));
+          setReceiveError(null);
+          setReceiveLineIssues([]);
+        },
+        onError: (receiveErr) => {
+          const err = receiveErr as Error & { status?: number };
+          toast({
+            title: "Receive failed",
+            description: formatMutationError("Receive PO", "POST", procurementPoReceiveUrl(poNumber), err),
+            variant: "destructive",
+            action: (
+              <ToastAction altText="Retry" onClick={() => submitReceive()}>
+                Retry
+              </ToastAction>
+            ),
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-[min(100%,88rem)]">
+      <DataState
+        loading={loading}
+        error={error}
+        data={data}
+        isEmpty={() => false}
+        emptyTitle="PO detail unavailable"
+        onRetry={refetch}
+      >
+        {(detail) => {
+          const commercialReferenceError =
+            purchaseOrderRecordError ||
+            departmentsError ||
+            contractsError ||
+            paymentTermsError ||
+            incotermsError ||
+            taxCodesError ||
+            currenciesError ||
+            approvalPoliciesError ||
+            approvalSuggestionsError;
+
+          const poMoneyFormatter = createReportingMoneyFormatter(
+            detail.currencyCode ||
+              (purchaseOrderRecord &&
+              typeof purchaseOrderRecord.currencyCode === "string" &&
+              /^[A-Za-z]{3}$/.test(purchaseOrderRecord.currencyCode)
+                ? purchaseOrderRecord.currencyCode
+                : REPORTING_CURRENCY_FALLBACK_CODE),
+          );
+
+          const applyCommercialDefaults = () => {
+            if (contractId === "none") {
+              toast({ title: "Select a contract first", variant: "destructive" });
+              return;
+            }
+            const contractRow = contracts.find((x) => String(x.id) === contractId);
+            if (!contractRow) return;
+            const fromContract =
+              typeof contractRow.currency === "string" && /^[A-Za-z]{3}$/.test(contractRow.currency)
+                ? contractRow.currency.toUpperCase()
+                : null;
+            const fromSupplier =
+              supplierRow?.defaultCurrencyCode &&
+              typeof supplierRow.defaultCurrencyCode === "string" &&
+              /^[A-Za-z]{3}$/.test(supplierRow.defaultCurrencyCode)
+                ? supplierRow.defaultCurrencyCode.toUpperCase()
+                : null;
+            const contractCurrencyOk = Boolean(fromContract && currenciesList.some((row) => row.code === fromContract));
+            const supplierCurrencyOk = Boolean(fromSupplier && currenciesList.some((row) => row.code === fromSupplier));
+            let pick: string | null = null;
+            let currencyNote: string | null = null;
+            if (contractCurrencyOk && fromContract) {
+              pick = fromContract;
+              currencyNote = `Currency ${pick} from contract “${contractRow.title}” (#${contractRow.id}).`;
+            } else if (supplierCurrencyOk && fromSupplier) {
+              pick = fromSupplier;
+              currencyNote =
+                fromContract && !contractCurrencyOk
+                  ? `Contract currency ${fromContract} is not in the active currency list; using supplier default ${pick}.`
+                  : `Currency ${pick} from supplier defaults.`;
+            } else if (fromContract || fromSupplier) {
+              toast({
+                title: "No matching currency",
+                description:
+                  "Neither the contract nor supplier default currency is available in master data. Add the code under Master data or choose a currency manually.",
+                variant: "destructive",
+              });
+              setCommercialApplyHint(null);
+              return;
+            }
+
+            const hintParts: string[] = [];
+            if (pick) {
+              setCurrencyCode(pick);
+              if (currencyNote) hintParts.push(currencyNote);
+            }
+
+            const cPay = contractRow.paymentTermsId ?? contractRow.payment_terms_id;
+            if (cPay != null) {
+              setPaymentTermsId(String(cPay));
+              hintParts.push("Payment terms from contract.");
+            } else if (supplierRow?.paymentTermsId != null) {
+              setPaymentTermsId(String(supplierRow.paymentTermsId));
+              hintParts.push("Payment terms from supplier (contract had none).");
+            }
+
+            const cInc = contractRow.incotermId ?? contractRow.incoterm_id;
+            if (cInc != null) {
+              setIncotermId(String(cInc));
+              hintParts.push("Incoterm from contract.");
+            }
+
+            const cTax = contractRow.defaultTaxCodeId ?? contractRow.default_tax_code_id;
+            if (cTax != null) {
+              if (activeTaxCodes.some((t) => t.id === cTax)) {
+                setTaxCodeId(String(cTax));
+                hintParts.push("Default tax code from contract.");
+              } else {
+                hintParts.push(`Contract default tax #${cTax} is not active in master data — pick manually.`);
+              }
+            }
+
+            setCommercialApplyHint(hintParts.length ? hintParts.join(" ") : null);
+            toast({
+              title: "Defaults applied",
+              description: "Review commercial fields, then save to persist.",
+            });
+          };
+          const selectedContractRow = contracts.find((x) => String(x.id) === contractId);
+          const useSelectedContractCurrency = () => {
+            const fromContract =
+              typeof selectedContractRow?.currency === "string" && /^[A-Za-z]{3}$/.test(selectedContractRow.currency)
+                ? selectedContractRow.currency.toUpperCase()
+                : null;
+            if (!fromContract) {
+              toast({
+                title: "Contract currency unavailable",
+                description: "This contract does not have a valid currency code. Clear the contract or update Master Data.",
+                variant: "destructive",
+              });
+              return;
+            }
+            setCurrencyCode(fromContract);
+            setCommercialSaveError(null);
+            setCommercialApplyHint(`Using contract currency ${fromContract}. Save terms to persist.`);
+          };
+          const clearSelectedContract = () => {
+            setContractId("none");
+            setCommercialSaveError(null);
+            setCommercialApplyHint("Contract cleared. Review the currency and save terms to persist.");
+          };
+          const downloadSignedPdf = async () => {
+            setPdfLoading(true);
+            try {
+              const blob = await downloadPurchaseOrderSignedPdf(detail.poNumber);
+              downloadBlobAsFile(blob, `PO-${detail.poNumber}-for-signature.pdf`);
+              toast({
+                title: "Signable PDF downloaded",
+                description: "Includes line items, standard terms, and buyer/supplier signature lines.",
+              });
+            } catch (err) {
+              toast({
+                title: "Could not export PDF",
+                description: err instanceof Error ? err.message : "Request failed",
+                variant: "destructive",
+              });
+            } finally {
+              setPdfLoading(false);
+            }
+          };
+
+          const sectionLinks = [
+            { href: "#po-summary", label: "Summary", icon: ClipboardList },
+            { href: "#po-document", label: "Official PDF", icon: FileBadge },
+            { href: "#po-commercial", label: "Commercial", icon: Briefcase },
+            { href: "#po-lines", label: "Order lines", icon: Package },
+            { href: "#po-receive", label: "GRN", icon: Package },
+            { href: "#po-shipments", label: "Shipments", icon: Truck },
+            { href: "#po-approval-history", label: "Approvals", icon: ShieldCheck },
+            { href: "#po-activity", label: "Activity", icon: Activity },
+          ] as const;
+
+          const baseApproveDisabledMsg = approveActionDisabledReason({
+            poNumber,
+            status: detail.status,
+            role: user?.role ?? undefined,
+            mutationPending: statusMutationPending,
+          });
+          const approveDisabledMsg = baseApproveDisabledMsg
+            ?? (String(detail.status).toLowerCase() === "open" && approvalReason.trim().length < 5
+              ? "An independent approval reason of at least 5 characters is required."
+              : null);
+          const baseSendDisabledMsg = sendActionDisabledReason({
+            poNumber,
+            status: detail.status,
+            role: user?.role ?? undefined,
+            mutationPending: statusMutationPending,
+          });
+          const sendDisabledMsg = baseSendDisabledMsg
+            ?? (!/^\S+@\S+\.\S+$/.test(dispatchEmail.trim()) ? "Enter the verified supplier dispatch email." : null);
+
+          return (
+            <>
+              <Button
+                variant="ghost"
+                onClick={backToPoList}
+                className="mb-3 -ml-2 w-fit text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Purchase orders
+              </Button>
+
+              <header
+                data-testid="po-detail-page"
+                className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border/80 bg-background/90 px-4 py-3 shadow-sm backdrop-blur-md md:-mx-6 md:px-6 supports-[backdrop-filter]:bg-background/80"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      Operations / Purchase orders / {detail.poNumber}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h1 data-testid="po-detail-title" className="truncate text-xl font-semibold tracking-tight">
+                        PO {detail.poNumber}
+                      </h1>
+                      <span data-testid="po-detail-status">
+                        <StatusBadge status={detail.status} />
+                      </span>
+                    </div>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {detail.supplierName || `Supplier #${detail.supplierId}`}
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 flex-col items-stretch gap-1 lg:items-end">
+                    <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      className="gap-2"
+                      disabled={!poNumber || pdfLoading || !detail.poNumber.trim()}
+                      data-testid="po-signable-pdf-button"
+                      onClick={() => void downloadSignedPdf()}
+                    >
+                      {pdfLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      ) : (
+                        <FileDown className="h-4 w-4" aria-hidden />
+                      )}
+                      Signable PDF
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      data-testid="po-quick-print-button"
+                      onClick={() => openPurchaseOrderPrintView(detail, formatMoney)}
+                    >
+                      <Printer className="h-4 w-4" aria-hidden />
+                      Quick print
+                    </Button>
+                    <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
+                      <Button
+                        variant="outline"
+                        className="gap-2"
+                        disabled={!!approveDisabledMsg}
+                        title={approveDisabledMsg ?? undefined}
+                        data-testid="po-approve-button"
+                        onClick={() => updateStatus("approve")}
+                      >
+                        <CheckCircle2 className="h-4 w-4" aria-hidden />
+                        {String(detail.status).toLowerCase() === "draft" ? "Submit for approval" : "Approve"}
+                      </Button>
+                    </Can>
+                    {String(detail.status).toLowerCase() === "open" ? (
+                      <Input
+                        id="po-approval-reason"
+                        className="h-9 min-w-[240px]"
+                        placeholder="Independent approval reason"
+                        value={approvalReason}
+                        onChange={(event) => setApprovalReason(event.target.value)}
+                        aria-label="Purchase order approval reason"
+                      />
+                    ) : null}
+                    {String(detail.status).toLowerCase() === "approved" ? (
+                      <Input
+                        id="po-dispatch-email"
+                        type="email"
+                        className="h-9 min-w-[240px]"
+                        placeholder="supplier@example.com"
+                        value={dispatchEmail}
+                        onChange={(event) => setDispatchEmail(event.target.value)}
+                        aria-label="Purchase order dispatch email"
+                      />
+                    ) : null}
+                    <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
+                      <Button
+                        variant="outline"
+                        className="gap-2"
+                        disabled={!!sendDisabledMsg}
+                        title={sendDisabledMsg ?? undefined}
+                        data-testid="po-send-button"
+                        onClick={() => updateStatus("send")}
+                      >
+                        <Send className="h-4 w-4" aria-hidden />
+                        Dispatch
+                      </Button>
+                    </Can>
+                    </div>
+                    {(approveDisabledMsg || sendDisabledMsg) && poWorkflowRoleAllowed(user?.role ?? undefined) ? (
+                      <div
+                        className="max-w-md text-xs text-muted-foreground lg:text-right"
+                        data-testid="po-workflow-disabled-hints"
+                        role="status"
+                      >
+                        {approveDisabledMsg ? <p>{approveDisabledMsg}</p> : null}
+                        {sendDisabledMsg ? <p>{sendDisabledMsg}</p> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <nav
+                  className="mt-3 flex flex-wrap gap-1 border-t border-border/60 pt-3 text-xs font-medium"
+                  aria-label="On-page sections"
+                >
+                  {sectionLinks.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-3 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                        {item.label}
+                      </a>
+                    );
+                  })}
+                </nav>
+              </header>
+
+              <div className="grid gap-8 xl:grid-cols-12">
+                <div className="space-y-6 xl:col-span-8">
+                  <section id="po-summary" className="scroll-mt-36 space-y-3">
+                    <h2 className="sr-only">Summary</h2>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">Status</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <StatusBadge status={detail.status} />
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">Requested</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-lg font-semibold">{formatDate(detail.requestedDate)}</CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">Receive progress</CardTitle>
+                        </CardHeader>
+                        <CardContent data-testid="po-detail-progress" className="text-lg font-semibold">
+                          {detail.progress?.percent ?? 0}%
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">Order total</CardTitle>
+                        </CardHeader>
+                        <CardContent data-testid="po-detail-total" className="text-lg font-semibold">
+                          <div>{poMoneyFormatter.formatMoney(detail.totalAmount)}</div>
+                          <p className="mt-1 text-xs font-normal text-muted-foreground">
+                            PO currency {poMoneyFormatter.currencyCode}
+                          </p>
+                          {detail.reportingTotal != null ? (
+                            <p className="mt-1 text-sm font-medium">
+                              Reporting value {createReportingMoneyFormatter(detail.reportingCurrencyCode).formatMoney(detail.reportingTotal)}
+                            </p>
+                          ) : detail.currencyCode !== detail.reportingCurrencyCode ? (
+                            <p className="mt-1 text-xs font-normal text-amber-700">
+                              No active {detail.currencyCode}/{detail.reportingCurrencyCode} Master Data rate
+                            </p>
+                          ) : null}
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </section>
+
+                  <Card data-testid="po-procurement-workflow-summary">
+                    <CardHeader><CardTitle className="text-base">Procurement workflow</CardTitle></CardHeader>
+                    <CardContent>
+                      {workflowQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading workflow evidence…</p> : workflowQuery.error ? <div className="flex items-center justify-between gap-3"><p className="text-sm text-destructive">Workflow evidence could not load.</p><Button size="sm" variant="outline" onClick={() => void workflowQuery.refetch()}>Retry</Button></div> : workflowQuery.data ? <div className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs text-muted-foreground">Next valid action</p><p className="font-medium">{workflowQuery.data.nextAction}</p></div><div><p className="text-xs text-muted-foreground">Supplier confirmation</p><Badge variant="outline">{workflowQuery.data.confirmationStatus ?? "AWAITING"}</Badge></div><div><p className="text-xs text-muted-foreground">Linked evidence</p><p className="font-medium">{workflowQuery.data.receiptCount} receipt(s) · {workflowQuery.data.invoiceCount} invoice(s)</p></div><div><p className="text-xs text-muted-foreground">Open exceptions</p><p className="font-medium">{workflowQuery.data.exceptionCount}</p></div></div>
+                        {workflowQuery.data.confirmationReason ? <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">Supplier response: {workflowQuery.data.confirmationReason}</p> : null}
+                        {confirmationsQuery.data?.length ? <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Confirmation history</p>{confirmationsQuery.data.slice(0, 4).map((event) => <div key={event.id} className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm"><span><Badge variant="outline">{event.status}</Badge> · {event.source}{event.reason ? ` · ${event.reason}` : ""}</span><span className="text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</span></div>)}</div> : null}
+                      </div> : null}
+                    </CardContent>
+                  </Card>
+
+                  <div className="space-y-3">
+                    {commercialReferenceError ? (
+                      <Card className="mb-3 border-amber-500/50 bg-amber-500/10">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">Commercial reference data could not load</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm text-muted-foreground">
+                          The PO remains available, but departments, contracts, payment terms, incoterms, or approval
+                          references may be incomplete. Refresh this section before updating commercial terms.
+                        </CardContent>
+                      </Card>
+                    ) : null}
+                    <PoCommercialTermsCard
+                      departmentId={departmentId}
+                      setDepartmentId={setDepartmentId}
+                      contractId={contractId}
+                      setContractId={setContractId}
+                      currencyCode={currencyCode}
+                      setCurrencyCode={setCurrencyCode}
+                      currencies={currenciesForPoSelect}
+                      onApplyContractTerms={applyCommercialDefaults}
+                      paymentTermsId={paymentTermsId}
+                      setPaymentTermsId={setPaymentTermsId}
+                      incotermId={incotermId}
+                      setIncotermId={setIncotermId}
+                      taxCodeId={taxCodeId}
+                      setTaxCodeId={setTaxCodeId}
+                      taxCodes={activeTaxCodes}
+                      departments={departments}
+                      contractsForSupplier={contracts
+                        .filter((contract) => contract.supplierId === detail.supplierId)
+                        .map((c) => ({
+                          id: c.id,
+                          title: c.title,
+                          supplierId: c.supplierId,
+                          currency: c.currency ?? null,
+                          paymentTermsId: c.paymentTermsId ?? c.payment_terms_id ?? null,
+                          incotermId: c.incotermId ?? c.incoterm_id ?? null,
+                          defaultTaxCodeId: c.defaultTaxCodeId ?? c.default_tax_code_id ?? null,
+                        }))}
+                      paymentTerms={paymentTerms}
+                      incoterms={incoterms}
+                      saveCommercialTerms={saveCommercialTerms}
+                      canSaveCommercial={canUpdatePurchaseOrder(detail.status)}
+                      commercialLockedReason="Commercial terms can only be updated before the PO is sent."
+                      commercialSaveError={commercialSaveError}
+                      onClearContract={clearSelectedContract}
+                      onUseContractCurrency={useSelectedContractCurrency}
+                      applyDefaultsHint={commercialApplyHint}
+                    />
+                  </div>
+
+                  <Card id="po-lines" className="scroll-mt-36" data-testid="po-line-evidence">
+                    <CardHeader>
+                      <CardTitle>Order lines</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Line</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Item or description</TableHead>
+                            <TableHead>Evidence</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead className="text-right">Unit price</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {detail.lines.map((line, index) => (
+                            <TableRow
+                              key={line.id}
+                              data-testid={`po-line-${line.lineType.toLowerCase()}-${line.lineNumber ?? index + 1}`}
+                            >
+                              <TableCell>{line.lineNumber ?? index + 1}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{line.lineType.replace("_", " ")}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{line.itemName}</div>
+                                {line.sku ? <div className="text-xs text-muted-foreground">{line.sku}</div> : null}
+                                {line.manualEntryReason ? (
+                                  <div className="text-xs text-muted-foreground">
+                                    Reason: {line.manualEntryReason}
+                                  </div>
+                                ) : null}
+                              </TableCell>
+                              <TableCell>
+                                {line.lineType === "SERVICE"
+                                  ? line.receiptRequired
+                                    ? "Service confirmation required"
+                                    : "No service confirmation required"
+                                  : line.receiptRequired
+                                    ? "Goods receipt required"
+                                    : "No goods receipt required"}
+                              </TableCell>
+                              <TableCell className="text-right">{line.qtyOrdered}</TableCell>
+                              <TableCell className="text-right">
+                                {poMoneyFormatter.formatMoney(line.unitPrice)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+
+                  <PoReceivePanel
+                    sectionId="po-receive"
+                    className="scroll-mt-36"
+                    detail={{ ...detail, lines: detail.lines.filter((line) => line.lineType === "CATALOG") }}
+                    canReceive={canReceive(detail.status)}
+                    receiveState={receiveState}
+                    setReceiveState={setReceiveState}
+                    batchState={batchState}
+                    setBatchState={setBatchState}
+                    serialState={serialState}
+                    setSerialState={setSerialState}
+                    receiverName={receiverName}
+                    setReceiverName={setReceiverName}
+                    warehouses={receiveWarehouses}
+                    receivePutaway={receivePutaway}
+                    setReceivePutaway={setReceivePutaway}
+                    userId={typeof user?.id === "number" ? user.id : undefined}
+                    receiving={receivePurchaseOrderMutation.isPending}
+                    receiveError={receiveError}
+                    receiveLineIssues={receiveLineIssues}
+                    onSubmitReceive={submitReceive}
+                    shipmentsForReceiveLink={shipmentsForReceiveLink}
+                    receiveShipmentId={receiveShipmentChoice}
+                    onReceiveShipmentIdChange={setReceiveShipmentChoice}
+                    grnNumber={receiveGrn}
+                    onGrnNumberChange={setReceiveGrn}
+                  />
+
+                  {lastChangeSummary ? <PoLastReceiveSummaryCard summary={lastChangeSummary} /> : null}
+
+                  <section id="po-activity" className="scroll-mt-36" data-testid="po-activity">
+                    <EntityActivityPanel entityType="purchase_order" entityId={detail.poNumber} />
+                  </section>
+
+                  <div id="po-revisions" className="scroll-mt-36">
+                    {revisionsError ? (
+                      <Card className="mb-3 border-amber-500/50 bg-amber-500/10">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">Revision history unavailable</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm text-muted-foreground">
+                          Revision records could not load. The current PO details are still shown.
+                        </CardContent>
+                      </Card>
+                    ) : null}
+                    <PoRevisionHistoryCard revisions={revisions} formatDateTime={formatDateTime} />
+                  </div>
+
+                  {canApprove(detail.status) &&
+                  (poApprovalPolicies.length > 0 || (poApproverSuggestions?.suggestedApprovers?.length ?? 0) > 0) ? (
+                    <div id="po-approval-rules" className="scroll-mt-36">
+                      <PoApprovalPolicyCard
+                        policies={poApprovalPolicies}
+                        suggestedApprovers={poApproverSuggestions?.suggestedApprovers ?? []}
+                      />
+                    </div>
+                  ) : null}
+
+                  <Card id="po-approval-history" className="scroll-mt-36" data-testid="po-approval-history">
+                    <CardHeader>
+                      <CardTitle>Approval history</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {approvalHistoryError ? (
+                        <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-muted-foreground">
+                          Approval history unavailable
+                        </div>
+                      ) : approvalHistory.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">No approval history found.</div>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Action</TableHead>
+                              <TableHead>Level</TableHead>
+                              <TableHead>By</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>At</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {approvalHistory.map((entry) => (
+                              <TableRow key={entry.id}>
+                                <TableCell>{entry.action}</TableCell>
+                                <TableCell>{entry.level}</TableCell>
+                                <TableCell>User #{entry.performedBy}</TableCell>
+                                <TableCell>
+                                  {(entry.previousStatus ?? "-") + " -> " + (entry.newStatus ?? "-")}
+                                </TableCell>
+                                <TableCell>{formatDateTime(entry.performedAt)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card id="po-shipments" className="scroll-mt-36" data-testid="po-shipments">
+                    <CardHeader>
+                      <CardTitle>Linked shipments</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>ID</TableHead>
+                            <TableHead>Carrier</TableHead>
+                            <TableHead>Tracking</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>ETA</TableHead>
+                            <TableHead>Updated</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {detail.shipments.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                                No linked shipments
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            detail.shipments.map((shipment) => (
+                              <TableRow key={shipment.id}>
+                                <TableCell>{shipment.id}</TableCell>
+                                <TableCell>{shipment.carrier || "-"}</TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  {shipment.trackingNumber?.trim() ? shipment.trackingNumber : "—"}
+                                </TableCell>
+                                <TableCell>
+                                  <StatusBadge status={shipment.status} />
+                                </TableCell>
+                                <TableCell>{formatDate(shipment.eta)}</TableCell>
+                                <TableCell>{formatDateTime(shipment.updatedAt)}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <aside className="space-y-4 xl:col-span-4">
+                  <Card id="po-document" className="scroll-mt-36 border-primary/30 bg-muted/25">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Official order document</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm text-muted-foreground">
+                      <p>
+                        Portrait PDF matches a typical purchase order packet: header, supplier block, line table with
+                        totals, standard terms, and separate signature lines for buyer and supplier (wet ink or your
+                        e-sign tool).
+                      </p>
+                      <Button
+                        type="button"
+                        className="w-full gap-2 sm:w-auto"
+                        disabled={!poNumber || pdfLoading || !detail.poNumber.trim()}
+                        onClick={() => void downloadSignedPdf()}
+                      >
+                        {pdfLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                        ) : (
+                          <FileDown className="h-4 w-4" aria-hidden />
+                        )}
+                        Download signable PDF
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </aside>
+              </div>
+            </>
+          );
+        }}
+      </DataState>
+    </div>
+  );
+}

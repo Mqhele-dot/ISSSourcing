@@ -1,0 +1,44 @@
+#!/usr/bin/env node
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import process from "node:process";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, "..");
+const localCache = path.join(repoRoot, ".npm-cache-audit");
+const args = process.argv.slice(2);
+
+if (args.length === 0) {
+  console.error("Usage: node scripts/run-npm-with-local-cache.mjs <npm-args...>");
+  process.exit(1);
+}
+
+mkdirSync(localCache, { recursive: true });
+
+const isWindows = process.platform === "win32";
+const command = isWindows ? process.env.ComSpec || "cmd.exe" : "npm";
+const npmArgs = ["--cache", localCache, ...args];
+const commandArgs = isWindows ? ["/d", "/s", "/c", "npm.cmd", ...npmArgs] : npmArgs;
+const result = spawnSync(command, commandArgs, {
+  cwd: repoRoot,
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    npm_config_cache: process.env.npm_config_cache || localCache,
+  },
+});
+
+if (result.error) {
+  console.error(result.error.message);
+  process.exit(1);
+}
+
+if (result.signal) {
+  console.error(`npm ${args.join(" ")} terminated by signal ${result.signal}.`);
+  process.exit(1);
+}
+
+process.exit(result.status ?? 1);

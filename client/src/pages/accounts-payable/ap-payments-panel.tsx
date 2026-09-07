@@ -1,0 +1,414 @@
+import { useState } from "react";
+import { Download, Landmark, Printer, Search, Wallet } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { ApPage, Invoice, PaymentBatch } from "./types";
+import type { ApPaymentBatchApproveInput, ApPaymentBatchPayload } from "./use-ap-workspace-mutations";
+import type { UseMutationResult } from "@tanstack/react-query";
+
+type Props = {
+  readyForBatch: Invoice[];
+  /** When true, invoice list failed — selection UI may be empty without meaning “no payable invoices”. */
+  invoicesLoadFailed: boolean;
+  /** When true, batch list failed — do not show “no batches” as success state. */
+  batchesLoadFailed: boolean;
+  selectedInvoiceIds: number[];
+  toggleInvoiceSelection: (invoiceId: number, checked: boolean) => void;
+  selectedBatchTotal: number;
+  /** Integer cents for exact E2E / QA (same as sumSelectedInvoicePayableCents). */
+  selectedBatchTotalCents: string;
+  paymentMethod: string;
+  setPaymentMethod: (v: string) => void;
+  scheduledDate: string;
+  setScheduledDate: (v: string) => void;
+  paymentBatchErrors: string[];
+  formatMoney: (n: number | null | undefined) => string;
+  paymentBatches: PaymentBatch[];
+  paymentBatchPage: ApPage<PaymentBatch>;
+  payableInvoicePage: ApPage<Invoice>;
+  query: { q: string; status: string; pageSize: number };
+  onQueryChange: (updates: Partial<{ apInvoicePage: string; apBatchPage: string; apPageSize: string; apQ: string; apBatchStatus: string }>) => void;
+  createBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchPayload>;
+  approveBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchApproveInput>;
+  releaseBatchMutation: UseMutationResult<unknown, Error, ApPaymentBatchApproveInput>;
+  onCreateBatch: () => void;
+  /** Current user — used to enforce batch creator segregation in the UI */
+  actorUserId?: number | null;
+  actorRole?: string | null;
+};
+
+function apInvoiceDomId(invoice: Invoice): string {
+  return `invoice-${invoice.id}`;
+}
+
+function apInvoiceLabel(invoice: Invoice): string {
+  return invoice.invoiceNumber?.trim() || `Invoice #${invoice.id}`;
+}
+
+export function ApPaymentsPanel({
+  readyForBatch,
+  invoicesLoadFailed,
+  batchesLoadFailed,
+  selectedInvoiceIds,
+  toggleInvoiceSelection,
+  selectedBatchTotal,
+  selectedBatchTotalCents,
+  paymentMethod,
+  setPaymentMethod,
+  scheduledDate,
+  setScheduledDate,
+  paymentBatchErrors,
+  formatMoney,
+  paymentBatches,
+  paymentBatchPage,
+  payableInvoicePage,
+  query,
+  onQueryChange,
+  createBatchMutation,
+  approveBatchMutation,
+  releaseBatchMutation,
+  onCreateBatch,
+  actorUserId,
+  actorRole,
+}: Props) {
+  const [batchSegregationReason, setBatchSegregationReason] = useState<Record<number, string>>({});
+
+  const isAdmin = String(actorRole ?? "").toLowerCase() === "admin";
+  const canManagePaymentBatches = ["admin", "finance_manager", "ap_manager"].includes(
+    String(actorRole ?? "").toLowerCase(),
+  );
+
+  return (
+    <div className="space-y-4">
+      {paymentBatchErrors.length > 0 ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            <ul className="list-inside list-disc text-sm">
+              {paymentBatchErrors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Landmark className="h-4 w-4" />
+            Create payment batch
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!invoicesLoadFailed ? (
+            <p className="text-xs text-muted-foreground">
+              PO-linked invoices appear here only after a successful PO/GRN match. Exception or pending-match invoices stay blocked.
+            </p>
+          ) : null}
+          {!canManagePaymentBatches ? (
+            <Alert data-testid="ap-payment-role-denied">
+              <AlertDescription className="text-sm">
+                Your role can view payment readiness, but cannot approve or release AP payment batches. Finance manager,
+                AP manager, or admin access is required.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {invoicesLoadFailed ? (
+            <p className="text-sm text-destructive">
+              Payable invoice list did not load. Retry invoices above before creating a batch — an empty table may not
+              mean there are no invoices.
+            </p>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                aria-label="Search payable invoices and payment batches"
+                className="pl-9"
+                value={query.q}
+                onChange={(event) => onQueryChange({ apQ: event.target.value, apInvoicePage: "1", apBatchPage: "1" })}
+                placeholder="Search invoice, supplier, or batch number"
+              />
+            </div>
+            <Select value={String(query.pageSize)} onValueChange={(value) => onQueryChange({ apPageSize: value, apInvoicePage: "1", apBatchPage: "1" })}>
+              <SelectTrigger className="w-32" aria-label="Rows per page"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="25">25 rows</SelectItem><SelectItem value="50">50 rows</SelectItem><SelectItem value="100">100 rows</SelectItem></SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Payment method</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BANK_TRANSFER">Bank transfer</SelectItem>
+                  <SelectItem value="CHECK">Check</SelectItem>
+                  <SelectItem value="PAYPAL">PayPal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Scheduled date</Label>
+              <Input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Selected total</Label>
+              <div
+                className="rounded-md border px-3 py-2 text-sm"
+                data-testid="ap-selected-batch-total"
+                data-batch-total-cents={selectedBatchTotalCents}
+              >
+                {formatMoney(selectedBatchTotal)}
+              </div>
+            </div>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead />
+                <TableHead>Invoice</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Due date</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {readyForBatch.map((invoice) => {
+                const checked = selectedInvoiceIds.includes(invoice.id);
+                const idSuffix = apInvoiceDomId(invoice);
+                return (
+                  <TableRow key={invoice.id} data-testid={`ap-ready-invoice-row-${idSuffix}`}>
+                    <TableCell>
+                      <Checkbox
+                        data-testid={`ap-ready-invoice-checkbox-${idSuffix}`}
+                        checked={checked}
+                        disabled={invoicesLoadFailed}
+                        onCheckedChange={(state) => toggleInvoiceSelection(invoice.id, state === true)}
+                      />
+                    </TableCell>
+                    <TableCell>{apInvoiceLabel(invoice)}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={invoice.status === "APPROVED" ? "default" : "outline"}>{invoice.status}</Badge>
+                        {invoice.purchaseOrderId != null ? (
+                          <span className="text-xs text-muted-foreground">
+                            Match: {invoice.latestMatchResult?.status ?? "PENDING MATCH"}
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell className="text-right">
+                      {formatMoney(Number(invoice.dueAmount ?? invoice.total ?? 0))}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+
+          <PageControls
+            label="payable invoices"
+            page={payableInvoicePage}
+            onPage={(page) => onQueryChange({ apInvoicePage: String(page) })}
+          />
+
+          <Button
+            type="button"
+            data-testid="ap-create-batch-button"
+            onClick={onCreateBatch}
+            disabled={invoicesLoadFailed || createBatchMutation.isPending}
+          >
+            {createBatchMutation.isPending ? "Creating batch..." : "Create AP payment batch"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Wallet className="h-4 w-4" />
+            Payment batch execution
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 flex justify-end">
+            <Select value={query.status || "all"} onValueChange={(value) => onQueryChange({ apBatchStatus: value === "all" ? "" : value, apBatchPage: "1" })}>
+              <SelectTrigger className="w-52" aria-label="Payment batch status"><SelectValue placeholder="All batch statuses" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All batch statuses</SelectItem>
+                {['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'RELEASED', 'CANCELLED'].map((status) => <SelectItem key={status} value={status}>{status.replaceAll('_', ' ')}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {batchesLoadFailed ? (
+            <p className="text-sm text-destructive">
+              Payment batches could not be loaded. Use Retry batches above.
+            </p>
+          ) : paymentBatches.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No AP payment batches created yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Batch</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Scheduled</TableHead>
+                  <TableHead>Items</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentBatches.map((batch) => {
+                  const selfBatch =
+                    batch.createdBy != null &&
+                    actorUserId != null &&
+                    Number(batch.createdBy) === Number(actorUserId);
+                  const blockSelfApprove = selfBatch && !isAdmin;
+                  const needsAdminOverride = selfBatch && isAdmin;
+                  const overrideReason = batchSegregationReason[batch.id] ?? "";
+
+                  return (
+                  <TableRow key={batch.id}>
+                    <TableCell>{batch.batchNumber}</TableCell>
+                    <TableCell>
+                      <Badge variant={batch.status === "RELEASED" ? "default" : "outline"}>{batch.status}</Badge>
+                    </TableCell>
+                    <TableCell>{batch.scheduledDate ? new Date(batch.scheduledDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell>{batch.itemCount}</TableCell>
+                    <TableCell className="text-right">{formatMoney(Number(batch.totalAmount ?? 0))}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex min-w-[220px] flex-col items-end gap-2">
+                        {blockSelfApprove ? (
+                          <p className="max-w-xs text-left text-xs text-muted-foreground" data-testid="ap-self-approval-blocked">
+                            Batch creator cannot approve or release their own batch. Use another approver.
+                          </p>
+                        ) : null}
+                        {!canManagePaymentBatches ? (
+                          <p className="max-w-xs text-left text-xs text-muted-foreground" data-testid="ap-release-permission-blocked">
+                            Approval and release controls are disabled for this role.
+                          </p>
+                        ) : null}
+                        {needsAdminOverride && (batch.status === "PENDING_APPROVAL" || batch.status === "APPROVED") ? (
+                          <div className="w-full space-y-1">
+                            <Label className="text-xs font-normal text-muted-foreground">Admin override reason</Label>
+                            <Input
+                              value={overrideReason}
+                              onChange={(e) =>
+                                setBatchSegregationReason((prev) => ({ ...prev, [batch.id]: e.target.value }))
+                              }
+                              placeholder="Required for self-approval / self-release"
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap justify-end gap-2">
+                        {batch.status === "RELEASED" ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => window.open(`/api/ap/payment-batches/${batch.id}/remittance.pdf`, "_blank", "noopener,noreferrer")}>
+                              <Printer className="mr-1 h-3.5 w-3.5" />Preview
+                            </Button>
+                            <Button size="sm" variant="outline" asChild>
+                              <a href={`/api/ap/payment-batches/${batch.id}/remittance.pdf?download=1`} download>
+                                <Download className="mr-1 h-3.5 w-3.5" />Download
+                              </a>
+                            </Button>
+                          </>
+                        ) : null}
+                        {batch.status === "PENDING_APPROVAL" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              blockSelfApprove ||
+                              !canManagePaymentBatches ||
+                              (needsAdminOverride && !overrideReason.trim()) ||
+                              approveBatchMutation.isPending
+                            }
+                            onClick={() =>
+                              needsAdminOverride
+                                ? approveBatchMutation.mutate({
+                                    batchId: batch.id,
+                                    adminOverride: true,
+                                    overrideReason: overrideReason.trim(),
+                                  })
+                                : approveBatchMutation.mutate(batch.id)
+                            }
+                          >
+                            Approve
+                          </Button>
+                        ) : null}
+                        {batch.status === "APPROVED" ? (
+                          <Button
+                            size="sm"
+                            disabled={
+                              blockSelfApprove ||
+                              !canManagePaymentBatches ||
+                              (needsAdminOverride && !overrideReason.trim()) ||
+                              releaseBatchMutation.isPending
+                            }
+                            onClick={() =>
+                              needsAdminOverride
+                                ? releaseBatchMutation.mutate({
+                                    batchId: batch.id,
+                                    adminOverride: true,
+                                    overrideReason: overrideReason.trim(),
+                                  })
+                                : releaseBatchMutation.mutate(batch.id)
+                            }
+                          >
+                            Release
+                          </Button>
+                        ) : null}
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+          {!batchesLoadFailed && paymentBatches.length > 0 ? (
+            <PageControls label="payment batches" page={paymentBatchPage} onPage={(page) => onQueryChange({ apBatchPage: String(page) })} />
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PageControls<T>({ label, page, onPage }: { label: string; page: ApPage<T>; onPage: (page: number) => void }) {
+  const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+  const first = page.total === 0 ? 0 : (page.page - 1) * page.pageSize + 1;
+  const last = Math.min(page.total, page.page * page.pageSize);
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{first}–{last} of {page.total} {label}</span>
+      <div className="flex gap-2">
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(1)}>First</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)}>Previous</Button>
+        <Button type="button" size="sm" variant="outline" disabled={!page.hasNext} onClick={() => onPage(page.page + 1)}>Next</Button>
+        <Button type="button" size="sm" variant="outline" disabled={page.page >= lastPage} onClick={() => onPage(lastPage)}>Last</Button>
+      </div>
+    </div>
+  );
+}

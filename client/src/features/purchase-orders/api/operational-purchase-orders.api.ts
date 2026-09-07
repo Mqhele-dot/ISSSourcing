@@ -1,0 +1,250 @@
+import type { ApiEnvelopeResult } from "@/api/client";
+import type { PurchaseOrderDetail, PurchaseOrderListItem, PurchaseReceiveResult } from "@/api/types";
+import { toastStore } from "@/lib/toast-store";
+import { invTrackFetch, fetchAuthenticatedBlob } from "@/lib/queryClient";
+import {
+  procurementPoApproveUrl,
+  procurementPoOperationalDetailUrl,
+  procurementPoOperationalListUrl,
+  procurementPoReceiveUrl,
+  procurementPoSendUrl,
+  procurementPoSignedPdfUrl,
+  procurementPoStatusUrl,
+} from "@/api/procurement-purchase-order-paths";
+import { normalizePurchaseOrderDetail } from "../lib/normalize-operational-detail";
+import { normalizePurchaseReceiveResult } from "../lib/normalize-purchase-receive-result";
+import {
+  assertNonEmptyReceiveLines,
+  assertPoNumberForMutation,
+  assertTransitionTargetStatus,
+} from "../lib/po-mutation-guards";
+import { normalizeOperationalPoParam } from "../lib/query-keys";
+import type { PoHttpOptions } from "./http-options";
+
+export type { PoHttpOptions } from "./http-options";
+
+/** Body for `POST .../send`; optional `shipment.create` matches operational `tryCreateOperationalShipmentOnSend`. */
+export type PurchaseOrderSendBody = {
+  shipment?: {
+    create?: boolean;
+    carrier?: string;
+    carrierId?: number;
+    transportMode?: string;
+    freightCost?: number;
+    trackingNumber?: string;
+    deliveryNoteRef?: string;
+    vehicle?: string;
+    driver?: string;
+  };
+};
+
+function workflowHeaders(action: string, purchaseOrderId: number): HeadersInit {
+  return { "Idempotency-Key": `${action}-${purchaseOrderId}-${crypto.randomUUID()}` };
+}
+
+export async function submitPurchaseOrderForApproval(
+  purchaseOrderId: number,
+  reason?: string,
+): Promise<unknown> {
+  const { data } = await invTrackFetch<unknown>(
+    "POST",
+    `/api/purchase-orders/${purchaseOrderId}/submit`,
+    { reason: reason?.trim() || undefined },
+    { headers: workflowHeaders("po-submit", purchaseOrderId) },
+  );
+  return data;
+}
+
+export async function approvePurchaseOrderRecord(
+  purchaseOrderId: number,
+  reason: string,
+): Promise<unknown> {
+  const { data } = await invTrackFetch<unknown>(
+    "POST",
+    `/api/purchase-orders/${purchaseOrderId}/approve`,
+    { reason: reason.trim() },
+    { headers: workflowHeaders("po-approve", purchaseOrderId) },
+  );
+  return data;
+}
+
+export async function dispatchPurchaseOrderRecord(
+  purchaseOrderId: number,
+  email: string,
+): Promise<unknown> {
+  const { data } = await invTrackFetch<unknown>(
+    "POST",
+    `/api/purchase-orders/${purchaseOrderId}/send-email`,
+    { email: email.trim() },
+    { headers: workflowHeaders("po-dispatch", purchaseOrderId) },
+  );
+  return data;
+}
+
+export async function fetchPurchaseOrdersEnvelope(
+  params?: {
+    status?: string;
+    supplier?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  },
+  options?: PoHttpOptions,
+): Promise<ApiEnvelopeResult<PurchaseOrderListItem[]>> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (params?.supplier) search.set("supplier", params.supplier);
+  if (params?.q) search.set("q", params.q);
+  const url = procurementPoOperationalListUrl(search);
+  const { data, meta } = await invTrackFetch<PurchaseOrderListItem[]>("GET", url, undefined, options);
+  return { data, meta };
+}
+
+export async function fetchPurchaseOrdersPageEnvelope(params: { status?: string; statuses?: string[]; supplier?: string; q?: string; sort?: string; page: number; pageSize: number }, options?: PoHttpOptions): Promise<ApiEnvelopeResult<{ items: PurchaseOrderListItem[]; total: number; page: number; pageSize: number; hasNext: boolean; summary?: { totalAmount: number; byStatus: Record<string, number> } }>> {
+  const search = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+  if (params.status) search.set("status", params.status);
+  if (params.statuses?.length) search.set("statuses", params.statuses.join(","));
+  if (params.supplier) search.set("supplier", params.supplier);
+  if (params.q) search.set("q", params.q);
+  if (params.sort) search.set("sort", params.sort);
+  const { data, meta } = await invTrackFetch<{ items: PurchaseOrderListItem[]; total: number; page: number; pageSize: number; hasNext: boolean; summary?: { totalAmount: number; byStatus: Record<string, number> } }>("GET", `/api/v2/procurement/purchase-orders?${search}`, undefined, options);
+  return { data, meta };
+}
+
+export async function fetchPurchaseOrders(
+  params?: {
+    status?: string;
+    supplier?: string;
+    q?: string;
+  },
+  options?: PoHttpOptions,
+): Promise<PurchaseOrderListItem[]> {
+  const { data } = await fetchPurchaseOrdersEnvelope(params, options);
+  return data;
+}
+
+export async function fetchPurchaseOrder(po: string, options?: PoHttpOptions): Promise<PurchaseOrderDetail> {
+  const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
+  const { data: raw } = await invTrackFetch<unknown>(
+    "GET",
+    procurementPoOperationalDetailUrl(poNumber),
+    undefined,
+    options,
+  );
+  return normalizePurchaseOrderDetail(raw);
+}
+
+export async function transitionPurchaseOrderStatus(
+  po: string,
+  toStatus: string,
+  options?: PoHttpOptions,
+): Promise<PurchaseOrderDetail> {
+  const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
+  assertTransitionTargetStatus(toStatus);
+  const { data: raw } = await invTrackFetch<unknown>(
+    "POST",
+    procurementPoStatusUrl(poNumber),
+    { toStatus },
+    options,
+  );
+  return normalizePurchaseOrderDetail(raw);
+}
+
+export async function approvePurchaseOrder(po: string, options?: PoHttpOptions): Promise<PurchaseOrderDetail> {
+  const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
+  const { data: raw } = await invTrackFetch<unknown>(
+    "POST",
+    procurementPoApproveUrl(poNumber),
+    {},
+    options,
+  );
+  return normalizePurchaseOrderDetail(raw);
+}
+
+export async function sendPurchaseOrder(
+  po: string,
+  body?: PurchaseOrderSendBody,
+  options?: PoHttpOptions,
+): Promise<PurchaseOrderDetail> {
+  const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
+  const payload = body && typeof body === "object" && Object.keys(body).length > 0 ? body : {};
+  const { data: raw } = await invTrackFetch<unknown>("POST", procurementPoSendUrl(poNumber), payload, options);
+  return normalizePurchaseOrderDetail(raw);
+}
+
+export async function receivePurchaseOrder(
+  po: string,
+  lines: Array<{
+    sku: string;
+    qtyReceivedNow: number;
+    batchNumber?: string;
+    serialNumbers?: string[];
+  }>,
+  receiveOptions?: {
+    receiverUserId?: number;
+    receiverName?: string;
+    warehouseLocation?: string;
+    warehouseId?: number;
+    aisle?: string;
+    binCode?: string;
+    receivedAt?: string;
+    shipmentId?: number;
+    grnNumber?: string;
+  },
+  httpOptions?: PoHttpOptions,
+): Promise<PurchaseReceiveResult> {
+  const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
+  assertNonEmptyReceiveLines(lines);
+  const shipmentId =
+    receiveOptions?.shipmentId != null && Number.isFinite(Number(receiveOptions.shipmentId))
+      ? Number(receiveOptions.shipmentId)
+      : undefined;
+  const { data: result } = await invTrackFetch<unknown>(
+    "POST",
+    procurementPoReceiveUrl(poNumber),
+    {
+      lines: lines.map((line) => ({
+        sku: line.sku,
+        qty_received_now: line.qtyReceivedNow,
+        batch_number: line.batchNumber,
+        serial_numbers: line.serialNumbers,
+      })),
+      receiver_user_id: receiveOptions?.receiverUserId,
+      receiver_name: receiveOptions?.receiverName,
+      warehouse_location: receiveOptions?.warehouseLocation,
+      warehouse_id: receiveOptions?.warehouseId,
+      aisle: receiveOptions?.aisle,
+      bin_code: receiveOptions?.binCode,
+      received_at: receiveOptions?.receivedAt,
+      ...(shipmentId != null && shipmentId > 0 ? { shipment_id: shipmentId } : {}),
+      ...(receiveOptions?.grnNumber != null && String(receiveOptions.grnNumber).trim()
+        ? { grn_number: String(receiveOptions.grnNumber).trim() }
+        : {}),
+    },
+    httpOptions,
+  );
+
+  const normalized = normalizePurchaseReceiveResult(result);
+  const firstChange = normalized.inventoryChanges[0];
+  const mismatchCreated = normalized.mismatchExceptions.some((entry) => entry.created);
+  const baseMessage = firstChange
+    ? `Received (partial): ${firstChange.sku} +${firstChange.delta}`
+    : `Received (partial): ${normalized.changed.inventoryChanges} inventory updates`;
+  toastStore.push({
+    type: mismatchCreated ? "warning" : "success",
+    title: "PO receive processed",
+    message: mismatchCreated ? `${baseMessage}, mismatch exception created` : baseMessage,
+  });
+  return normalized;
+}
+
+export async function downloadPurchaseOrderSignedPdf(po: string, options?: PoHttpOptions): Promise<Blob> {
+  const poNumber = normalizeOperationalPoParam(po);
+  assertPoNumberForMutation(poNumber);
+  return fetchAuthenticatedBlob(procurementPoSignedPdfUrl(poNumber), options);
+}

@@ -1,0 +1,81 @@
+[    6709ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=01acbd01:17232
+[    7056ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:5057/api/release-scope:0
+[    7057ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:5057/api/suppliers:0
+[    7058ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://127.0.0.1:5057/api/inventory:0
+[    7058ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:5057/api/user:0
+[    7260ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5057/auth:0
+[    7274ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:5057/api/user:0
+[   39297ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://127.0.0.1:5057/api/inventory:0
+[   48143ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5057/@vite/client:992
+[   48150ms] [ERROR] Creating a worker from 'blob:http://127.0.0.1:5057/37295655-e141-43b4-acf7-6c61dabac384' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked. @ http://127.0.0.1:5057/@vite/client:1062
+[   55525ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5057/src/pages/inventory.tsx:0
+[   55529ms] Failed to fetch dynamically imported module: http://127.0.0.1:5057/src/pages/inventory.tsx
+[   55544ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5057/favicon.ico:0
+[   55548ms] Failed to fetch dynamically imported module: http://127.0.0.1:5057/src/pages/inventory.tsx
+[   55554ms] [ERROR] The above error occurred in one of your React components:
+
+    at Lazy
+    at ProductionBoundary (http://127.0.0.1:5057/src/components/production-boundary.tsx:12:17)
+    at Route (http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=5af83095:181:16)
+    at ProtectedRoute (http://127.0.0.1:5057/src/lib/protected-route.tsx:11:34)
+    at Switch (http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=5af83095:222:17)
+    at Suspense
+    at RouteChunkErrorBoundary (http://127.0.0.1:5057/src/app/route-loading-boundary.tsx:170:3)
+    at RouteLoadingBoundary (http://127.0.0.1:5057/src/app/route-loading-boundary.tsx:278:40)
+    at AppRouter
+    at WithNonAdminSetupBanner (http://127.0.0.1:5057/src/components/setup/product-onboarding-gate.tsx:92:36)
+    at ProductOnboardingGateAfterAuth (http://127.0.0.1:5057/src/components/setup/product-onboarding-gate.tsx:148:43)
+    at ProductOnboardingGate (http://127.0.0.1:5057/src/components/setup/product-onboarding-gate.tsx:438:41)
+    at main
+    at div
+    at div
+    at div
+    at DesktopLayout (http://127.0.0.1:5057/src/components/layout/desktop-layout.tsx:16:33)
+    at AppShellLayout (http://127.0.0.1:5057/src/app/app-shell-layout.tsx:12:34)
+    at div
+    at ElectronProvider (http://127.0.0.1:5057/src/contexts/electron-provider.tsx:12:36)
+    at HelpExplainProvider (http://127.0.0.1:5057/src/contexts/help-explain-context.tsx:24:39)
+    at TrainingPanelProvider (http://127.0.0.1:5057/src/contexts/training-panel-context.tsx:7:41)
+    at TutorialProvider (http://127.0.0.1:5057/src/contexts/tutorial-context.tsx:26:36)
+    at AuthProvider (http://127.0.0.1:5057/src/hooks/use-auth.tsx:12:32)
+    at QueryClientProvider (http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/@tanstack_react-query.js?v=521f54b8:2284:30)
+    at AccentProvider (http://127.0.0.1:5057/src/components/accent-provider.tsx:87:34)
+    at DensityProvider (http://127.0.0.1:5057/src/components/density-provider.tsx:7:35)
+    at ThemeProvider (http://127.0.0.1:5057/src/components/theme-provider.tsx:13:33)
+    at AppProviders (http://127.0.0.1:5057/src/app/app-providers.tsx:14:32)
+    at AppErrorBoundary (http://127.0.0.1:5057/src/app/app-error-boundary.tsx:11:3)
+    at App (http://127.0.0.1:5057/src/App.tsx:27:2)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, RouteChunkErrorBoundary. @ http://127.0.0.1:5057/@vite/client:524
+[   55556ms] [ERROR] [RouteChunkErrorBoundary] Lazy route failed to load or run. This is a localized error (not necessarily a full app reload). Use Try again or Reload app; check the Network tab for failed chunk requests (often 401/502 on forwarded dev ports). Failed to fetch dynamically imported module: http://127.0.0.1:5057/src/pages/inventory.tsx 
+    at Lazy
+    at ProductionBoundary (http://127.0.0.1:5057/src/components/production-boundary.tsx:12:17)
+    at Route (http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=5af83095:181:16)
+    at ProtectedRoute (http://127.0.0.1:5057/src/lib/protected-route.tsx:11:34)
+    at Switch (http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=5af83095:222:17)
+    at Suspense
+    at RouteChunkErrorBoundary (http://127.0.0.1:5057/src/app/route-loading-boundary.tsx:170:3)
+    at RouteLoadingBoundary (http://127.0.0.1:5057/src/app/route-loading-boundary.tsx:278:40)
+    at AppRouter
+    at WithNonAdminSetupBanner (http://127.0.0.1:5057/src/components/setup/product-onboarding-gate.tsx:92:36)
+    at ProductOnboardingGateAfterAuth (http://127.0.0.1:5057/src/components/setup/product-onboarding-gate.tsx:148:43)
+    at ProductOnboardingGate (http://127.0.0.1:5057/src/components/setup/product-onboarding-gate.tsx:438:41)
+    at main
+    at div
+    at div
+    at div
+    at DesktopLayout (http://127.0.0.1:5057/src/components/layout/desktop-layout.tsx:16:33)
+    at AppShellLayout (http://127.0.0.1:5057/src/app/app-shell-layout.tsx:12:34)
+    at div
+    at ElectronProvider (http://127.0.0.1:5057/src/contexts/electron-provider.tsx:12:36)
+    at HelpExplainProvider (http://127.0.0.1:5057/src/contexts/help-explain-context.tsx:24:39)
+    at TrainingPanelProvider (http://127.0.0.1:5057/src/contexts/training-panel-context.tsx:7:41)
+    at TutorialProvider (http://127.0.0.1:5057/src/contexts/tutorial-context.tsx:26:36)
+    at AuthProvider (http://127.0.0.1:5057/src/hooks/use-auth.tsx:12:32)
+    at QueryClientProvider (http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/@tanstack_react-query.js?v=521f54b8:2284:30)
+    at AccentProvider (http://127.0.0.1:5057/src/components/accent-provider.tsx:87:34)
+    at DensityProvider (http://127.0.0.1:5057/src/components/density-provider.tsx:7:35)
+    at ThemeProvider (http://127.0.0.1:5057/src/components/theme-provider.tsx:13:33)
+    at AppProviders (http://127.0.0.1:5057/src/app/app-providers.tsx:14:32)
+    at AppErrorBoundary (http://127.0.0.1:5057/src/app/app-error-boundary.tsx:11:3)
+    at App (http://127.0.0.1:5057/src/App.tsx:27:2) @ http://127.0.0.1:5057/@vite/client:524
