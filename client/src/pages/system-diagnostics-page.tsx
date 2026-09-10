@@ -359,6 +359,11 @@ export default function SystemDiagnosticsPage() {
     queryFn: () => requestJson<DiagnosticsSummary>("GET", "/api/diagnostics/summary"),
     throwOnError: false,
   });
+  const capabilityQuery = useQuery({
+    queryKey: ["/api/v2/diagnostics/capability-coverage"],
+    queryFn: () => requestJson<{summary:{total:number;implemented:number;partial:number;missing:number;disabled:number};items:Array<{id:string;category:string;label:string;status:string;featureFlag:string|null;evidence:string[];verifiedAt:string|null}>}>("GET", "/api/v2/diagnostics/capability-coverage"),
+    throwOnError: false,
+  });
   const probesMutation = useMutation({
     mutationFn: () => requestJson<{ summary: DiagnosticsSummary; findings: DiagnosticFinding[] }>("POST", "/api/diagnostics/probes/run", {}),
     onSuccess: async (result) => {
@@ -655,6 +660,26 @@ export default function SystemDiagnosticsPage() {
               {clientSnap.lastSetupFailureMessage}
             </p>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="diagnostics-capability-coverage">
+        <CardHeader>
+          <CardTitle className="text-base">ERP capability completion</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {capabilityQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading governed capability evidence…</p> : capabilityQuery.error ? <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 p-3 text-sm"><span>Capability evidence is unavailable; no completion status has been inferred.</span><Button size="sm" variant="outline" onClick={() => void capabilityQuery.refetch()}>Retry</Button></div> : capabilityQuery.data ? <>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <SummaryTile label="Catalog">{capabilityQuery.data.summary.total}</SummaryTile>
+              <SummaryTile label="Implemented">{capabilityQuery.data.summary.implemented}</SummaryTile>
+              <SummaryTile label="Partial">{capabilityQuery.data.summary.partial}</SummaryTile>
+              <SummaryTile label="Missing">{capabilityQuery.data.summary.missing}</SummaryTile>
+              <SummaryTile label="Disabled">{capabilityQuery.data.summary.disabled}</SummaryTile>
+            </div>
+            <div className="max-h-72 overflow-auto rounded-md border">
+              {capabilityQuery.data.items.filter(item => item.status !== "implemented").map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-sm last:border-b-0"><div><span className="font-medium">{item.label}</span><span className="ml-2 text-xs text-muted-foreground">{item.category}</span></div><div className="flex items-center gap-2"><Badge variant={item.status === "missing" || item.status === "blocked" ? "destructive" : "outline"}>{item.status}</Badge>{item.featureFlag ? <span className="text-xs text-muted-foreground">{item.featureFlag}</span> : null}</div></div>)}
+            </div>
+          </> : null}
         </CardContent>
       </Card>
 

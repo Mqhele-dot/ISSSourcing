@@ -1,9 +1,9 @@
-export type ErpCapabilityStatus = "implemented" | "partial" | "missing" | "disabled" | "degraded";
-export type ErpCapability = { id:string; category:string; label:string; status:ErpCapabilityStatus; aliases:readonly string[]; routes:readonly string[]; apis:readonly string[]; permissions:readonly string[]; evidence:readonly string[]; featureFlag:string|null };
+export type ErpCapabilityStatus = "implemented" | "partial" | "missing" | "disabled" | "degraded" | "blocked";
+export type ErpCapability = { id:string; category:string; label:string; status:ErpCapabilityStatus; aliases:readonly string[]; routes:readonly string[]; apis:readonly string[]; permissions:readonly string[]; evidence:readonly string[]; featureFlag:string|null; verifiedAt:string|null };
 
 const definitions = {
   finance: { implemented:["Accounts Payable","VAT/tax handling","Multi-currency","Financial dashboards and reports","Audit trails"], partial:["General Ledger","Accounts Receivable","Cash flow management","Multi-company / multi-entity consolidation","Budgeting and forecasting"], missing:["Bank reconciliation","Fixed assets","Year-end close support"] },
-  procurement: { implemented:["Purchase requisitions","Purchase order creation","PO approvals","Supplier/vendor master data","Purchase contracts","RFQs","Purchase order sending","Goods receipt / GRV","PO-to-invoice matching","Procurement audit trail","Multi-currency purchasing","International order tracking"], partial:["Supplier price lists","Budget or cost-centre approval"], missing:["Purchase returns"] },
+  procurement: { implemented:["Purchase requisitions","Purchase order creation","PO approvals","Supplier/vendor master data","RFQs","Purchase order sending","Goods receipt / GRV","PO-to-invoice matching","Procurement audit trail","Multi-currency purchasing","International order tracking"], partial:["Purchase contracts","Supplier price lists","Budget or cost-centre approval"], missing:["Purchase returns"] },
   inventory: { implemented:["Item master data","SKU/item codes","Item categories","Item descriptions","Units of measure","On-hand quantity","Allocated/reserved quantity","Available quantity","Reorder points","Min/max levels","Stock valuation","Multi-location stock","Multi-bin stock","Serial number tracking","Lot/batch tracking","Vendor lead times","Stock counts","Stock adjustments","Inventory transfers"], partial:["Expiry tracking","Reorder forecasting"], missing:["Slow-moving stock reports"] },
   warehouse: { implemented:["Receiving","Put-away","Dispatch","Bin management","Warehouse transfers","Stock counts","Mobile barcode scanning","Multi-warehouse visibility"], partial:["Picking","Delivery advice","Warehouse enquiries","Inter-branch transfers","Mobile WMS app"], missing:["Packing","Pick tickets","POD capture"] },
   manufacturing: { implemented:[], partial:[], missing:["Bill of Materials","Work in Progress","MRP/material planning","Production planning","Production scheduling","Shop floor control","Work centres","Machine/labour costing","Kitting/assembly","Disassembly","Batch/process manufacturing","Quality control","Waste reduction","Production documents"] },
@@ -17,12 +17,23 @@ const definitions = {
 } as const;
 
 const slug=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
-const canonicalKey=(label:string)=>({"ap-aging-dashboard":"ap-aging","supplier-performance-dashboard":"supplier-performance"}[slug(label)]??slug(label));
+const canonicalKey=(label:string)=>({"ap-aging-dashboard":"ap-aging","supplier-performance-dashboard":"supplier-performance","mobile-wms-app":"mobile-wms"}[slug(label)]??slug(label));
 const rawCapabilities: readonly ErpCapability[] = Object.entries(definitions).flatMap(([category,groups]) =>
-  (["implemented","partial","missing"] as const).flatMap(status => groups[status].map(label => ({id:`${category}.${slug(label)}`,category,label,status,aliases:[],routes:[],apis:[],permissions:[],evidence:[],featureFlag:null})))
+  (["implemented","partial","missing"] as const).flatMap(status => groups[status].map(label => ({id:`${category}.${slug(label)}`,category,label,status,aliases:[],routes:[],apis:[],permissions:[],evidence:[],featureFlag:null,verifiedAt:null})))
 );
-const rank:Record<ErpCapabilityStatus,number>={missing:0,partial:1,degraded:1,disabled:1,implemented:2};
+const rank:Record<ErpCapabilityStatus,number>={missing:0,blocked:0,partial:1,degraded:1,disabled:1,implemented:2};
 const unique=new Map<string,ErpCapability>();
 for(const item of rawCapabilities){const key=canonicalKey(item.label);const prior=unique.get(key);if(!prior){unique.set(key,item);continue;}const status=rank[item.status]<rank[prior.status]?item.status:prior.status;unique.set(key,{...prior,status,aliases:[...prior.aliases,item.id]});}
-export const erpCapabilityCatalog: readonly ErpCapability[]=[...unique.values()];
+const evidence:Record<string,Partial<ErpCapability>>={
+  "procurement.purchase-contracts":{
+    routes:["/procurement/contracts"],
+    apis:["/api/v2/procurement/contracts","/api/v2/procurement/contracts/:id","/api/v2/procurement/contracts/:id/release-po"],
+    permissions:["purchases:read","purchases:manage","purchases:approve"],
+    evidence:["test:procurement-completion-contracts","e2e/blanket-agreements.spec.ts"],
+    featureFlag:"procurement.phase2Enabled",
+  },
+  "procurement.supplier-price-lists":{apis:["/api/v2/procurement/supplier-price-lists"],permissions:["purchases:read","purchases:manage","purchases:approve"],evidence:["test:procurement-completion-contracts"],featureFlag:"procurement.phase3Enabled"},
+  "procurement.purchase-returns":{routes:["/procurement/receiving"],apis:["/api/v2/procurement/returns"],permissions:["purchases:read","purchases:manage","purchases:approve"],evidence:["test:procurement-completion-contracts"],featureFlag:"procurement.phase4Enabled"},
+};
+export const erpCapabilityCatalog: readonly ErpCapability[]=[...unique.values()].map(item=>({...item,...evidence[item.id]}));
 export const erpCapabilitySummary = Object.freeze({ rawTotal:rawCapabilities.length, total:erpCapabilityCatalog.length, implemented:erpCapabilityCatalog.filter(x=>x.status==="implemented").length, partial:erpCapabilityCatalog.filter(x=>x.status==="partial").length, missing:erpCapabilityCatalog.filter(x=>x.status==="missing").length });

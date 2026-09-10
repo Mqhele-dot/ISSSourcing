@@ -22,7 +22,7 @@ const PurchasePage = lazy(() => import("@/pages/purchase-page"));
 const RequisitionFormPage = lazy(() => import("@/pages/requisition-form"));
 const SuppliersPage = lazy(() => import("@/pages/suppliers"));
 const SupplierDetailPage = lazy(() => import("@/pages/supplier-detail"));
-const ContractsPage = lazy(() => import("@/pages/contracts"));
+const ContractsPage = lazy(() => import("@/pages/blanket-agreements"));
 const Reports = lazy(() => import("@/pages/reports"));
 const InvoicesPage = lazy(() => import("@/pages/invoices"));
 const SettingsPage = lazy(() => import("@/pages/settings"));

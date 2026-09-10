@@ -1,0 +1,305 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e4]:
+    - link "Skip to main content" [ref=f1e5] [cursor=pointer]:
+      - /url: "#main-content"
+    - generic [ref=f1e6]:
+      - complementary [ref=f1e7]:
+        - generic [ref=f1e9]:
+          - generic [ref=f1e10]: ISSSourcing
+          - button "Collapse navigation sidebar" [ref=f1e18] [cursor=pointer]
+        - navigation [ref=f1e22]:
+          - generic [ref=f1e23]:
+            - generic [ref=f1e24]:
+              - paragraph [ref=f1e505]: Operations
+              - link "Overview (Preview)" [ref=f1e506] [cursor=pointer]:
+                - /url: /operations
+                - generic "Overview" [ref=f1e514]: Overview (Preview)
+              - link "Control tower (Preview)" [ref=f1e515] [cursor=pointer]:
+                - /url: /operations/control-tower
+                - generic "Control tower" [ref=f1e525]: Control tower (Preview)
+              - link "Fuel operations (Preview)" [ref=f1e526] [cursor=pointer]:
+                - /url: /operations/fuel
+                - generic "Fuel operations" [ref=f1e532]: Fuel operations (Preview)
+              - link "Logistics (Preview)" [ref=f1e533] [cursor=pointer]:
+                - /url: /operations/logistics
+                - generic "Logistics" [ref=f1e541]: Logistics (Preview)
+              - link "Exceptions (Preview)" [ref=f1e542] [cursor=pointer]:
+                - /url: /operations/exceptions
+                - generic "Exceptions" [ref=f1e547]: Exceptions (Preview)
+            - generic [ref=f1e68]:
+              - paragraph [ref=f1e548]: Inventory
+              - link "Inventory (Preview)" [ref=f1e549] [cursor=pointer]:
+                - /url: /inventory
+                - generic "Inventory" [ref=f1e555]: Inventory (Preview)
+              - link "Warehouse ops (Preview)" [ref=f1e556] [cursor=pointer]:
+                - /url: /inventory/warehouse-operations
+                - generic "Warehouse ops" [ref=f1e565]: Warehouse ops (Preview)
+              - link "Put-away (Preview)" [ref=f1e566] [cursor=pointer]:
+                - /url: /inventory/put-away
+                - generic "Put-away" [ref=f1e574]: Put-away (Preview)
+              - link "Cycle counts (Preview)" [ref=f1e575] [cursor=pointer]:
+                - /url: /inventory/cycle-counts
+                - generic "Cycle counts" [ref=f1e583]: Cycle counts (Preview)
+              - link "Reorder requests (Preview)" [ref=f1e584] [cursor=pointer]:
+                - /url: /inventory/reorder
+                - generic "Reorder requests" [ref=f1e590]: Reorder requests (Preview)
+              - link "Barcode scanner (Preview)" [ref=f1e591] [cursor=pointer]:
+                - /url: /inventory/barcodes
+                - generic "Barcode scanner" [ref=f1e600]: Barcode scanner (Preview)
+            - generic [ref=f1e122]:
+              - paragraph [ref=f1e601]: Procurement
+              - link "Procurement overview" [ref=f1e602] [cursor=pointer]:
+                - /url: /procurement/overview
+                - generic "Procurement overview" [ref=f1e610]
+              - link "Sourcing & RFQs" [ref=f1e611] [cursor=pointer]:
+                - /url: /procurement/sourcing
+                - generic "Sourcing & RFQs" [ref=f1e618]
+              - link "Commercial quotations" [ref=f1e619] [cursor=pointer]:
+                - /url: /procurement/commercial-quotations
+                - generic "Commercial quotations" [ref=f1e625]
+              - link "Supplier quotations" [ref=f1e626] [cursor=pointer]:
+                - /url: /procurement/quotations
+                - generic "Supplier quotations" [ref=f1e632]
+              - link "Purchase orders" [ref=f1e633] [cursor=pointer]:
+                - /url: /procurement/orders
+                - generic "Purchase orders" [ref=f1e640]
+              - link "Requisitions" [ref=f1e641] [cursor=pointer]:
+                - /url: /procurement/requisitions
+                - generic "Requisitions" [ref=f1e647]
+              - link "Suppliers" [ref=f1e648] [cursor=pointer]:
+                - /url: /procurement/suppliers
+                - generic "Suppliers" [ref=f1e656]
+              - link "Contracts" [ref=f1e657] [cursor=pointer]:
+                - /url: /procurement/contracts
+                - generic "Contracts" [ref=f1e663]
+              - link "Receiving & returns" [ref=f1e664] [cursor=pointer]:
+                - /url: /procurement/receiving
+                - generic "Receiving & returns" [ref=f1e673]
+              - link "Supplier portal" [ref=f1e674] [cursor=pointer]:
+                - /url: /procurement/supplier-portal
+                - generic "Supplier portal" [ref=f1e682]
+            - generic [ref=f1e205]:
+              - paragraph [ref=f1e683]: Finance
+              - link "General ledger (Preview)" [ref=f1e684] [cursor=pointer]:
+                - /url: /finance/general-ledger
+                - generic "General ledger" [ref=f1e689]: General ledger (Preview)
+              - link "Accounts receivable (Preview)" [ref=f1e690] [cursor=pointer]:
+                - /url: /finance/accounts-receivable
+                - generic "Accounts receivable" [ref=f1e696]: Accounts receivable (Preview)
+              - link "Accounts payable (Preview)" [ref=f1e697] [cursor=pointer]:
+                - /url: /finance/accounts-payable
+                - generic "Accounts payable" [ref=f1e702]: Accounts payable (Preview)
+              - link "Invoices (Preview)" [ref=f1e703] [cursor=pointer]:
+                - /url: /finance/invoices
+                - generic "Invoices" [ref=f1e709]: Invoices (Preview)
+            - generic [ref=f1e233]:
+              - paragraph [ref=f1e710]: Analytics
+              - link "Overview" [ref=f1e711] [cursor=pointer]:
+                - /url: /analytics/overview
+                - generic "Overview" [ref=f1e715]
+              - link "Reports" [ref=f1e716] [cursor=pointer]:
+                - /url: /analytics/reports
+                - generic "Reports" [ref=f1e722]
+              - link "Saved reports" [ref=f1e723] [cursor=pointer]:
+                - /url: /analytics/saved-reports
+                - generic "Saved reports" [ref=f1e728]
+              - link "Export center" [ref=f1e729] [cursor=pointer]:
+                - /url: /analytics/export-center
+                - generic "Export center" [ref=f1e734]
+            - generic [ref=f1e259]:
+              - paragraph [ref=f1e735]: Admin
+              - link "Company setup" [ref=f1e736] [cursor=pointer]:
+                - /url: /admin/company-setup
+                - generic "Company setup" [ref=f1e743]
+              - link "Settings" [ref=f1e744] [cursor=pointer]:
+                - /url: /admin/settings
+                - generic "Settings" [ref=f1e750]
+              - link "Workflow governance" [ref=f1e751] [cursor=pointer]:
+                - /url: /admin/workflows
+                - generic "Workflow governance" [ref=f1e757]
+              - link "Document extractor" [ref=f1e758] [cursor=pointer]:
+                - /url: /admin/document-extractor
+                - generic "Document extractor" [ref=f1e768]
+              - link "Integrations" [ref=f1e769] [cursor=pointer]:
+                - /url: /admin/integrations
+                - generic "Integrations" [ref=f1e774]
+              - link "Audit logs" [ref=f1e775] [cursor=pointer]:
+                - /url: /admin/audit-logs
+                - generic "Audit logs" [ref=f1e780]
+              - link "Subscription" [ref=f1e781] [cursor=pointer]:
+                - /url: /admin/subscription
+                - generic "Subscription" [ref=f1e786]
+              - generic [ref=f1e312]:
+                - paragraph [ref=f1e787]: Files & recognition
+                - link "Documents" [ref=f1e788] [cursor=pointer]:
+                  - /url: /admin/documents
+                  - generic "Documents" [ref=f1e793]
+                - link "Image recognition" [ref=f1e794] [cursor=pointer]:
+                  - /url: /admin/image-recognition
+                  - generic "Image recognition" [ref=f1e800]
+              - paragraph [ref=f1e801]: People & access
+              - generic [ref=f1e329]:
+                - paragraph [ref=f1e802]: System & profile
+                - link "System diagnostics" [ref=f1e803] [cursor=pointer]:
+                  - /url: /admin/system-diagnostics
+                  - generic "System diagnostics" [ref=f1e813]
+                - link "Profile" [ref=f1e814] [cursor=pointer]:
+                  - /url: /admin/profile
+                  - generic "Profile" [ref=f1e820]
+            - generic [ref=f1e349]:
+              - paragraph [ref=f1e821]: Learning
+              - link "Get Educated" [ref=f1e822] [cursor=pointer]:
+                - /url: /get-educated
+                - generic "Get Educated" [ref=f1e828]
+        - button "Dark Mode" [ref=f1e359] [cursor=pointer]
+      - generic [ref=f1e363]:
+        - banner [ref=f1e364]:
+          - generic [ref=f1e365]:
+            - paragraph [ref=f1e366]: Procurement / Contracts
+            - search [ref=f1e367]:
+              - combobox "Global search" [ref=f1e368]
+          - generic [ref=f1e369]:
+            - button "Jump to..." [ref=f1e370] [cursor=pointer]
+            - generic "System status" [ref=f1e374]: LIVE
+            - generic [ref=f1e375]: DEV
+            - generic [ref=f1e376]: ADMIN
+            - button "Toggle theme" [ref=f1e377] [cursor=pointer]
+            - button "Cycle accent palette" [ref=f1e380] [cursor=pointer]
+            - button "Notifications" [ref=f1e388] [cursor=pointer]
+            - button "SA Open user menu" [ref=f1e393] [cursor=pointer]:
+              - generic [ref=f1e394]: SA
+              - generic [ref=f1e396]: Open user menu
+        - main [ref=f1e397]:
+          - generic [ref=f1e829]:
+            - generic [ref=f1e833]:
+              - text: New here?
+              - strong [ref=f1e834]: Purchase
+              - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+            - generic [ref=f1e835]:
+              - button "Open lesson" [ref=f1e836] [cursor=pointer]
+              - button "Spotlight tour" [ref=f1e839] [cursor=pointer]
+              - button "Dismiss" [ref=f1e840] [cursor=pointer]
+          - generic [ref=f1e844]:
+            - generic [ref=f1e846]:
+              - generic [ref=f1e848]:
+                - heading "Blanket purchase agreements" [level=1] [ref=f1e849]
+                - paragraph [ref=f1e850]: Control framework pricing, approved-request releases, commitments, renewals, and immutable agreement history.
+              - generic [ref=f1e851]:
+                - button "New agreement" [disabled]
+            - generic [ref=f1e855]:
+              - strong [ref=f1e856]: Blanket purchasing is not enabled for this organization.
+              - paragraph [ref=f1e857]: Complete supplier, currency, tax, approval, and warehouse setup before enabling Procurement Phase 2.
+              - link "Review procurement settings" [ref=f1e858] [cursor=pointer]:
+                - /url: /procurement/settings
+            - generic [ref=f1e859]:
+              - tablist [ref=f1e860]:
+                - tab "Agreements" [selected] [ref=f1e861] [cursor=pointer]
+                - tab "Lines" [ref=f1e862] [cursor=pointer]
+                - tab "Releases" [ref=f1e863] [cursor=pointer]
+                - tab "Renewals" [ref=f1e864] [cursor=pointer]
+                - tab "Activity" [ref=f1e865] [cursor=pointer]
+              - tabpanel "Agreements" [ref=f1e866]:
+                - generic [ref=f1e867]:
+                  - generic [ref=f1e868]:
+                    - heading "Agreement register" [level=3] [ref=f1e869]
+                    - paragraph [ref=f1e870]: Only approved, active, current agreements can create release orders.
+                  - generic [ref=f1e871]:
+                    - generic [ref=f1e872]:
+                      - textbox "Search number, agreement, or supplier" [ref=f1e873]
+                      - combobox [ref=f1e874] [cursor=pointer]:
+                        - generic: All statuses
+                      - button "Refresh" [ref=f1e877] [cursor=pointer]
+                    - table [ref=f1e884]:
+                      - rowgroup [ref=f1e885]:
+                        - row [ref=f1e886]:
+                          - columnheader "Agreement" [ref=f1e887]
+                          - columnheader "Supplier" [ref=f1e888]
+                          - columnheader "Status" [ref=f1e889]
+                          - columnheader "Commitment" [ref=f1e890]
+                          - columnheader "Lines / releases" [ref=f1e891]
+                          - columnheader "Actions" [ref=f1e892]
+                      - rowgroup [ref=f1e893]:
+                        - row [ref=f1e894]:
+                          - cell "FQA USD Currency Lock · v1" [ref=f1e895]
+                          - cell "FQA Seed Supplier" [ref=f1e897]
+                          - cell "active DRAFT" [ref=f1e898]:
+                            - generic [ref=f1e899]:
+                              - generic [ref=f1e900]: active
+                              - generic [ref=f1e901]: DRAFT
+                          - cell "US$0.00 / No cap Remaining No cap" [ref=f1e902]:
+                            - text: US$0.00 / No cap
+                            - generic [ref=f1e903]: Remaining No cap
+                          - cell "0 / 0" [ref=f1e904]
+                          - cell [ref=f1e905]:
+                            - button "Review" [ref=f1e906] [cursor=pointer]
+                        - row [ref=f1e907]:
+                          - cell "MDI contract 647904 · v1" [ref=f1e908]
+                          - cell "Furniture Warehouse" [ref=f1e910]
+                          - cell "active DRAFT" [ref=f1e911]:
+                            - generic [ref=f1e912]:
+                              - generic [ref=f1e913]: active
+                              - generic [ref=f1e914]: DRAFT
+                          - cell "US$0.00 / No cap Remaining No cap" [ref=f1e915]:
+                            - text: US$0.00 / No cap
+                            - generic [ref=f1e916]: Remaining No cap
+                          - cell "0 / 0" [ref=f1e917]
+                          - cell [ref=f1e918]:
+                            - button "Review" [ref=f1e919] [cursor=pointer]
+                        - row [ref=f1e920]:
+                          - cell "MDI contract 333010 · v1" [ref=f1e921]
+                          - cell "Office Supply Co." [ref=f1e923]
+                          - cell "active DRAFT" [ref=f1e924]:
+                            - generic [ref=f1e925]:
+                              - generic [ref=f1e926]: active
+                              - generic [ref=f1e927]: DRAFT
+                          - cell "US$0.00 / No cap Remaining No cap" [ref=f1e928]:
+                            - text: US$0.00 / No cap
+                            - generic [ref=f1e929]: Remaining No cap
+                          - cell "0 / 0" [ref=f1e930]
+                          - cell [ref=f1e931]:
+                            - button "Review" [ref=f1e932] [cursor=pointer]
+                        - row [ref=f1e933]:
+                          - cell "MDI contract 104081 · v1" [ref=f1e934]
+                          - cell "Tech Solutions Inc." [ref=f1e936]
+                          - cell "active DRAFT" [ref=f1e937]:
+                            - generic [ref=f1e938]:
+                              - generic [ref=f1e939]: active
+                              - generic [ref=f1e940]: DRAFT
+                          - cell "US$0.00 / No cap Remaining No cap" [ref=f1e941]:
+                            - text: US$0.00 / No cap
+                            - generic [ref=f1e942]: Remaining No cap
+                          - cell "0 / 0" [ref=f1e943]
+                          - cell [ref=f1e944]:
+                            - button "Review" [ref=f1e945] [cursor=pointer]
+                        - row [ref=f1e946]:
+                          - cell "Annual IT Equipment Supply Agreement · v1" [ref=f1e947]
+                          - cell "Tech Solutions Inc." [ref=f1e949]
+                          - cell "active DRAFT" [ref=f1e950]:
+                            - generic [ref=f1e951]:
+                              - generic [ref=f1e952]: active
+                              - generic [ref=f1e953]: DRAFT
+                          - cell "US$0.00 / No cap Remaining No cap" [ref=f1e954]:
+                            - text: US$0.00 / No cap
+                            - generic [ref=f1e955]: Remaining No cap
+                          - cell "0 / 0" [ref=f1e956]
+                          - cell [ref=f1e957]:
+                            - button "Review" [ref=f1e958] [cursor=pointer]
+                    - generic [ref=f1e959]:
+                      - generic [ref=f1e960]: 1–5 of 5
+                      - generic [ref=f1e961]:
+                        - combobox [ref=f1e962] [cursor=pointer]:
+                          - generic: 25 rows
+                        - button "Previous" [disabled]
+                        - button "Next" [disabled]
+            - generic [ref=f1e965]:
+              - generic [ref=f1e966]:
+                - heading "Next agreement action" [level=3] [ref=f1e967]
+                - paragraph [ref=f1e968]: Lifecycle actions remain server-authorized and independently approved.
+              - generic [ref=f1e969]:
+                - link "Preview agreement PDF" [active] [ref=f1e970] [cursor=pointer]:
+                  - /url: /api/v2/procurement/contracts/181/document.pdf
+                - button "Edit draft" [ref=f1e974] [cursor=pointer]
+                - button "Submit for approval" [disabled]
+        - button "Help & Tutorials" [ref=f1e403] [cursor=pointer]
+  - region "Notifications (F8)":
+    - list

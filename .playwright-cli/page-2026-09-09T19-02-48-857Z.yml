@@ -1,0 +1,388 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e55]:
+      - link "Skip to main content" [ref=e56] [cursor=pointer]:
+        - /url: "#main-content"
+      - generic [ref=e57]:
+        - complementary [ref=e58]:
+          - generic [ref=e60]:
+            - generic [ref=e61]: ISSSourcing
+            - button "Collapse navigation sidebar" [ref=e69] [cursor=pointer]
+          - navigation [ref=e73]:
+            - generic [ref=e74]:
+              - generic [ref=e75]:
+                - paragraph [ref=e76]: Operations
+                - link "Overview (Preview)" [ref=e77] [cursor=pointer]:
+                  - /url: /operations
+                  - generic "Overview" [ref=e85]: Overview (Preview)
+                - link "Control tower (Preview)" [ref=e86] [cursor=pointer]:
+                  - /url: /operations/control-tower
+                  - generic "Control tower" [ref=e96]: Control tower (Preview)
+                - link "Fuel operations (Preview)" [ref=e97] [cursor=pointer]:
+                  - /url: /operations/fuel
+                  - generic "Fuel operations" [ref=e103]: Fuel operations (Preview)
+                - link "Logistics (Preview)" [ref=e104] [cursor=pointer]:
+                  - /url: /operations/logistics
+                  - generic "Logistics" [ref=e112]: Logistics (Preview)
+                - link "Exceptions (Preview)" [ref=e113] [cursor=pointer]:
+                  - /url: /operations/exceptions
+                  - generic "Exceptions" [ref=e118]: Exceptions (Preview)
+              - generic [ref=e119]:
+                - paragraph [ref=e120]: Inventory
+                - link "Inventory (Preview)" [ref=e121] [cursor=pointer]:
+                  - /url: /inventory
+                  - generic "Inventory" [ref=e127]: Inventory (Preview)
+                - link "Warehouse ops (Preview)" [ref=e128] [cursor=pointer]:
+                  - /url: /inventory/warehouse-operations
+                  - generic "Warehouse ops" [ref=e137]: Warehouse ops (Preview)
+                - link "Put-away (Preview)" [ref=e138] [cursor=pointer]:
+                  - /url: /inventory/put-away
+                  - generic "Put-away" [ref=e146]: Put-away (Preview)
+                - link "Cycle counts (Preview)" [ref=e147] [cursor=pointer]:
+                  - /url: /inventory/cycle-counts
+                  - generic "Cycle counts" [ref=e155]: Cycle counts (Preview)
+                - link "Reorder requests (Preview)" [ref=e156] [cursor=pointer]:
+                  - /url: /inventory/reorder
+                  - generic "Reorder requests" [ref=e162]: Reorder requests (Preview)
+                - link "Barcode scanner (Preview)" [ref=e163] [cursor=pointer]:
+                  - /url: /inventory/barcodes
+                  - generic "Barcode scanner" [ref=e172]: Barcode scanner (Preview)
+              - generic [ref=e173]:
+                - paragraph [ref=e174]: Procurement
+                - link "Procurement overview" [ref=e175] [cursor=pointer]:
+                  - /url: /procurement/overview
+                  - generic "Procurement overview" [ref=e183]
+                - link "Sourcing & RFQs" [ref=e184] [cursor=pointer]:
+                  - /url: /procurement/sourcing
+                  - generic "Sourcing & RFQs" [ref=e191]
+                - link "Commercial quotations" [ref=e192] [cursor=pointer]:
+                  - /url: /procurement/commercial-quotations
+                  - generic "Commercial quotations" [ref=e198]
+                - link "Supplier quotations" [ref=e199] [cursor=pointer]:
+                  - /url: /procurement/quotations
+                  - generic "Supplier quotations" [ref=e205]
+                - link "Purchase orders" [ref=e206] [cursor=pointer]:
+                  - /url: /procurement/orders
+                  - generic "Purchase orders" [ref=e213]
+                - link "Requisitions" [ref=e214] [cursor=pointer]:
+                  - /url: /procurement/requisitions
+                  - generic "Requisitions" [ref=e220]
+                - link "Suppliers" [ref=e221] [cursor=pointer]:
+                  - /url: /procurement/suppliers
+                  - generic "Suppliers" [ref=e229]
+                - link "Contracts" [ref=e230] [cursor=pointer]:
+                  - /url: /procurement/contracts
+                  - generic "Contracts" [ref=e236]
+                - link "Receiving & returns" [ref=e237] [cursor=pointer]:
+                  - /url: /procurement/receiving
+                  - generic "Receiving & returns" [ref=e246]
+                - link "Supplier portal" [ref=e247] [cursor=pointer]:
+                  - /url: /procurement/supplier-portal
+                  - generic "Supplier portal" [ref=e255]
+              - generic [ref=e256]:
+                - paragraph [ref=e257]: Finance
+                - link "General ledger (Preview)" [ref=e258] [cursor=pointer]:
+                  - /url: /finance/general-ledger
+                  - generic "General ledger" [ref=e263]: General ledger (Preview)
+                - link "Accounts receivable (Preview)" [ref=e264] [cursor=pointer]:
+                  - /url: /finance/accounts-receivable
+                  - generic "Accounts receivable" [ref=e270]: Accounts receivable (Preview)
+                - link "Accounts payable (Preview)" [ref=e271] [cursor=pointer]:
+                  - /url: /finance/accounts-payable
+                  - generic "Accounts payable" [ref=e276]: Accounts payable (Preview)
+                - link "Invoices (Preview)" [ref=e277] [cursor=pointer]:
+                  - /url: /finance/invoices
+                  - generic "Invoices" [ref=e283]: Invoices (Preview)
+              - generic [ref=e284]:
+                - paragraph [ref=e285]: Analytics
+                - link "Overview" [ref=e286] [cursor=pointer]:
+                  - /url: /analytics/overview
+                  - generic "Overview" [ref=e290]
+                - link "Reports" [ref=e291] [cursor=pointer]:
+                  - /url: /analytics/reports
+                  - generic "Reports" [ref=e297]
+                - link "Saved reports" [ref=e298] [cursor=pointer]:
+                  - /url: /analytics/saved-reports
+                  - generic "Saved reports" [ref=e303]
+                - link "Export center" [ref=e304] [cursor=pointer]:
+                  - /url: /analytics/export-center
+                  - generic "Export center" [ref=e309]
+              - generic [ref=e310]:
+                - paragraph [ref=e311]: Admin
+                - link "Company setup" [ref=e312] [cursor=pointer]:
+                  - /url: /admin/company-setup
+                  - generic "Company setup" [ref=e319]
+                - link "Settings" [ref=e320] [cursor=pointer]:
+                  - /url: /admin/settings
+                  - generic "Settings" [ref=e326]
+                - link "Workflow governance" [ref=e327] [cursor=pointer]:
+                  - /url: /admin/workflows
+                  - generic "Workflow governance" [ref=e333]
+                - link "Document extractor" [ref=e334] [cursor=pointer]:
+                  - /url: /admin/document-extractor
+                  - generic "Document extractor" [ref=e344]
+                - link "Integrations" [ref=e345] [cursor=pointer]:
+                  - /url: /admin/integrations
+                  - generic "Integrations" [ref=e350]
+                - link "Audit logs" [ref=e351] [cursor=pointer]:
+                  - /url: /admin/audit-logs
+                  - generic "Audit logs" [ref=e356]
+                - link "Subscription" [ref=e357] [cursor=pointer]:
+                  - /url: /admin/subscription
+                  - generic "Subscription" [ref=e362]
+                - generic [ref=e363]:
+                  - paragraph [ref=e364]: Files & recognition
+                  - link "Documents" [ref=e365] [cursor=pointer]:
+                    - /url: /admin/documents
+                    - generic "Documents" [ref=e370]
+                  - link "Image recognition" [ref=e371] [cursor=pointer]:
+                    - /url: /admin/image-recognition
+                    - generic "Image recognition" [ref=e377]
+                - paragraph [ref=e379]: People & access
+                - generic [ref=e380]:
+                  - paragraph [ref=e381]: System & profile
+                  - link "System diagnostics" [ref=e382] [cursor=pointer]:
+                    - /url: /admin/system-diagnostics
+                    - generic "System diagnostics" [ref=e392]
+                  - link "Profile" [ref=e393] [cursor=pointer]:
+                    - /url: /admin/profile
+                    - generic "Profile" [ref=e399]
+              - generic [ref=e400]:
+                - paragraph [ref=e401]: Learning
+                - link "Get Educated" [ref=e402] [cursor=pointer]:
+                  - /url: /get-educated
+                  - generic "Get Educated" [ref=e408]
+          - button "Dark Mode" [ref=e410] [cursor=pointer]
+        - generic [ref=e414]:
+          - banner [ref=e415]:
+            - generic [ref=e416]:
+              - paragraph [ref=e417]: Overview
+              - search [ref=e418]:
+                - combobox "Global search" [ref=e419]
+            - generic [ref=e420]:
+              - button "Jump to..." [ref=e421] [cursor=pointer]
+              - generic "System status" [ref=e425]: LIVE
+              - generic [ref=e426]: DEV
+              - generic [ref=e427]: ADMIN
+              - button "Toggle theme" [ref=e428] [cursor=pointer]
+              - button "Cycle accent palette" [ref=e431] [cursor=pointer]
+              - button "Notifications" [ref=e439] [cursor=pointer]
+              - button "SA Open user menu" [ref=e444] [cursor=pointer]:
+                - generic [ref=e445]: SA
+                - generic [ref=e447]: Open user menu
+          - main [ref=e448]:
+            - generic [ref=e449]:
+              - generic [ref=e453]:
+                - text: New here?
+                - strong [ref=e454]: Overview
+                - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+              - generic [ref=e455]:
+                - button "Open lesson" [ref=e456] [cursor=pointer]
+                - button "Spotlight tour" [ref=e459] [cursor=pointer]
+                - button "Dismiss" [ref=e460] [cursor=pointer]
+            - generic [ref=e464]:
+              - generic [ref=e465]:
+                - generic [ref=e466]: Overview / Control Tower
+                - generic [ref=e467]:
+                  - generic [ref=e469]:
+                    - heading "Control Tower" [level=1] [ref=e470]
+                    - paragraph [ref=e471]: Operational command center
+                  - generic [ref=e473]:
+                    - button "Open learning panel" [ref=e474] [cursor=pointer]
+                    - 'button "Auto-refresh: Off" [ref=e478] [cursor=pointer]'
+                    - button "Refresh" [ref=e479] [cursor=pointer]
+                    - generic [ref=e480]: "Last refreshed: 21:02:48"
+                    - generic [ref=e481]: "System: DB ✓ Schema ✓"
+              - generic [ref=e485]:
+                - generic [ref=e490]:
+                  - paragraph [ref=e491]: "Learning: Control Tower"
+                  - paragraph [ref=e492]: "The Control Tower is your operational dashboard: it pulls together KPIs and signals from procurement, inventory, logistics, and exceptions so you can see what needs attention befor…"
+                - generic [ref=e493]:
+                  - button "Learn this tab" [ref=e494] [cursor=pointer]
+                  - button "Dismiss training panel for this visit" [ref=e497] [cursor=pointer]
+              - generic [ref=e501]:
+                - heading "First procurement cycle" [level=3] [ref=e503]
+                - generic [ref=e504]:
+                  - paragraph [ref=e505]: Run the core business path from sourcing to payment — each link opens the right workspace in order.
+                  - list [ref=e506]:
+                    - listitem [ref=e507]:
+                      - link "Suppliers" [ref=e508] [cursor=pointer]:
+                        - /url: /procurement/suppliers
+                      - text: — add or verify vendors
+                    - listitem [ref=e509]:
+                      - link "New requisition" [ref=e510] [cursor=pointer]:
+                        - /url: /procurement/requisitions/new
+                      - text: — request what you need
+                    - listitem [ref=e511]:
+                      - link "Approve requisition" [ref=e512] [cursor=pointer]:
+                        - /url: /procurement/requisitions?status=PENDING
+                      - text: — manager or admin approval before PO
+                    - listitem [ref=e513]:
+                      - link "Purchase orders" [ref=e514] [cursor=pointer]:
+                        - /url: /procurement/orders
+                      - text: — approve and issue the PO
+                    - listitem [ref=e515]:
+                      - link "Warehouse operations" [ref=e516] [cursor=pointer]:
+                        - /url: /inventory/warehouse-operations
+                      - text: — receive into stock
+                    - listitem [ref=e517]:
+                      - link "Accounts payable" [ref=e518] [cursor=pointer]:
+                        - /url: /finance/accounts-payable
+                      - text: — vendor bills and matching
+                    - listitem [ref=e519]:
+                      - link "AP payments" [ref=e520] [cursor=pointer]:
+                        - /url: /finance/accounts-payable/payments
+                      - text: — schedule and record payment
+                    - listitem [ref=e521]:
+                      - link "Export center" [ref=e522] [cursor=pointer]:
+                        - /url: /analytics/export-center
+                      - text: — download CSV/Excel for finance
+              - generic [ref=e523]:
+                - link [ref=e524] [cursor=pointer]:
+                  - /url: /operations/exceptions?status=open&severity=high
+                  - generic [ref=e527]:
+                    - paragraph [ref=e528]: Open exceptions
+                    - paragraph [ref=e529]: "96"
+                - link [ref=e533] [cursor=pointer]:
+                  - /url: /operations/logistics?status=in_transit&risk=late
+                  - generic [ref=e536]:
+                    - paragraph [ref=e537]: Late shipments
+                    - paragraph [ref=e538]: "5"
+                - link [ref=e543] [cursor=pointer]:
+                  - /url: /procurement/orders?status=approved
+                  - generic [ref=e546]:
+                    - paragraph [ref=e547]: POs awaiting action
+                    - paragraph [ref=e548]: "3"
+                - link [ref=e555] [cursor=pointer]:
+                  - /url: /inventory?low=1
+                  - generic [ref=e558]:
+                    - paragraph [ref=e559]: Low stock SKUs
+                    - paragraph [ref=e560]: "3"
+              - generic [ref=e572]:
+                - generic [ref=e573]:
+                  - heading "Recent activity" [level=3] [ref=e575]
+                  - generic [ref=e576]:
+                    - generic [ref=e577]:
+                      - generic [ref=e578]:
+                        - paragraph [ref=e579]: exception run_checks
+                        - generic [ref=e580]: run_checks
+                      - paragraph [ref=e581]: 23/08/2026, 20:19:26
+                    - generic [ref=e582]:
+                      - generic [ref=e583]:
+                        - paragraph [ref=e584]: "Low stock: QT-QA-0823"
+                        - generic [ref=e585]: exception_created
+                      - paragraph [ref=e586]: Quotation QA Inventory Item is at 0 units
+                      - paragraph [ref=e587]: 23/08/2026, 20:16:54
+                    - generic [ref=e588]:
+                      - generic [ref=e589]:
+                        - paragraph [ref=e590]: commercial_quotation edit
+                        - generic [ref=e591]: edit
+                      - paragraph [ref=e592]: 23/08/2026, 15:13:13
+                    - generic [ref=e593]:
+                      - generic [ref=e594]:
+                        - paragraph [ref=e595]: commercial_quotation create
+                        - generic [ref=e596]: create
+                      - paragraph [ref=e597]: 23/08/2026, 15:12:59
+                    - generic [ref=e598]:
+                      - generic [ref=e599]:
+                        - paragraph [ref=e600]: commercial_quotation reject
+                        - generic [ref=e601]: reject
+                      - paragraph [ref=e602]: 23/08/2026, 15:10:36
+                    - generic [ref=e603]:
+                      - generic [ref=e604]:
+                        - paragraph [ref=e605]: commercial_quotation issue
+                        - generic [ref=e606]: issue
+                      - paragraph [ref=e607]: 23/08/2026, 15:10:25
+                    - generic [ref=e608]:
+                      - generic [ref=e609]:
+                        - paragraph [ref=e610]: commercial_quotation auto_approve
+                        - generic [ref=e611]: auto_approve
+                      - paragraph [ref=e612]: 23/08/2026, 15:10:19
+                    - generic [ref=e613]:
+                      - generic [ref=e614]:
+                        - paragraph [ref=e615]: commercial_quotation edit
+                        - generic [ref=e616]: edit
+                      - paragraph [ref=e617]: 23/08/2026, 15:09:34
+                    - generic [ref=e618]:
+                      - generic [ref=e619]:
+                        - paragraph [ref=e620]: commercial_quotation create
+                        - generic [ref=e621]: create
+                      - paragraph [ref=e622]: 23/08/2026, 15:09:11
+                    - generic [ref=e623]:
+                      - generic [ref=e624]:
+                        - paragraph [ref=e625]: commercial_quotation auto_approve
+                        - generic [ref=e626]: auto_approve
+                      - paragraph [ref=e627]: 23/08/2026, 13:17:18
+                    - generic [ref=e628]:
+                      - generic [ref=e629]:
+                        - paragraph [ref=e630]: commercial_quotation create
+                        - generic [ref=e631]: create
+                      - paragraph [ref=e632]: 23/08/2026, 13:17:07
+                    - generic [ref=e633]:
+                      - generic [ref=e634]:
+                        - paragraph [ref=e635]: inventory adjust
+                        - generic [ref=e636]: adjust
+                      - paragraph [ref=e637]: 16/08/2026, 01:13:24
+                    - generic [ref=e638]:
+                      - generic [ref=e639]:
+                        - paragraph [ref=e640]: ERP run completed
+                        - generic [ref=e641]: integration_run
+                      - paragraph [ref=e642]: Connector ERP run completed successfully
+                      - paragraph [ref=e643]: 06/08/2026, 13:21:56
+                    - generic [ref=e644]:
+                      - generic [ref=e645]:
+                        - paragraph [ref=e646]: purchase_order receive
+                        - generic [ref=e647]: receive
+                      - paragraph [ref=e648]: 15/07/2026, 04:29:23
+                    - generic [ref=e649]:
+                      - generic [ref=e650]:
+                        - paragraph [ref=e651]: inventory adjust
+                        - generic [ref=e652]: adjust
+                      - paragraph [ref=e653]: 15/07/2026, 04:29:23
+                    - generic [ref=e654]:
+                      - generic [ref=e655]:
+                        - paragraph [ref=e656]: purchase_order receive
+                        - generic [ref=e657]: receive
+                      - paragraph [ref=e658]: 15/07/2026, 04:29:22
+                    - generic [ref=e659]:
+                      - generic [ref=e660]:
+                        - paragraph [ref=e661]: inventory adjust
+                        - generic [ref=e662]: adjust
+                      - paragraph [ref=e663]: 15/07/2026, 04:29:22
+                    - generic [ref=e664]:
+                      - generic [ref=e665]:
+                        - paragraph [ref=e666]: purchase_order receive
+                        - generic [ref=e667]: receive
+                      - paragraph [ref=e668]: 15/07/2026, 04:29:17
+                    - generic [ref=e669]:
+                      - generic [ref=e670]:
+                        - paragraph [ref=e671]: inventory adjust
+                        - generic [ref=e672]: adjust
+                      - paragraph [ref=e673]: 15/07/2026, 04:29:17
+                    - generic [ref=e674]:
+                      - generic [ref=e675]:
+                        - paragraph [ref=e676]: purchase_order receive
+                        - generic [ref=e677]: receive
+                      - paragraph [ref=e678]: 15/07/2026, 04:26:42
+                - generic [ref=e679]:
+                  - heading "Exception severity mix" [level=3] [ref=e681]
+                  - generic [ref=e682]:
+                    - link "medium 7" [ref=e683] [cursor=pointer]:
+                      - /url: /operations/exceptions?severity=medium&status=open
+                      - generic [ref=e684]:
+                        - generic [ref=e685]: medium
+                        - generic [ref=e686]: "7"
+                    - link "high 89" [ref=e687] [cursor=pointer]:
+                      - /url: /operations/exceptions?severity=high&status=open
+                      - generic [ref=e688]:
+                        - generic [ref=e689]: high
+                        - generic [ref=e690]: "89"
+          - button "Help & Tutorials" [ref=e692] [cursor=pointer]
+    - region "Notifications (F8)":
+      - list [ref=e698]:
+        - status [ref=e699]:
+          - generic [ref=e700]:
+            - generic [ref=e701]: Login successful
+            - generic [ref=e702]: Welcome back, admin!
+          - button [ref=e703] [cursor=pointer]
+  - status [ref=e708]

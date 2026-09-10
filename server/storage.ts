@@ -4607,6 +4607,15 @@ export class MemStorage implements IStorage {
       incotermId: insert.incotermId ?? null,
       defaultTaxCodeId: insert.defaultTaxCodeId ?? null,
       defaultWarehouseId: insert.defaultWarehouseId ?? null,
+      defaultDeliveryAddress: insert.defaultDeliveryAddress ?? null,
+      renewalNoticeDays: insert.renewalNoticeDays ?? 30,
+      submittedBy: insert.submittedBy ?? null,
+      submittedAt: insert.submittedAt ?? null,
+      approvedBy: insert.approvedBy ?? null,
+      approvedAt: insert.approvedAt ?? null,
+      suspendedAt: insert.suspendedAt ?? null,
+      closedAt: insert.closedAt ?? null,
+      lifecycleReason: insert.lifecycleReason ?? null,
     };
     this.supplierContracts.set(id, contract);
     return contract;

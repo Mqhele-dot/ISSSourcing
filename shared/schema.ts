@@ -970,7 +970,7 @@ export const supplierContracts = pgTable("supplier_contracts", {
     .references(() => organizations.id),
   supplierId: integer("supplier_id").notNull(),
   title: text("title").notNull(),
-  contractType: text("contract_type").notNull().default("master"), // master, framework, one-off, renewal
+  contractType: text("contract_type").notNull().default("master"), // master, blanket, framework, one-off, renewal
   referenceNumber: text("reference_number"),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
@@ -983,6 +983,15 @@ export const supplierContracts = pgTable("supplier_contracts", {
   incotermId: integer("incoterm_id").references(() => incoterms.id),
   defaultTaxCodeId: integer("default_tax_code_id").references(() => taxCodes.id),
   defaultWarehouseId: integer("default_warehouse_id").references(() => warehouses.id),
+  defaultDeliveryAddress: text("default_delivery_address"),
+  renewalNoticeDays: integer("renewal_notice_days").notNull().default(30),
+  submittedBy: integer("submitted_by").references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  suspendedAt: timestamp("suspended_at"),
+  closedAt: timestamp("closed_at"),
+  lifecycleReason: text("lifecycle_reason"),
   attachments: jsonb("attachments").$type<{ name: string; url: string }[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1000,8 +1009,8 @@ export const supplierContractFormSchema = insertSupplierContractSchema.extend({
   startDate: z.coerce.date(),
   endDate: z.coerce.date().nullable().optional(),
   value: z.number().min(0).nullable().optional(),
-  contractType: z.enum(["master", "framework", "one-off", "renewal"]).default("master"),
-  status: z.enum(["draft", "active", "expired", "terminated"]).default("active"),
+  contractType: z.enum(["master", "blanket", "framework", "one-off", "renewal"]).default("master"),
+  status: z.enum(["draft", "active", "suspended", "expired", "closed", "cancelled", "terminated"]).default("draft"),
 }).refine(
   (data) => !data.endDate || !data.startDate || new Date(data.endDate) >= new Date(data.startDate),
   { message: "End date must be on or after start date", path: ["endDate"] }

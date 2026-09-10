@@ -1,0 +1,386 @@
+- generic:
+  - generic [aria-hidden]:
+    - generic:
+      - generic:
+        - link:
+          - /url: "#main-content"
+          - text: Skip to main content
+        - generic:
+          - complementary:
+            - generic:
+              - generic:
+                - generic: ISSSourcing
+                - generic:
+                  - button
+            - navigation:
+              - generic:
+                - generic:
+                  - paragraph: Operations
+                  - link:
+                    - /url: /operations
+                    - generic: Overview (Preview)
+                  - link:
+                    - /url: /operations/control-tower
+                    - generic: Control tower (Preview)
+                  - link:
+                    - /url: /operations/fuel
+                    - generic: Fuel operations (Preview)
+                  - link:
+                    - /url: /operations/logistics
+                    - generic: Logistics (Preview)
+                  - link:
+                    - /url: /operations/exceptions
+                    - generic: Exceptions (Preview)
+                - generic:
+                  - paragraph: Inventory
+                  - link:
+                    - /url: /inventory
+                    - generic: Inventory (Preview)
+                  - link:
+                    - /url: /inventory/warehouse-operations
+                    - generic: Warehouse ops (Preview)
+                  - link:
+                    - /url: /inventory/put-away
+                    - generic: Put-away (Preview)
+                  - link:
+                    - /url: /inventory/cycle-counts
+                    - generic: Cycle counts (Preview)
+                  - link:
+                    - /url: /inventory/reorder
+                    - generic: Reorder requests (Preview)
+                  - link:
+                    - /url: /inventory/barcodes
+                    - generic: Barcode scanner (Preview)
+                - generic:
+                  - paragraph: Procurement
+                  - link:
+                    - /url: /procurement/overview
+                    - generic: Procurement overview
+                  - link:
+                    - /url: /procurement/sourcing
+                    - generic: Sourcing & RFQs
+                  - link:
+                    - /url: /procurement/commercial-quotations
+                    - generic: Commercial quotations
+                  - link:
+                    - /url: /procurement/quotations
+                    - generic: Supplier quotations
+                  - link:
+                    - /url: /procurement/orders
+                    - generic: Purchase orders
+                  - link:
+                    - /url: /procurement/requisitions
+                    - generic: Requisitions
+                  - link:
+                    - /url: /procurement/suppliers
+                    - generic: Suppliers
+                  - link:
+                    - /url: /procurement/contracts
+                    - generic: Contracts
+                  - link:
+                    - /url: /procurement/receiving
+                    - generic: Receiving & returns
+                  - link:
+                    - /url: /procurement/supplier-portal
+                    - generic: Supplier portal
+                - generic:
+                  - paragraph: Finance
+                  - link:
+                    - /url: /finance/general-ledger
+                    - generic: General ledger (Preview)
+                  - link:
+                    - /url: /finance/accounts-receivable
+                    - generic: Accounts receivable (Preview)
+                  - link:
+                    - /url: /finance/accounts-payable
+                    - generic: Accounts payable (Preview)
+                  - link:
+                    - /url: /finance/invoices
+                    - generic: Invoices (Preview)
+                - generic:
+                  - paragraph: Analytics
+                  - link:
+                    - /url: /analytics/overview
+                    - generic: Overview
+                  - link:
+                    - /url: /analytics/reports
+                    - generic: Reports
+                  - link:
+                    - /url: /analytics/saved-reports
+                    - generic: Saved reports
+                  - link:
+                    - /url: /analytics/export-center
+                    - generic: Export center
+                - generic:
+                  - paragraph: Admin
+                  - link:
+                    - /url: /admin/company-setup
+                    - generic: Company setup
+                  - link:
+                    - /url: /admin/settings
+                    - generic: Settings
+                  - link:
+                    - /url: /admin/workflows
+                    - generic: Workflow governance
+                  - link:
+                    - /url: /admin/document-extractor
+                    - generic: Document extractor
+                  - link:
+                    - /url: /admin/integrations
+                    - generic: Integrations
+                  - link:
+                    - /url: /admin/audit-logs
+                    - generic: Audit logs
+                  - link:
+                    - /url: /admin/subscription
+                    - generic: Subscription
+                  - generic:
+                    - paragraph: Files & recognition
+                    - link:
+                      - /url: /admin/documents
+                      - generic: Documents
+                    - link:
+                      - /url: /admin/image-recognition
+                      - generic: Image recognition
+                  - generic:
+                    - paragraph: People & access
+                  - generic:
+                    - paragraph: System & profile
+                    - link:
+                      - /url: /admin/system-diagnostics
+                      - generic: System diagnostics
+                    - link:
+                      - /url: /admin/profile
+                      - generic: Profile
+                - generic:
+                  - paragraph: Learning
+                  - link:
+                    - /url: /get-educated
+                    - generic: Get Educated
+            - generic:
+              - button:
+                - generic: Dark Mode
+          - generic:
+            - banner:
+              - generic:
+                - paragraph: Procurement / Contracts
+                - search:
+                  - combobox
+              - generic:
+                - button:
+                  - generic: Jump to...
+                - generic: LIVE
+                - generic: DEV
+                - generic: ADMIN
+                - button
+                - button:
+                  - generic: Cycle accent palette
+                - button:
+                  - generic: Notifications
+                - button:
+                  - generic: SA
+                  - generic: Open user menu
+            - main:
+              - generic:
+                - generic:
+                  - generic:
+                    - text: New here?
+                    - strong: Purchase
+                    - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+                - generic:
+                  - button: Open lesson
+                  - button: Spotlight tour
+                  - button
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - heading [level=1]: Blanket purchase agreements
+                        - paragraph: Control framework pricing, approved-request releases, commitments, renewals, and immutable agreement history.
+                    - generic:
+                      - button [disabled]: New agreement
+                - generic:
+                  - generic:
+                    - strong: Blanket purchasing is not enabled for this organization.
+                    - paragraph: Complete supplier, currency, tax, approval, and warehouse setup before enabling Procurement Phase 2.
+                    - link:
+                      - /url: /procurement/settings
+                      - text: Review procurement settings
+                - generic:
+                  - tablist:
+                    - tab [selected]: Agreements
+                    - tab: Lines
+                    - tab: Releases
+                    - tab: Renewals
+                    - tab: Activity
+                  - tabpanel:
+                    - generic:
+                      - generic:
+                        - heading [level=3]: Agreement register
+                        - paragraph: Only approved, active, current agreements can create release orders.
+                      - generic:
+                        - generic:
+                          - textbox:
+                            - /placeholder: Search number, agreement, or supplier
+                          - combobox:
+                            - generic: All statuses
+                          - button: Refresh
+                        - generic:
+                          - table:
+                            - rowgroup:
+                              - row:
+                                - columnheader: Agreement
+                                - columnheader: Supplier
+                                - columnheader: Status
+                                - columnheader: Commitment
+                                - columnheader: Lines / releases
+                                - columnheader: Actions
+                            - rowgroup:
+                              - row:
+                                - cell:
+                                  - generic: FQA USD Currency Lock · v1
+                                - cell: FQA Seed Supplier
+                                - cell:
+                                  - generic:
+                                    - generic: active
+                                    - generic: DRAFT
+                                - cell:
+                                  - text: US$0.00 / No cap
+                                  - generic: Remaining No cap
+                                - cell: 0 / 0
+                                - cell:
+                                  - button: Review
+                              - row:
+                                - cell:
+                                  - generic: MDI contract 647904 · v1
+                                - cell: Furniture Warehouse
+                                - cell:
+                                  - generic:
+                                    - generic: active
+                                    - generic: DRAFT
+                                - cell:
+                                  - text: US$0.00 / No cap
+                                  - generic: Remaining No cap
+                                - cell: 0 / 0
+                                - cell:
+                                  - button: Review
+                              - row:
+                                - cell:
+                                  - generic: MDI contract 333010 · v1
+                                - cell: Office Supply Co.
+                                - cell:
+                                  - generic:
+                                    - generic: active
+                                    - generic: DRAFT
+                                - cell:
+                                  - text: US$0.00 / No cap
+                                  - generic: Remaining No cap
+                                - cell: 0 / 0
+                                - cell:
+                                  - button: Review
+                              - row:
+                                - cell:
+                                  - generic: MDI contract 104081 · v1
+                                - cell: Tech Solutions Inc.
+                                - cell:
+                                  - generic:
+                                    - generic: active
+                                    - generic: DRAFT
+                                - cell:
+                                  - text: US$0.00 / No cap
+                                  - generic: Remaining No cap
+                                - cell: 0 / 0
+                                - cell:
+                                  - button: Review
+                              - row:
+                                - cell:
+                                  - generic: Annual IT Equipment Supply Agreement · v1
+                                - cell: Tech Solutions Inc.
+                                - cell:
+                                  - generic:
+                                    - generic: active
+                                    - generic: DRAFT
+                                - cell:
+                                  - text: US$0.00 / No cap
+                                  - generic: Remaining No cap
+                                - cell: 0 / 0
+                                - cell:
+                                  - button: Review
+                        - generic:
+                          - generic: 1–5 of 5
+                          - generic:
+                            - combobox:
+                              - generic: 25 rows
+                            - button [disabled]: Previous
+                            - button [disabled]: Next
+                - generic:
+                  - generic:
+                    - heading [level=3]: Next agreement action
+                    - paragraph: Lifecycle actions remain server-authorized and independently approved.
+                  - generic:
+                    - link:
+                      - /url: /api/v2/procurement/contracts/181/document.pdf
+                      - text: Preview agreement PDF
+                    - button: Edit draft
+                    - button [disabled]: Submit for approval
+                    - button: Suspend
+            - generic:
+              - button:
+                - generic: Help & Tutorials
+    - list
+  - dialog [ref=f1e980]:
+    - generic [ref=f1e981]:
+      - heading "Edit draft agreement" [level=2] [ref=f1e982]
+      - paragraph [ref=f1e983]: Update commercial terms before submission. The expected version prevents silent concurrent overwrites.
+    - generic [ref=f1e984]:
+      - generic [ref=f1e985]:
+        - text: Title
+        - textbox [active] [ref=f1e986]: FQA USD Currency Lock
+      - generic [ref=f1e987]:
+        - text: Category
+        - textbox [ref=f1e988]
+      - generic [ref=f1e989]:
+        - text: Maximum agreement value
+        - spinbutton [ref=f1e990]
+      - generic [ref=f1e991]:
+        - text: Renewal notice days
+        - spinbutton [ref=f1e992]: "30"
+      - generic [ref=f1e993]:
+        - text: Start date
+        - textbox [ref=f1e994]: 2026-07-13
+      - generic [ref=f1e995]:
+        - text: End date
+        - textbox [ref=f1e996]: 2027-07-14
+      - generic [ref=f1e997]:
+        - text: Renewal review date
+        - textbox [ref=f1e998]
+      - generic [ref=f1e999]:
+        - text: Payment terms
+        - combobox [ref=f1e1000] [cursor=pointer]:
+          - generic: Not set
+      - generic [ref=f1e1003]:
+        - text: Incoterm
+        - combobox [ref=f1e1004] [cursor=pointer]:
+          - generic: Not set
+      - generic [ref=f1e1007]:
+        - text: Default warehouse
+        - combobox [ref=f1e1008] [cursor=pointer]:
+          - generic: Not set
+      - generic [ref=f1e1011]:
+        - text: Default tax code
+        - combobox [ref=f1e1012] [cursor=pointer]:
+          - generic: Not set
+      - generic [ref=f1e1016]:
+        - text: Default delivery address
+        - textbox [ref=f1e1017]
+      - generic [ref=f1e1019]:
+        - text: Commercial summary
+        - textbox [ref=f1e1020]
+      - generic [ref=f1e1022]:
+        - text: Reason for edit
+        - textbox [ref=f1e1023]
+    - generic [ref=f1e1024]:
+      - button "Cancel" [ref=f1e1025] [cursor=pointer]
+      - button "Save draft changes" [disabled]
+    - button "Close" [ref=f1e1026] [cursor=pointer]
