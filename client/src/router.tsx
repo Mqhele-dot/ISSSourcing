@@ -85,6 +85,7 @@ const InventoryPutAwayPage = lazy(() => import("@/pages/inventory-put-away"));
 
 const ProductionLogisticsPage = withProductionBoundary(LogisticsPage, "logistics");
 const ProductionExceptionsPage = withProductionBoundary(ExceptionsPage, "logistics");
+const ProcurementExceptionsPage = () => <ExceptionsPage procurementContext />;
 const ProductionInventoryPage = withProductionBoundary(Inventory, "inventory");
 const ProductionMobileReceivePage = withProductionBoundary(MobileReceivePage, "receiving");
 const ProductionInvoicesPage = withProductionBoundary(InvoicesPage, "finance");
@@ -119,6 +120,9 @@ export function AppRouter() {
   return (
     <RouteLoadingBoundary>
       <Switch>
+        <Route path={APP_ROUTES.operations.mobileRoot}>
+          <Redirect to={APP_ROUTES.operations.mobileHub} />
+        </Route>
         <ProtectedRoute path={APP_ROUTES.operations.mobileHub} component={ProductionMobileHubHome} />
         <Route path={APP_ROUTES.operations.mobileTasks}>
           <LegacyRedirect to={APP_ROUTES.operations.mobileHub} />
@@ -184,7 +188,8 @@ export function AppRouter() {
         <Route path={`${APP_ROUTES.procurement.rfqs}/:id`}>{(params) => <LegacyRedirect to={APP_ROUTES.procurement.sourcingEvent((params as { id: string }).id)} />}</Route>
         <Route path={APP_ROUTES.procurement.rfqs}><LegacyRedirect to={APP_ROUTES.procurement.sourcing} /></Route>
         <Route path={APP_ROUTES.procurement.analytics}><LegacyRedirect to={APP_ROUTES.analytics.procurement} /></Route>
-        <Route path={APP_ROUTES.procurement.exceptions}><LegacyRedirect to={`${APP_ROUTES.operations.exceptions}?area=procurement`} /></Route>
+        <ProtectedRoute path={`${APP_ROUTES.procurement.exceptions}/:id`} component={ProcurementExceptionsPage} />
+        <ProtectedRoute path={APP_ROUTES.procurement.exceptions} component={ProcurementExceptionsPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.receiving} component={ProcurementReceivingPage} />
         <ProtectedRoute path={APP_ROUTES.procurement.settings} component={ProcurementSettingsPage} allowedRoles={["admin"]} />
         <ProtectedRoute path={`${APP_ROUTES.procurement.sourcing}/:id`} component={SourcingPage} />

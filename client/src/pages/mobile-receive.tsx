@@ -113,7 +113,7 @@ function MobileReceiveQueuePage() {
                       </Badge>
                     </div>
                     <p className="truncate text-sm text-muted-foreground">
-                      {po.supplierName ?? `Supplier #${po.supplierId}`}
+                      {po.supplierName ?? `Historical supplier unavailable (ID ${po.supplierId})`}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {po.receivedProgress ?? 0}% received · {po.qtyReceived ?? 0}/{po.qtyOrdered ?? 0} units
@@ -338,7 +338,7 @@ function MobileReceiveDetailPage({ poNumber }: { poNumber: string }) {
                 <CardContent className="grid grid-cols-2 gap-3 p-4 text-sm">
                   <div>
                     <p className="text-muted-foreground">Supplier</p>
-                    <p className="font-medium">{value.supplierName ?? `Supplier #${value.supplierId}`}</p>
+                    <p className="font-medium">{value.supplierName ?? `Historical supplier unavailable (ID ${value.supplierId})`}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Status</p>

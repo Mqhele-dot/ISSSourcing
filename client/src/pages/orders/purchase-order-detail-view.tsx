@@ -770,7 +770,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       </span>
                     </div>
                     <p className="truncate text-sm text-muted-foreground">
-                      {detail.supplierName || `Supplier #${detail.supplierId}`}
+                      {detail.supplierName || `Historical supplier unavailable (ID ${detail.supplierId})`}
                     </p>
                   </div>
                   <div className="flex min-w-0 flex-col items-stretch gap-1 lg:items-end">

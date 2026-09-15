@@ -7,6 +7,7 @@ import { getActiveOrganizationId, getOptionalTenantContext } from "../../organiz
 import { storage } from "../../storage";
 import {
   inventoryItems,
+  departments,
   purchaseOrderItems,
   purchaseOrders,
   purchaseRequisitionItems,
@@ -184,7 +185,11 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
     try {
       const lineCount = sql<number>`(select count(*)::int from ${purchaseRequisitionItems} pri where pri.requisition_id = ${purchaseRequisitions.id})`;
       const [items, totals, summaries] = await Promise.all([
-        db.select({ requisition: purchaseRequisitions, lineCount }).from(purchaseRequisitions).where(where).orderBy(...order).limit(query.pageSize).offset((query.page - 1) * query.pageSize),
+        db.select({ requisition: purchaseRequisitions, lineCount, supplierName: suppliers.name, departmentName: departments.name, departmentCode: departments.code })
+          .from(purchaseRequisitions)
+          .leftJoin(suppliers, and(eq(suppliers.id, purchaseRequisitions.supplierId), eq(suppliers.organizationId, orgId)))
+          .leftJoin(departments, and(eq(departments.id, purchaseRequisitions.departmentId), eq(departments.organizationId, orgId)))
+          .where(where).orderBy(...order).limit(query.pageSize).offset((query.page - 1) * query.pageSize),
         db.select({ value: count() }).from(purchaseRequisitions).where(where),
         db.select({ status: purchaseRequisitions.status, currencyCode: purchaseRequisitions.currencyCode, count: count(), amount: sql<number>`coalesce(sum(${purchaseRequisitions.totalAmount}), 0)` })
           .from(purchaseRequisitions).where(where).groupBy(purchaseRequisitions.status, purchaseRequisitions.currencyCode),
@@ -203,11 +208,14 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
         else totalAmount += converted;
       }
       const summary = { totalAmount, reportingCurrencyCode: fx.reportingCurrencyCode, missingFxCount, byStatus };
-      return sendOk(res, paginated(items.map(({ requisition, lineCount: lines }) => {
+      return sendOk(res, paginated(items.map(({ requisition, lineCount: lines, supplierName, departmentName, departmentCode }) => {
         const rate = fx.rates.get(String(requisition.currencyCode).toUpperCase()) ?? null;
         return {
           ...requisition,
           lineCount: Number(lines),
+          supplierName,
+          departmentName,
+          departmentCode,
           reportingCurrencyCode: fx.reportingCurrencyCode,
           reportingExchangeRate: rate,
           reportingTotal: rate == null ? null : Number(requisition.totalAmount) * rate,

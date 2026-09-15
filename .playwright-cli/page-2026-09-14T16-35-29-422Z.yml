@@ -1,0 +1,191 @@
+- generic [ref=f48e2]:
+  - generic [ref=f48e4]:
+    - link "Skip to main content" [ref=f48e5] [cursor=pointer]:
+      - /url: "#main-content"
+    - generic [ref=f48e6]:
+      - complementary [ref=f48e7]:
+        - generic [ref=f48e9]:
+          - generic [ref=f48e10]: ISSSourcing
+          - button "Collapse navigation sidebar" [ref=f48e18] [cursor=pointer]
+        - navigation [ref=f48e22]:
+          - generic [ref=f48e23]:
+            - generic [ref=f48e24]:
+              - paragraph [ref=f48e25]: Operations
+              - link "Overview" [ref=f48e26] [cursor=pointer]:
+                - /url: /operations
+                - generic "Overview" [ref=f48e34]
+              - link "Control tower" [ref=f48e35] [cursor=pointer]:
+                - /url: /operations/control-tower
+                - generic "Control tower" [ref=f48e45]
+              - link "Fuel operations" [ref=f48e46] [cursor=pointer]:
+                - /url: /operations/fuel
+                - generic "Fuel operations" [ref=f48e52]
+              - link "Logistics" [ref=f48e53] [cursor=pointer]:
+                - /url: /operations/logistics
+                - generic "Logistics" [ref=f48e61]
+              - link "Exceptions" [ref=f48e62] [cursor=pointer]:
+                - /url: /operations/exceptions
+                - generic "Exceptions" [ref=f48e67]
+            - generic [ref=f48e68]:
+              - paragraph [ref=f48e69]: Inventory
+              - link "Inventory" [ref=f48e70] [cursor=pointer]:
+                - /url: /inventory
+                - generic "Inventory" [ref=f48e76]
+              - link "Warehouse ops" [ref=f48e77] [cursor=pointer]:
+                - /url: /inventory/warehouse-operations
+                - generic "Warehouse ops" [ref=f48e86]
+              - link "Put-away" [ref=f48e87] [cursor=pointer]:
+                - /url: /inventory/put-away
+                - generic "Put-away" [ref=f48e95]
+              - link "Cycle counts" [ref=f48e96] [cursor=pointer]:
+                - /url: /inventory/cycle-counts
+                - generic "Cycle counts" [ref=f48e104]
+              - link "Reorder requests" [ref=f48e105] [cursor=pointer]:
+                - /url: /inventory/reorder
+                - generic "Reorder requests" [ref=f48e111]
+              - link "Barcode scanner" [ref=f48e112] [cursor=pointer]:
+                - /url: /inventory/barcodes
+                - generic "Barcode scanner" [ref=f48e121]
+            - generic [ref=f48e122]:
+              - paragraph [ref=f48e123]: Procurement
+              - link "Procurement overview" [ref=f48e124] [cursor=pointer]:
+                - /url: /procurement/overview
+                - generic "Procurement overview" [ref=f48e132]
+              - link "Sourcing & RFQs" [ref=f48e133] [cursor=pointer]:
+                - /url: /procurement/sourcing
+                - generic "Sourcing & RFQs" [ref=f48e140]
+              - link "Commercial quotations" [ref=f48e141] [cursor=pointer]:
+                - /url: /procurement/commercial-quotations
+                - generic "Commercial quotations" [ref=f48e147]
+              - link "Supplier quotations" [ref=f48e148] [cursor=pointer]:
+                - /url: /procurement/quotations
+                - generic "Supplier quotations" [ref=f48e154]
+              - link "Purchase orders" [ref=f48e155] [cursor=pointer]:
+                - /url: /procurement/orders
+                - generic "Purchase orders" [ref=f48e162]
+              - link "Requisitions" [ref=f48e163] [cursor=pointer]:
+                - /url: /procurement/requisitions
+                - generic "Requisitions" [ref=f48e169]
+              - link "Suppliers" [ref=f48e170] [cursor=pointer]:
+                - /url: /procurement/suppliers
+                - generic "Suppliers" [ref=f48e178]
+              - link "Contracts" [ref=f48e179] [cursor=pointer]:
+                - /url: /procurement/contracts
+                - generic "Contracts" [ref=f48e185]
+              - link "Receiving & returns" [ref=f48e186] [cursor=pointer]:
+                - /url: /procurement/receiving
+                - generic "Receiving & returns" [ref=f48e195]
+              - link "Supplier portal" [ref=f48e196] [cursor=pointer]:
+                - /url: /procurement/supplier-portal
+                - generic "Supplier portal" [ref=f48e204]
+            - generic [ref=f48e205]:
+              - paragraph [ref=f48e206]: Finance
+              - link "General ledger" [ref=f48e207] [cursor=pointer]:
+                - /url: /finance/general-ledger
+                - generic "General ledger" [ref=f48e212]
+              - link "Accounts receivable" [ref=f48e213] [cursor=pointer]:
+                - /url: /finance/accounts-receivable
+                - generic "Accounts receivable" [ref=f48e219]
+              - link "Accounts payable" [ref=f48e220] [cursor=pointer]:
+                - /url: /finance/accounts-payable
+                - generic "Accounts payable" [ref=f48e225]
+              - link "Invoices" [ref=f48e226] [cursor=pointer]:
+                - /url: /finance/invoices
+                - generic "Invoices" [ref=f48e232]
+              - link "Approval policies" [ref=f48e233] [cursor=pointer]:
+                - /url: /finance/approval-policies
+                - generic "Approval policies" [ref=f48e239]
+            - generic [ref=f48e240]:
+              - paragraph [ref=f48e241]: Analytics
+              - link "Overview" [ref=f48e242] [cursor=pointer]:
+                - /url: /analytics/overview
+                - generic "Overview" [ref=f48e246]
+              - link "Reports" [ref=f48e247] [cursor=pointer]:
+                - /url: /analytics/reports
+                - generic "Reports" [ref=f48e253]
+              - link "Saved reports" [ref=f48e254] [cursor=pointer]:
+                - /url: /analytics/saved-reports
+                - generic "Saved reports" [ref=f48e259]
+              - link "Export center" [ref=f48e260] [cursor=pointer]:
+                - /url: /analytics/export-center
+                - generic "Export center" [ref=f48e265]
+            - generic [ref=f48e266]:
+              - paragraph [ref=f48e267]: Admin
+              - link "Company setup" [ref=f48e268] [cursor=pointer]:
+                - /url: /admin/company-setup
+                - generic "Company setup" [ref=f48e275]
+              - link "Settings" [ref=f48e276] [cursor=pointer]:
+                - /url: /admin/settings
+                - generic "Settings" [ref=f48e282]
+              - link "Workflow governance" [ref=f48e283] [cursor=pointer]:
+                - /url: /admin/workflows
+                - generic "Workflow governance" [ref=f48e289]
+              - link "Master data" [ref=f48e290] [cursor=pointer]:
+                - /url: /admin/master-data
+                - generic "Master data" [ref=f48e297]
+              - link "Document extractor" [ref=f48e298] [cursor=pointer]:
+                - /url: /admin/document-extractor
+                - generic "Document extractor" [ref=f48e308]
+              - link "Integrations" [ref=f48e309] [cursor=pointer]:
+                - /url: /admin/integrations
+                - generic "Integrations" [ref=f48e314]
+              - link "Audit logs" [ref=f48e315] [cursor=pointer]:
+                - /url: /admin/audit-logs
+                - generic "Audit logs" [ref=f48e320]
+              - link "Subscription" [ref=f48e321] [cursor=pointer]:
+                - /url: /admin/subscription
+                - generic "Subscription" [ref=f48e326]
+              - generic [ref=f48e327]:
+                - paragraph [ref=f48e328]: Files & recognition
+                - link "Documents" [ref=f48e329] [cursor=pointer]:
+                  - /url: /admin/documents
+                  - generic "Documents" [ref=f48e334]
+                - link "Image recognition" [ref=f48e335] [cursor=pointer]:
+                  - /url: /admin/image-recognition
+                  - generic "Image recognition" [ref=f48e341]
+              - generic [ref=f48e342]:
+                - paragraph [ref=f48e343]: People & access
+                - link "Employee profiles" [ref=f48e344] [cursor=pointer]:
+                  - /url: /admin/employee-profiles
+                  - generic "Employee profiles" [ref=f48e351]
+                - link "User roles" [ref=f48e352] [cursor=pointer]:
+                  - /url: /admin/user-roles
+                  - generic "User roles" [ref=f48e360]
+              - generic [ref=f48e361]:
+                - paragraph [ref=f48e362]: System & profile
+                - link "System diagnostics" [ref=f48e363] [cursor=pointer]:
+                  - /url: /admin/system-diagnostics
+                  - generic "System diagnostics" [ref=f48e373]
+                - link "Profile" [ref=f48e374] [cursor=pointer]:
+                  - /url: /admin/profile
+                  - generic "Profile" [ref=f48e380]
+            - generic [ref=f48e381]:
+              - paragraph [ref=f48e382]: Learning
+              - link "Get Educated" [ref=f48e383] [cursor=pointer]:
+                - /url: /get-educated
+                - generic "Get Educated" [ref=f48e389]
+        - button "Dark Mode" [ref=f48e391] [cursor=pointer]
+      - generic [ref=f48e395]:
+        - banner [ref=f48e396]:
+          - generic [ref=f48e397]:
+            - paragraph [ref=f48e398]: Admin / Profile
+            - search [ref=f48e399]:
+              - combobox "Global search" [ref=f48e400]
+          - generic [ref=f48e401]:
+            - button "Jump to... Ctrl+K" [ref=f48e402] [cursor=pointer]:
+              - generic [ref=f48e405]: Jump to...
+              - generic: Ctrl+K
+            - generic "System status" [ref=f48e406]: LIVE
+            - generic [ref=f48e407]: DEV
+            - generic [ref=f48e408]: ADMIN
+            - button "Toggle theme" [ref=f48e409] [cursor=pointer]
+            - button "Cycle accent palette" [ref=f48e412] [cursor=pointer]
+            - button "Notifications" [ref=f48e420] [cursor=pointer]
+            - button "SA Open user menu" [ref=f48e425] [cursor=pointer]:
+              - generic [ref=f48e426]: SA
+              - generic [ref=f48e428]: Open user menu
+        - main [ref=f48e429]:
+          - generic [ref=f48e430]: Checking product setup…
+        - button "Help & Tutorials" [ref=f48e435] [cursor=pointer]
+  - region "Notifications (F8)":
+    - list

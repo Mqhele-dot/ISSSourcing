@@ -420,7 +420,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                         onClick={() => setPreviewOrder(order)}
                       >
                         <TableCell className="font-medium">{order.poNumber}</TableCell>
-                        <TableCell>{order.supplierName || `Supplier #${order.supplierId}`}</TableCell>
+                        <TableCell>{order.supplierName || `Historical supplier unavailable (ID ${order.supplierId})`}</TableCell>
                         <TableCell>
                           <StatusBadge status={order.status} />
                         </TableCell>
@@ -504,7 +504,7 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
             <>
               <DialogHeader>
                 <DialogTitle data-testid="po-preview-title">PO {previewOrder.poNumber}</DialogTitle>
-                <DialogDescription>{previewOrder.supplierName || `Supplier #${previewOrder.supplierId}`}</DialogDescription>
+                <DialogDescription>{previewOrder.supplierName || `Historical supplier unavailable (ID ${previewOrder.supplierId})`}</DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">Status</div><div data-testid="po-preview-status"><StatusBadge status={previewOrder.status} /></div></div>

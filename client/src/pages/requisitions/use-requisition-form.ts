@@ -61,6 +61,47 @@ function isValidRequisitionLine(line: ReqLineDraft): boolean {
   return Boolean(line.description?.trim() && line.manualEntryReason?.trim());
 }
 
+type RequisitionValidationRules = MdmRequisitionContext["rules"] | undefined;
+
+function validateRequisitionDraft(input: {
+  supplierId: number | "";
+  currencyCode: string;
+  exchangeRateToZar: number;
+  reportingCurrencyCode: string;
+  departmentId: number | "";
+  requiredDate: string;
+  items: ReqLineDraft[];
+  rules: RequisitionValidationRules;
+}): RequisitionFieldErrors {
+  const errors: RequisitionFieldErrors = {};
+  if (!input.supplierId) errors.supplierId = "Supplier is required";
+  if (!input.currencyCode) errors.currencyCode = "Currency is required";
+  if (!Number.isFinite(input.exchangeRateToZar) || input.exchangeRateToZar <= 0) {
+    errors.currencyCode = `Selected currency needs a positive ${input.reportingCurrencyCode} exchange rate in Master Data`;
+  }
+  if (input.rules?.requiresDepartment && !input.departmentId) errors.departmentId = "Department is required";
+  if (!input.requiredDate) errors.requiredDate = "Required date is required";
+  const validItems = input.items.filter(isValidRequisitionLine);
+  if (validItems.length === 0) {
+    errors.items = "Add a valid catalogue or manual line with quantity, price, and required details";
+    return errors;
+  }
+  const missingCostCentre = validItems.findIndex((item) => !item.costCentreId);
+  const missingTax = validItems.findIndex((item) => item.taxCodeId == null);
+  const missingUom = validItems.findIndex((item) => !item.unitOfMeasureId);
+  const missingGl = validItems.findIndex((item) => !item.glAccountCode?.trim());
+  if (input.rules?.requiresCostCentre && missingCostCentre >= 0) {
+    errors.items = `Line ${missingCostCentre + 1}: cost centre is required by procurement policy`;
+  } else if (input.rules?.requiresTaxCode && missingTax >= 0) {
+    errors.items = `Line ${missingTax + 1}: tax code is required by procurement policy`;
+  } else if (input.rules?.requiresUom && missingUom >= 0) {
+    errors.items = `Line ${missingUom + 1}: purchase UOM is required`;
+  } else if (missingGl >= 0) {
+    errors.items = `Line ${missingGl + 1}: GL mapping is required before this requisition can be saved`;
+  }
+  return errors;
+}
+
 function lockedReasonForStatus(status: unknown): string {
   const normalized = String(status || "").trim().toUpperCase();
   if (!LOCKED_REQUISITION_STATUSES.has(normalized)) return "";
@@ -102,7 +143,7 @@ export function useRequisitionForm(params: {
   const lockedReason = !isNew ? lockedReasonForStatus(requisition?.status) : "";
   const isLocked = Boolean(lockedReason);
 
-  const { data: mdmContext } = useQuery({
+  const { data: mdmContext, isLoading: isMdmLoading, error: mdmError, refetch: refetchMdm } = useQuery({
     queryKey: ["/api/mdm/defaults/requisition-context"],
     queryFn: () => requestJson<MdmRequisitionContext>("GET", "/api/mdm/defaults/requisition-context"),
     retry: false,
@@ -416,6 +457,23 @@ export function useRequisitionForm(params: {
     supplierId,
   ]);
 
+  const validationErrors = useMemo(() => validateRequisitionDraft({
+    supplierId,
+    currencyCode,
+    exchangeRateToZar,
+    reportingCurrencyCode,
+    departmentId,
+    requiredDate,
+    items,
+    rules: mdmContext?.rules,
+  }), [supplierId, currencyCode, exchangeRateToZar, reportingCurrencyCode, departmentId, requiredDate, items, mdmContext?.rules]);
+  const submitBlockers = isMdmLoading
+    ? ["Loading authoritative procurement Master Data"]
+    : mdmError
+      ? ["Procurement Master Data could not be loaded"]
+      : Object.values(validationErrors).filter((message): message is string => Boolean(message));
+  const canSubmit = !isLocked && submitBlockers.length === 0;
+
   const handleSubmit = useCallback(() => {
     if (isLocked) {
       toast({
@@ -425,29 +483,8 @@ export function useRequisitionForm(params: {
       });
       return;
     }
-    const nextErrors: RequisitionFieldErrors = {};
-    if (!supplierId) nextErrors.supplierId = "Supplier is required";
-    if (!currencyCode) nextErrors.currencyCode = "Currency is required";
-    if (!Number.isFinite(exchangeRateToZar) || exchangeRateToZar <= 0) {
-      nextErrors.currencyCode = `Selected currency needs a positive ${reportingCurrencyCode} exchange rate in Master Data`;
-    }
-    if (mdmContext?.rules.requiresDepartment && !departmentId) nextErrors.departmentId = "Department is required";
-    if (!requiredDate) nextErrors.requiredDate = "Required date is required";
+    const nextErrors = validationErrors;
     const validItems = items.filter(isValidRequisitionLine);
-    if (validItems.length === 0) {
-      nextErrors.items = "Add a valid catalogue or manual line with quantity, price, and required details";
-    } else {
-      const missingUom = validItems.findIndex((item) => !item.unitOfMeasureId);
-      const missingTax = validItems.findIndex((item) => item.taxCodeId == null);
-      const missingCostCentre = validItems.findIndex((item) => !item.costCentreId);
-      if (mdmContext?.rules.requiresCostCentre && missingCostCentre >= 0) {
-        nextErrors.items = `Line ${missingCostCentre + 1}: cost centre is required by procurement policy`;
-      } else if (mdmContext?.rules.requiresTaxCode && missingTax >= 0) {
-        nextErrors.items = `Line ${missingTax + 1}: tax code is required by procurement policy`;
-      } else if (mdmContext?.rules.requiresUom && missingUom >= 0) {
-        nextErrors.items = `Line ${missingUom + 1}: purchase UOM is required`;
-      }
-    }
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       if (nextErrors.items) {
@@ -470,7 +507,7 @@ export function useRequisitionForm(params: {
     }
     if (isNew) createMutation.mutate();
     else updateMutation.mutate();
-  }, [supplierId, currencyCode, exchangeRateToZar, reportingCurrencyCode, departmentId, requiredDate, items, mdmContext?.rules, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
+  }, [validationErrors, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
@@ -509,10 +546,15 @@ export function useRequisitionForm(params: {
     updateItem,
     handleSubmit,
     isPending,
+    canSubmit,
+    submitBlockers,
     isLocked,
     lockedReason,
     currencies: effectiveCurrencies,
     mdmContext,
+    isMdmLoading,
+    mdmError,
+    refetchMdm,
     contractsForSupplier,
     paymentTerms,
     incoterms,

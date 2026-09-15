@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 type Page<T> = { items: T[]; total: number; page: number; pageSize: number; hasNext: boolean };
-type Receipt = { id: number; receiptNumber: string; purchaseOrderId: number; purchaseOrderNumber: string; supplierName?: string; status: string; receivedDate: string; lineCount: number; acceptedQuantity: string; rejectedQuantity: string; reversed: boolean };
+type Receipt = { id: number; receiptNumber: string; purchaseOrderId: number; purchaseOrderNumber: string; supplierId: number; supplierName: string; status: string; receivedDate: string; lineCount: number; acceptedQuantity: string; rejectedQuantity: string; reversed: boolean };
 type ReturnRow = { id: number; returnNumber: string; purchaseOrderNumber: string; supplierName: string; warehouseName: string; status: string; reason: string; quantity: string; createdAt: string };
 type ReceiptDetail = { receipt: { id: number; receipt_number: string; order_number: string; supplier_name?: string; status: string; received_date: string; notes?: string }; lines: Array<{ id: number; sku: string; item_name: string; quantity: string; accepted_quantity: string; rejected_quantity: string; ordered_quantity: string; received_quantity: string }>; reversals: Array<{ id: number; reason: string; created_at: string }> };
 type ProcurementSettings = { phase2Enabled: boolean; phase4Enabled: boolean };

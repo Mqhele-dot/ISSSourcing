@@ -855,7 +855,7 @@ export default function InvoicesPage() {
                     const controlState = invoiceControlState(invoice, match);
                     const supplierLabel =
                       invoice.supplierId != null
-                        ? supplierById.get(invoice.supplierId)?.name ?? `Supplier #${invoice.supplierId}`
+                        ? supplierById.get(invoice.supplierId)?.name ?? `Historical supplier unavailable (ID ${invoice.supplierId})`
                         : "No supplier";
                     const poLabel =
                       invoice.purchaseOrderId != null

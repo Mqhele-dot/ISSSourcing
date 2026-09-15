@@ -82,6 +82,7 @@ export const APP_ROUTES = {
     logistics: "/operations/logistics",
     shipment: (id: string | number) => `/operations/logistics/${id}`,
     exceptions: "/operations/exceptions",
+    mobileRoot: "/m",
     mobileHub: "/m/home",
     mobileTasks: "/m/tasks",
     mobileCounts: "/m/counts",

@@ -8,6 +8,24 @@ import { addDiagnosticEvent } from "@/lib/diagnostics/diagnostics-store";
 
 const ROUTE_LOAD_TIMEOUT_MS = 5_000;
 
+const ROUTE_LABELS: Record<string, string> = {
+  operations: "Operations",
+  inventory: "Inventory",
+  procurement: "Procurement",
+  finance: "Finance",
+  analytics: "Analytics",
+  admin: "Administration",
+  m: "Mobile operations",
+};
+
+function loadingPageLabel(pathname = window.location.pathname): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const last = segments.at(-1) ?? "home";
+  if (/^\d+$/.test(last)) return ROUTE_LABELS[segments[0] ?? ""] ?? "Record";
+  const text = last.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return text === "M" ? "Mobile operations" : text;
+}
+
 function reloadWithCacheBust(): void {
   const url = new URL(window.location.href);
   url.searchParams.set("reload", Date.now().toString(36));
@@ -15,8 +33,10 @@ function reloadWithCacheBust(): void {
 }
 
 export function RouteFallback() {
+  const pageLabel = loadingPageLabel();
   return (
     <div className="flex min-h-[40vh] flex-col gap-4 p-4 md:p-6" aria-busy="true" aria-label="Loading page">
+      <h1 className="text-2xl font-semibold tracking-tight">{pageLabel}</h1>
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin shrink-0" />
         <span>Loading page…</span>
@@ -57,8 +77,10 @@ function RouteFallbackWithTimeout() {
     };
   }, []);
   if (slow) {
+    const pageLabel = loadingPageLabel();
     return (
       <div className="flex min-h-[40vh] flex-col gap-4 p-4 md:p-6 max-w-xl">
+        <h1 className="text-2xl font-semibold tracking-tight">{pageLabel}</h1>
         <Alert>
           <AlertTitle>This page is taking longer than expected</AlertTitle>
           <AlertDescription className="mt-2 flex flex-col gap-3 text-sm">

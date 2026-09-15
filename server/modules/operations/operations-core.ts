@@ -143,7 +143,8 @@ function mapOperationalExceptionSqlRow(row: OperationalExceptionSqlRow) {
     typeof ctx.exceptionCode === "string"
       ? ctx.exceptionCode
       : normalizeOperationalExceptionCode(row.type);
-  const area = typeof ctx.area === "string" ? ctx.area : inferOperationalExceptionArea(row.type);
+  const rootArea = typeof relatedRefs.area === "string" ? relatedRefs.area : null;
+  const area = typeof ctx.area === "string" ? ctx.area : rootArea ?? inferOperationalExceptionArea(row.type);
   const relatedSummaryParts: string[] = [];
   if (typeof ctx.poNumber === "string" && ctx.poNumber) relatedSummaryParts.push(`PO ${ctx.poNumber}`);
   if (typeof ctx.shipmentId === "number") relatedSummaryParts.push(`Shipment ${ctx.shipmentId}`);
@@ -3078,6 +3079,7 @@ type ExceptionListFilters = {
   severity?: string;
   status?: string;
   type?: string;
+  area?: string;
 };
 
 function operationalExceptionFilter(filters: ExceptionListFilters) {
@@ -3100,6 +3102,14 @@ function operationalExceptionFilter(filters: ExceptionListFilters) {
   if (filters.type && filters.type.trim()) {
     params.push(filters.type.trim().toLowerCase());
     whereClauses.push(`lower(e.type) = $${params.length}`);
+  }
+  if (filters.area && filters.area.trim()) {
+    params.push(filters.area.trim().toLowerCase());
+    whereClauses.push(`lower(COALESCE(e.related_refs->'_invtrack'->>'area',e.related_refs->>'area',CASE
+      WHEN lower(e.type) IN ('contract_violation','po_mismatch','receive_mismatch') THEN 'procurement'
+      WHEN lower(e.type) IN ('late_shipment','shipment_no_eta') THEN 'logistics'
+      WHEN lower(e.type) IN ('stock_shortage','inventory_shortage') THEN 'inventory'
+      ELSE 'operations' END)) = $${params.length}`);
   }
 
   return { whereSql: `WHERE ${whereClauses.join(" AND ")}`, params };

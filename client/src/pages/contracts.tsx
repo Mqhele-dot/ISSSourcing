@@ -232,7 +232,7 @@ export default function ContractsPage() {
     }
   };
 
-  const getSupplierName = (id: number) => suppliers.find((s) => s.id === id)?.name ?? `Supplier #${id}`;
+  const getSupplierName = (id: number) => suppliers.find((s) => s.id === id)?.name ?? `Historical supplier unavailable (ID ${id})`;
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="contracts-page">

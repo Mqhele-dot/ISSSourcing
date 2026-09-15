@@ -854,6 +854,7 @@ export async function fetchExceptionsPageEnvelope(params: {
   severity?: string;
   status?: string;
   type?: string;
+  area?: "procurement" | "inventory" | "logistics" | "operations";
   sort?: "created_desc" | "created_asc" | "severity_desc";
 }): Promise<ApiEnvelopeResult<ExceptionPage>> {
   const search = new URLSearchParams({
@@ -864,33 +865,42 @@ export async function fetchExceptionsPageEnvelope(params: {
   if (params.severity) search.set("severity", params.severity);
   if (params.status) search.set("status", params.status);
   if (params.type) search.set("type", params.type);
+  if (params.area) search.set("area", params.area);
   return fetchWithMeta<ExceptionPage>(`/api/v2/exceptions?${search.toString()}`);
 }
 
-export async function fetchException(id: string | number): Promise<OperationalException> {
-  return apiFetch<OperationalException>(`/api/exceptions/${id}`);
+export async function fetchException(id: string | number, procurement = false): Promise<OperationalException> {
+  const base = procurement ? "/api/v2/procurement/exceptions" : "/api/exceptions";
+  return apiFetch<OperationalException>(`${base}/${id}`);
 }
 
 export async function updateExceptionStatus(
   id: string | number,
   toStatus: string,
   note?: string,
+  procurement = false,
 ): Promise<OperationalException> {
-  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/status`, { toStatus, note });
+  const base = procurement ? "/api/v2/procurement/exceptions" : "/api/exceptions";
+  return apiMutate<OperationalException>("POST", `${base}/${id}/status`, { toStatus, note });
 }
 
 export async function assignException(
   id: string | number,
   assignee: string,
+  procurement = false,
 ): Promise<OperationalException> {
-  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/assign`, { assignee });
+  const base = procurement ? "/api/v2/procurement/exceptions" : "/api/exceptions";
+  return apiMutate<OperationalException>("POST", `${base}/${id}/assign`, { assignee });
 }
 
 export async function addExceptionComment(
   id: string | number,
   comment: string,
+  procurement = false,
 ): Promise<OperationalException> {
-  return apiMutate<OperationalException>("POST", `/api/exceptions/${id}/comment`, { comment });
+  const base = procurement ? "/api/v2/procurement/exceptions" : "/api/exceptions";
+  const suffix = procurement ? "comments" : "comment";
+  return apiMutate<OperationalException>("POST", `${base}/${id}/${suffix}`, { comment });
 }
 
 export async function fetchIntegrationRuns(): Promise<IntegrationRun[]> {

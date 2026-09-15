@@ -93,7 +93,7 @@ function filterSuppliersForPreview(suppliers: Supplier[], f: ReportFilter): Supp
 
 function supplierName(suppliers: Supplier[], id: number | null | undefined): string {
   if (id == null) return "—";
-  return suppliers.find((s) => s.id === id)?.name ?? `Supplier #${id}`;
+  return suppliers.find((s) => s.id === id)?.name ?? `Historical supplier unavailable (ID ${id})`;
 }
 
 function projectLabel(projects: ReportProjectOption[], projectId: number | null | undefined): string {

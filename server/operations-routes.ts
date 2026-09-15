@@ -81,6 +81,7 @@ const exceptionPageQuerySchema = z.object({
   severity: z.string().trim().max(40).optional(),
   status: z.string().trim().max(40).optional(),
   type: z.string().trim().max(80).optional(),
+  area: z.enum(["procurement", "inventory", "logistics", "operations"]).optional(),
   sort: z.enum(["created_desc", "created_asc", "severity_desc"]).default("created_desc"),
 });
 

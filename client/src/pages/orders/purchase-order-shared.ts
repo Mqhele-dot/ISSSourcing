@@ -107,7 +107,7 @@ export function buildPurchaseOrderPrintHtml(detail: PurchaseOrderDetail, formatM
       <body>
         <h1>Purchase Order ${escapeHtml(detail.poNumber)}</h1>
         <div class="meta">
-          Supplier: ${escapeHtml(detail.supplierName || `Supplier #${detail.supplierId}`)}<br/>
+          Supplier: ${escapeHtml(detail.supplierName || `Historical supplier unavailable (ID ${detail.supplierId})`)}<br/>
           Status: ${escapeHtml(detail.status)}<br/>
           Requested: ${escapeHtml(formatDate(detail.requestedDate))}
         </div>

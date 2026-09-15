@@ -119,9 +119,11 @@ const EXCEPTION_TYPE_PRESETS = [
   { value: "po_mismatch", label: "PO mismatch" },
 ];
 
-function ExceptionListView() {
+function ExceptionListView({ fixedArea, basePath = APP_ROUTES.operations.exceptions }: { fixedArea?: "procurement"; basePath?: string }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const workflowPermissionResource = fixedArea === "procurement" ? "purchases" : "inventory";
+  const workflowPermissionType = fixedArea === "procurement" ? "manage" : "update";
   const { queryState, setQueryState } = useQueryState({
     severity: "",
     status: "",
@@ -146,7 +148,7 @@ function ExceptionListView() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ["/api/v2/exceptions", debouncedNorm.severity, debouncedNorm.status, debouncedNorm.type, page, pageSize, sort],
+    queryKey: ["/api/v2/exceptions", fixedArea, debouncedNorm.severity, debouncedNorm.status, debouncedNorm.type, page, pageSize, sort],
     queryFn: () =>
       fetchExceptionsPageEnvelope({
         page,
@@ -155,6 +157,7 @@ function ExceptionListView() {
         severity: debouncedNorm.severity || undefined,
         status: debouncedNorm.status || undefined,
         type: debouncedNorm.type || undefined,
+        area: fixedArea,
       }),
     placeholderData: (previous) => previous,
     staleTime: 10_000,
@@ -200,8 +203,8 @@ function ExceptionListView() {
   }, [quickException]);
 
   const exceptionDetailPath = useCallback(
-    (id: number) => `${APP_ROUTES.operations.exceptions}/${id}`,
-    [],
+    (id: number) => `${basePath}/${id}`,
+    [basePath],
   );
   const quickStatusRequiresNote = exceptionStatusNeedsNote(quickStatus);
   const quickAssigneeChanged = quickException
@@ -255,6 +258,12 @@ function ExceptionListView() {
 
   const handleRunChecks = async () => {
     try {
+      if (fixedArea === "procurement") {
+        await requestJson("POST", "/api/v2/procurement/exceptions/reconcile");
+        toast({ title: "Procurement exception reconciliation completed" });
+        await refreshNow();
+        return;
+      }
       const result = await requestJson<{
         created: {
           lateShipments: number;
@@ -299,11 +308,11 @@ function ExceptionListView() {
   return (
     <div data-testid="exceptions-page" className="mx-auto max-w-7xl space-y-4">
       <PageHeader
-        title="Exceptions"
-        subtitle="Control tower lifecycle management"
-        breadcrumb={<span>Operations / Exceptions</span>}
+        title={fixedArea === "procurement" ? "Procurement exceptions" : "Exceptions"}
+        subtitle={fixedArea === "procurement" ? "Governed procurement findings, ownership, resolution, and retained evidence" : "Control tower lifecycle management"}
+        breadcrumb={<span>{fixedArea === "procurement" ? "Procurement / Exceptions" : "Operations / Exceptions"}</span>}
       />
-      <ExceptionsV1ExclusionNotice />
+      {fixedArea ? null : <ExceptionsV1ExclusionNotice />}
 
       <div data-tour="exceptions-list" className="space-y-4">
       <div data-tour="exceptions-toolbar">
@@ -366,7 +375,7 @@ function ExceptionListView() {
             <Button variant="outline" data-testid="exceptions-refresh" onClick={refreshNow}>
               Refresh
             </Button>
-            <Can resource="inventory" permissionType="execute" reason="Requires inventory:execute permission">
+            <Can resource={workflowPermissionResource} permissionType={fixedArea === "procurement" ? "manage" : "execute"} reason={`Requires ${workflowPermissionResource}:${fixedArea === "procurement" ? "manage" : "execute"} permission`}>
               <Button variant="outline" data-testid="exceptions-run-checks" onClick={handleRunChecks}>
                 Run checks
               </Button>
@@ -562,7 +571,7 @@ function ExceptionListView() {
               <Button variant="outline" onClick={() => setQuickException(null)}>
                 Cancel
               </Button>
-              <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
+              <Can resource={workflowPermissionResource} permissionType={workflowPermissionType} reason={`Requires ${workflowPermissionResource}:${workflowPermissionType} permission`}>
                 <Button
                   disabled={
                     !quickException ||
@@ -574,12 +583,13 @@ function ExceptionListView() {
                     setQuickSaving(true);
                     try {
                       if (quickException.status !== quickStatus) {
-                        await updateExceptionStatus(quickException.id, quickStatus, quickNote.trim() || undefined);
+                        await updateExceptionStatus(quickException.id, quickStatus, quickNote.trim() || undefined, fixedArea === "procurement");
                       }
                       if (quickAssigneeChanged) {
                         await assignException(
                           quickException.id,
                           normalizeExceptionAssigneeInput(quickAssignee) ?? "",
+                          fixedArea === "procurement",
                         );
                       }
                       toast({ title: "Exception updated" });
@@ -608,7 +618,7 @@ function ExceptionListView() {
   );
 }
 
-function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
+function ExceptionDetailView({ exceptionId, basePath = APP_ROUTES.operations.exceptions, procurementContext = false }: { exceptionId: string; basePath?: string; procurementContext?: boolean }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [nextStatus, setNextStatus] = useState("in_progress");
@@ -616,6 +626,8 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   const [statusNote, setStatusNote] = useState("");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
+  const workflowPermissionResource = procurementContext ? "purchases" : "inventory";
+  const workflowPermissionType = procurementContext ? "manage" : "update";
 
   const {
     data,
@@ -625,7 +637,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
     refetch,
   } = useQuery({
     queryKey: ["/api/exceptions/detail", exceptionId],
-    queryFn: () => fetchException(exceptionId),
+    queryFn: () => fetchException(exceptionId, procurementContext),
   });
   const error = isError ? (queryError instanceof Error ? queryError : new Error(String(queryError))) : null;
 
@@ -678,7 +690,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
 
   return (
     <div data-testid="exception-detail-page" className="mx-auto max-w-7xl space-y-4">
-      <Button variant="ghost" onClick={() => setLocation(APP_ROUTES.operations.exceptions)} className="w-fit">
+      <Button variant="ghost" onClick={() => setLocation(basePath)} className="w-fit">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to exceptions
       </Button>
@@ -696,9 +708,9 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
             <PageHeader
               title={`Exception #${exception.id}`}
               subtitle={exception.title}
-              breadcrumb={<span>Operations / Exceptions / {exception.id}</span>}
+              breadcrumb={<span>{procurementContext ? `Procurement / Exceptions / ${exception.id}` : `Operations / Exceptions / ${exception.id}`}</span>}
             />
-            <ExceptionsV1ExclusionNotice />
+            {procurementContext ? null : <ExceptionsV1ExclusionNotice />}
 
             <div className="grid gap-4 md:grid-cols-2">
               <Card data-testid="exception-detail-incident">
@@ -792,7 +804,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                   }
                 />
                 <div className="flex gap-2">
-                  <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
+                  <Can resource={workflowPermissionResource} permissionType={workflowPermissionType} reason={`Requires ${workflowPermissionResource}:${workflowPermissionType} permission`}>
                     <Button
                       variant="outline"
                       disabled={
@@ -802,7 +814,7 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                       }
                       onClick={() =>
                         runWithToast(async () => {
-                          await updateExceptionStatus(exception.id, nextStatus, statusNote.trim() || undefined);
+                          await updateExceptionStatus(exception.id, nextStatus, statusNote.trim() || undefined, procurementContext);
                           setStatusNote("");
                         })
                       }
@@ -810,12 +822,12 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                       Update status
                     </Button>
                   </Can>
-                  <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
+                  <Can resource={workflowPermissionResource} permissionType={workflowPermissionType} reason={`Requires ${workflowPermissionResource}:${workflowPermissionType} permission`}>
                     <Button
                       disabled={saving || !detailAssigneeChanged}
                       onClick={() =>
                         runWithToast(async () => {
-                          await assignException(exception.id, normalizeExceptionAssigneeInput(assignee) ?? "");
+                          await assignException(exception.id, normalizeExceptionAssigneeInput(assignee) ?? "", procurementContext);
                         })
                       }
                     >
@@ -837,12 +849,12 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
                     onChange={(event) => setComment(event.target.value)}
                     placeholder="Add comment"
                   />
-                  <Can resource="inventory" permissionType="update" reason="Requires inventory:update permission">
+                  <Can resource={workflowPermissionResource} permissionType={workflowPermissionType} reason={`Requires ${workflowPermissionResource}:${workflowPermissionType} permission`}>
                     <Button
                       disabled={saving || !comment.trim()}
                       onClick={() =>
                         runWithToast(async () => {
-                          await addExceptionComment(exception.id, comment);
+                          await addExceptionComment(exception.id, comment, procurementContext);
                           setComment("");
                         })
                       }
@@ -915,10 +927,11 @@ function ExceptionDetailView({ exceptionId }: { exceptionId: string }) {
   );
 }
 
-export default function ExceptionsPage() {
-  const [detailMatch, detailParams] = useRoute<{ id: string }>(`${APP_ROUTES.operations.exceptions}/:id`);
+export default function ExceptionsPage({ procurementContext = false }: { procurementContext?: boolean } = {}) {
+  const basePath = procurementContext ? APP_ROUTES.procurement.exceptions : APP_ROUTES.operations.exceptions;
+  const [detailMatch, detailParams] = useRoute<{ id: string }>(`${basePath}/:id`);
   if (detailMatch && detailParams?.id) {
-    return <ExceptionDetailView exceptionId={detailParams.id} />;
+    return <ExceptionDetailView exceptionId={detailParams.id} basePath={basePath} procurementContext={procurementContext} />;
   }
-  return <ExceptionListView />;
+  return <ExceptionListView fixedArea={procurementContext ? "procurement" : undefined} basePath={basePath} />;
 }

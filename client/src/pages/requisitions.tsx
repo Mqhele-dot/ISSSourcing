@@ -68,6 +68,9 @@ interface RequisitionsPageProps {
 }
 
 type ReportingRequisitionListEntry = PurchaseRequisitionListEntry & {
+  supplierName?: string | null;
+  departmentName?: string | null;
+  departmentCode?: string | null;
   currencyCode?: string | null;
   reportingCurrencyCode?: string | null;
   reportingExchangeRate?: number | null;
@@ -188,8 +191,11 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     };
   }, [requisitionPage]);
   const hasActiveFilters = Boolean(searchFilter || statusFilter);
-  const supplierNameFor = (req: PurchaseRequisition) =>
-    suppliers.find((s) => s.id === req.supplierId)?.name ?? (req.supplierId ? "Supplier #" + req.supplierId : "-");
+  const supplierNameFor = (req: PurchaseRequisition) => {
+    const item = req as ReportingRequisitionListEntry;
+    return item.supplierName ?? suppliers.find((s) => s.id === req.supplierId)?.name
+      ?? (req.supplierId ? `Historical supplier unavailable (ID ${req.supplierId})` : "—");
+  };
   const requesterNameFor = (req: PurchaseRequisition) => {
     const requestorId = Number((req as { requestorId?: unknown }).requestorId);
     if (!Number.isFinite(requestorId) || requestorId <= 0) return "—";
@@ -197,10 +203,12 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     return user?.username ?? user?.email ?? `User #${requestorId}`;
   };
   const departmentNameFor = (req: PurchaseRequisition) => {
+    const item = req as ReportingRequisitionListEntry;
+    if (item.departmentName) return `${item.departmentCode ? `${item.departmentCode} - ` : ""}${item.departmentName}`;
     const departmentId = Number((req as { departmentId?: unknown }).departmentId);
     if (!Number.isFinite(departmentId) || departmentId <= 0) return "—";
     const department = departments.find((candidate) => candidate.id === departmentId);
-    return department ? `${department.code ? `${department.code} - ` : ""}${department.name ?? `Department #${departmentId}`}` : `Department #${departmentId}`;
+    return department ? `${department.code ? `${department.code} - ` : ""}${department.name}` : `Historical department unavailable (ID ${departmentId})`;
   };
   const lineCountFor = (req: PurchaseRequisitionListEntry) => {
     const lineCount = Number(req.lineCount);

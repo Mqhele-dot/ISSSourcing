@@ -43,6 +43,12 @@ export default function RequisitionFormPage() {
               {f.lockedReason}
             </div>
           ) : null}
+          {f.mdmError ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm" role="alert">
+              <span>Authoritative procurement Master Data could not be loaded. Saving is disabled until it is available.</span>
+              <Button type="button" size="sm" variant="outline" onClick={() => void f.refetchMdm()}>Retry Master Data</Button>
+            </div>
+          ) : null}
           <RequisitionHeaderFields
             suppliers={f.suppliers}
             departments={f.departments}
@@ -61,6 +67,7 @@ export default function RequisitionFormPage() {
             fieldErrors={f.fieldErrors}
             requiresDepartment={f.mdmContext?.rules.requiresDepartment !== false}
             readOnly={f.isLocked}
+            suppliersLoading={f.isMdmLoading}
             onSupplierChange={f.setSupplierId}
             onCurrencyChange={f.setCurrencyCode}
             onCreateSupplier={f.createSupplier}
@@ -102,7 +109,7 @@ export default function RequisitionFormPage() {
           />
 
           <div className="flex gap-2">
-            <Button onClick={f.handleSubmit} disabled={f.isPending || f.isLocked} data-testid="requisition-save-button">
+            <Button onClick={f.handleSubmit} disabled={f.isPending || !f.canSubmit} data-testid="requisition-save-button" aria-describedby={!f.canSubmit ? "requisition-submit-readiness" : undefined}>
               {f.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isNew ? "Create" : "Update"}
             </Button>
@@ -118,6 +125,7 @@ export default function RequisitionFormPage() {
               </Button>
             ) : null}
           </div>
+          {!f.canSubmit && !f.isLocked ? <p id="requisition-submit-readiness" className="text-sm text-muted-foreground" aria-live="polite">Complete required setup before saving: {f.submitBlockers[0]}.</p> : null}
           {!isNew && id ? (
             <>
               <ApprovalHistoryCard entityType="requisition" entityId={id} />

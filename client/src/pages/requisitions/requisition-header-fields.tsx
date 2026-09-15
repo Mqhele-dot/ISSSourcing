@@ -37,6 +37,7 @@ export function RequisitionHeaderFields({
   fieldErrors,
   requiresDepartment = true,
   readOnly = false,
+  suppliersLoading = false,
   onSupplierChange,
   onCurrencyChange,
   onCreateSupplier,
@@ -64,6 +65,7 @@ export function RequisitionHeaderFields({
   fieldErrors: RequisitionFieldErrors;
   requiresDepartment?: boolean;
   readOnly?: boolean;
+  suppliersLoading?: boolean;
   onSupplierChange: (v: number | "") => void;
   onCurrencyChange: (v: string) => void;
   onCreateSupplier: (payload: { name: string; email?: string; phone?: string }) => void;
@@ -114,7 +116,7 @@ export function RequisitionHeaderFields({
           />
           {!readOnly ? (
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">{suppliers.length} approved supplier(s) available. Search shows 20 at a time.</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">{suppliersLoading ? "Loading approved suppliers…" : `${suppliers.length} approved supplier(s) available. Search shows 20 at a time.`}</p>
               <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setShowSupplierCreate((open) => !open)}>
                 {showSupplierCreate ? "Hide new supplier" : "Add supplier here"}
               </Button>
