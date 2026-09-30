@@ -1,0 +1,131 @@
+- main [ref=e3]:
+  - paragraph [ref=e4]: Disposable integration fixture — not your live database
+  - generic [ref=e5]:
+    - generic [ref=e9]:
+      - heading "Stock positions" [level=1] [ref=e10]
+      - paragraph [ref=e11]: Verify existing warehouse balances against normalized sites, zones and bins.
+    - note [ref=e12]:
+      - paragraph [ref=e13]: This release verifies location evidence only. It does not split balances, change quantities, or perform inspection. Item-wide safety holds are available separately after applying the safety migration.
+      - paragraph [ref=e14]: Per-bin/lot quality eligibility and projected supply are not enabled. Item-wide safety holds override available stock to zero. Existing reservations are shown at warehouse/item level, not as bin reservations. Any stock change invalidates the reconciliation snapshot.
+      - link "Manage canonical sites in Master Data" [ref=e15] [cursor=pointer]:
+        - /url: /admin/master-data/sites
+    - group [ref=e16]:
+      - generic "Location setup — warehouse permissions required" [ref=e17] [cursor=pointer]
+      - option "Select setup warehouse" [selected]
+      - option "Warehouse 1 (#1)"
+      - option "(#90001)"
+      - option "Select master data site" [selected]
+      - option "JHB — Johannesburg (#1)"
+    - generic [ref=e18]:
+      - heading "Warehouse balance reconciliation" [level=3] [ref=e20]
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - textbox "Search stock positions" [ref=e23]:
+            - /placeholder: Search SKU, item or warehouse
+            - text: HOLD-TEST
+          - generic [ref=e24]: Location state
+          - combobox "Location state" [ref=e25]:
+            - option "All" [selected]
+            - option "Unresolved"
+            - option "Reconciled"
+          - generic [ref=e26]: Rows
+          - combobox "Rows" [ref=e27]:
+            - option "25" [selected]
+            - option "50"
+            - option "100"
+        - paragraph [ref=e41]: 0 reconciled · 2 unresolved in the filtered results
+        - region "Stock positions table — horizontally scrollable" [ref=e29]:
+          - table [ref=e30]:
+            - rowgroup [ref=e31]:
+              - row [ref=e32]:
+                - columnheader "Item" [ref=e33]
+                - columnheader "Warehouse" [ref=e34]
+                - columnheader "On hand" [ref=e35]
+                - columnheader "Location evidence" [ref=e36]
+                - columnheader "Quality" [ref=e37]
+                - columnheader "Actions" [ref=e38]
+            - rowgroup [ref=e42]:
+              - row [ref=e43]:
+                - cell "HOLD-TEST Safety test" [ref=e44]: HOLD-TESTSafety test
+                - cell "Warehouse 1" [ref=e45]
+                - cell "16" [ref=e46]
+                - 'cell "Unresolved — legacy label: none" [ref=e47]'
+                - cell "Item-wide safety hold" [ref=e48]
+                - cell [ref=e49]:
+                  - generic [ref=e50]:
+                    - button "Verify HOLD-TEST" [ref=e51] [cursor=pointer]
+                    - button "Safety holds for HOLD-TEST" [ref=e52] [cursor=pointer]
+                    - button "History for HOLD-TEST" [ref=e53] [cursor=pointer]
+              - row [ref=e54]:
+                - cell "HOLD-TEST Safety test" [ref=e55]: HOLD-TESTSafety test
+                - cell [ref=e56]
+                - cell "3" [ref=e57]
+                - 'cell "Unresolved — legacy label: none" [ref=e58]'
+                - cell "Item-wide safety hold" [ref=e59]
+                - cell [ref=e60]:
+                  - generic [ref=e61]:
+                    - button "Verify HOLD-TEST" [ref=e62] [cursor=pointer]
+                    - button "Safety holds for HOLD-TEST" [ref=e63] [cursor=pointer]
+                    - button "History for HOLD-TEST" [ref=e64] [cursor=pointer]
+        - generic [ref=e39]:
+          - generic [ref=e40]: 1–2 of 2
+          - button "First" [disabled]
+          - button "Previous" [disabled]
+          - button "Next" [disabled]
+          - button "Last" [disabled]
+    - region "Safety holds for HOLD-TEST" [ref=e65]:
+      - heading "Item-wide safety holds — HOLD-TEST" [level=2] [ref=e66]
+      - generic [ref=e67]:
+        - button "Receipt inspection rule" [expanded] [ref=e68] [cursor=pointer]
+        - generic [ref=e101]:
+          - paragraph [ref=e102]: Requires inventory approval permission and all-warehouse access. Inspection is required if either the item or supplier rule requires it.
+          - paragraph [ref=e103]:
+            - text: "Conservative mode: each new PO receipt holds this item in"
+            - strong [ref=e104]: all warehouses
+            - text: ", including existing stock, until a different approver releases its hold with inspection evidence. Disabling a rule does not release existing holds. This is not receipt-only or lot-level inspection."
+          - paragraph [ref=e105]: "Current rule: Inspection required · revision 3"
+          - generic [ref=e106]:
+            - text: Change reason (required)
+            - textbox "Change reason (required)" [ref=e107]
+          - button "Disable future inspection requirement" [disabled]
+          - status [ref=e109]: Rule saved. Existing holds are unchanged.
+      - paragraph [ref=e69]: A hold blocks stock decreases for this item in every warehouse. Receipts remain held. It does not classify individual bins or lots. Approval permission and all-warehouse access are required; a different approver must release each hold.
+      - generic [ref=e70]: Hold type
+      - combobox "Hold type" [ref=e71]:
+        - option "INSPECTION"
+        - option "QUARANTINE" [selected]
+        - option "DAMAGED"
+        - option "BLOCKED"
+      - generic [ref=e72]: Reason / inspection evidence (required for apply or release)
+      - textbox "Reason / inspection evidence (required for apply or release)" [ref=e73]
+      - button "Hold item in all warehouses" [disabled]
+      - article [ref=e74]:
+        - paragraph [ref=e75]: INSPECTION — Active
+        - paragraph [ref=e76]: Receipt 7, line 7 requires inspection. Conservative item-wide hold.
+        - paragraph [ref=e77]: "Created by #1 · 17/09/2026, 21:10:43"
+        - 'button "Release hold #6" [disabled]'
+      - article [ref=e78]:
+        - paragraph [ref=e79]: INSPECTION — Released
+        - paragraph [ref=e80]: Receipt 6, line 6 requires inspection. Conservative item-wide hold.
+        - paragraph [ref=e81]: "Created by #1 · 17/09/2026, 21:10:43"
+        - paragraph [ref=e82]: "Released 17/09/2026, 21:10:43: Inspection passed with documented check"
+      - article [ref=e83]:
+        - paragraph [ref=e84]: QUARANTINE — Released
+        - paragraph [ref=e85]: Damaged packaging inspection
+        - paragraph [ref=e86]: "Created by #1 · 17/09/2026, 21:10:42"
+        - paragraph [ref=e87]: "Released 17/09/2026, 21:10:42: Concurrent test review"
+      - article [ref=e88]:
+        - paragraph [ref=e89]: QUARANTINE — Released
+        - paragraph [ref=e90]: Damaged packaging inspection
+        - paragraph [ref=e91]: "Created by #1 · 17/09/2026, 21:10:42"
+        - paragraph [ref=e92]: "Released 17/09/2026, 21:10:42: Independent review passed"
+      - article [ref=e93]:
+        - paragraph [ref=e94]: QUARANTINE — Released
+        - paragraph [ref=e95]: Damaged packaging inspection
+        - paragraph [ref=e96]: "Created by #1 · 17/09/2026, 21:10:41"
+        - paragraph [ref=e97]: "Released 17/09/2026, 21:10:42: Inspected and passed"
+      - generic [ref=e98]:
+        - button "Previous" [disabled]
+        - generic [ref=e99]: Page 1 · 5 records
+        - button "Next" [disabled]
+        - button "Close safety holds" [ref=e100] [cursor=pointer]

@@ -5,7 +5,7 @@ import { gotoAuthed } from "./test-helpers";
 test.describe("button and action smoke", () => {
   test("contracts route navigation loads the real page marker", async ({ page }) => {
     await gotoAuthed(page, "/procurement/contracts");
-    await expect(page.getByTestId("contracts-page")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("blanket-agreements-page")).toBeVisible({ timeout: 20_000 });
   });
 
   test("control tower stays usable when gas dashboard summary fails", async ({ page }) => {
@@ -102,11 +102,10 @@ test.describe("button and action smoke", () => {
     await expect(page.getByTestId("po-clear-contract")).toBeVisible();
   });
 
-  test("AP payment batch action shows validation when no invoice is selected", async ({ page }) => {
+  test("AP payment batch action fails closed when no invoice is selected", async ({ page }) => {
     await gotoAuthed(page, "/finance/accounts-payable/payments");
     await expect(page.getByTestId("accounts-payable-page")).toBeVisible({ timeout: 20_000 });
-    await page.getByTestId("ap-create-batch-button").click();
-    await expect(page.getByText("Select at least one invoice")).toBeVisible();
+    await expect(page.getByTestId("ap-create-batch-button")).toBeDisabled();
   });
 
   test("AP invoice without PO shows controlled PO-link repair guidance", async ({ page }) => {
@@ -157,7 +156,9 @@ test.describe("button and action smoke", () => {
     await gotoAuthed(page, "/admin/system-diagnostics");
     await expect(page.getByTestId("system-diagnostics-page")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("diagnostics-run-scan-button").click();
-    await expect(page.getByTestId("diagnostics-scan-results")).toBeVisible();
+    await expect(page.getByText("Diagnostics scan complete", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("diagnostics-advanced-evidence").getByText(/Advanced browser diagnostics/i).click();
+    await expect(page.getByTestId("diagnostics-scan-results")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("diagnostics-export-json")).toBeVisible();
     await expect(page.getByTestId("diagnostics-export-markdown")).toBeVisible();
     await page.getByTestId("diagnostics-clear-events").click();
@@ -167,6 +168,7 @@ test.describe("button and action smoke", () => {
   test("settings save action persists through the production control plane", async ({ page }) => {
     await gotoAuthed(page, "/admin/settings");
     await expect(page.getByTestId("admin-settings-page")).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("tab", { name: "Operational policy" }).click();
     await page.getByTestId("settings-control-low-stock").fill("10");
     await page.getByTestId("settings-control-save").click();
     await expect(page.getByText("Settings updated", { exact: true })).toBeVisible({ timeout: 20_000 });
@@ -177,6 +179,7 @@ test.describe("button and action smoke", () => {
     await gotoAuthed(page, "/admin/master-data/departments");
     await expect(page.getByTestId("master-data-page")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Add record" }).click();
+    await page.getByRole("button", { name: "Add record" }).last().click();
     await expect(page.getByText("Code and name are required", { exact: true })).toBeVisible();
   });
 

@@ -62,7 +62,7 @@ export const resourceEnum = pgEnum("resource", [
   "reports", "users", "settings", "reorder_requests", "stock_movements",
   "analytics", "dashboards", "notifications", "audit_logs", "user_profiles",
   "documents", "custom_roles", "activity_logs", "import_export", "system",
-  "invoices", "billing", "taxes", "payments", "master_data"
+  "invoices", "billing", "taxes", "payments", "master_data", "finance"
 ]);
 
 // Permissions schema

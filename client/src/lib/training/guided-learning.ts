@@ -75,6 +75,12 @@ const GUIDE_OVERRIDES: Record<string, GuideOverride> = {
     watchFor: "A put-away movement changes location evidence, not on-hand quantity; resolve missing receipt warehouse evidence before proceeding.",
     selectors: ["main"],
   },
+  [APP_ROUTES.inventory.positions]: {
+    whyItMatters: "Verified location references prepare warehouse stock for quantity-specific WMS workflows without inventing bins or changing balances.",
+    instructions: ["Link the warehouse to an active Master Data site and define its zones and bins.", "Review unresolved warehouse balances and verify the full balance location only when supported by physical evidence.", "Confirm that Inventory shows the same location and unchanged quantity."],
+    watchFor: "This stage does not enable quality holds or split-bin quantities. Stock updates invalidate reconciliation snapshots.",
+    selectors: ["[data-testid='inventory-positions-page']"],
+  },
   [APP_ROUTES.inventory.cycleCounts]: {
     whyItMatters: "Counts detect shrink, process errors, and stale stock before they distort planning or finance.",
     instructions: ["Choose the warehouse and count mode.", "Count independently of the expected quantity where policy requires blind counting.", "Review variances and post only after evidence and approvals are complete."],

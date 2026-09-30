@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import type { Express } from 'express';
+import type { Pool } from 'pg';
+type Call=(path:string,method?:string,body?:unknown,actor?:number)=>Promise<{status:number;body:any}>;
+export async function testItemRequests(app:Express,pool:Pool,call:Call) {
+  await pool.query(`CREATE TABLE mdm_change_requests(id serial PRIMARY KEY,organization_id integer,domain text,entity_id integer,action text,proposed_patch jsonb,before_state jsonb,risk_level text,status text,submitted_by integer,approved_by integer,rejected_by integer,reason text,target_version integer,created_at timestamp DEFAULT now(),decided_at timestamp);
+    CREATE TABLE mdm_change_request_steps(id serial PRIMARY KEY,organization_id integer,change_request_id integer,step text,status text,actor_id integer,reason text,before_state jsonb,after_state jsonb,created_at timestamp DEFAULT now());`);
+  const {registerItemRequestRoutes}=await import('../server/modules/inventory/register-item-request-routes');
+  registerItemRequestRoutes(app,{ensureAuthenticated:(_req,_res,next)=>next(),ensurePermission:()=>(req,res,next)=>{if(req.get('Actor')==='4'){res.status(403).json({denied:true});return;}next();}});
+  const base='/api/v2/inventory/item-requests',body={sku:'REQUEST-TEST',name:'Requested item',reason:'Needed for warehouse servicing',requestKey:randomUUID()};
+  assert.equal((await call(base,'POST',body,4)).status,403);
+  assert.equal((await call(base,'POST',{...body,quantity:100})).status,400);
+  const created=await call(base,'POST',body);
+  assert.equal(created.status,201);const id=created.body.data.id;
+  assert.equal((await call(base,'POST',body)).body.data.id,id);
+  assert.equal((await call(base,'POST',body,2)).status,409);
+  assert.equal((await call(base,'POST',{...body,name:'Changed'})).status,409);
+  assert.equal((await call(base,'POST',{...body,requestKey:randomUUID()})).status,409);
+  assert.equal((await pool.query("SELECT count(*)::int n FROM inventory_items WHERE sku='REQUEST-TEST'")).rows[0].n,0);
+  assert.equal((await call(base,'GET',undefined,3)).body.data.total,0);
+  assert.equal((await call(base,'GET',undefined,2)).body.data.total,0);
+  assert.equal((await call(base)).body.data.total,1);
+  const {approveMdmChangeRequest,applyMdmChangeRequest}=await import('../server/modules/master-data/mdm-change-request-service');
+  await assert.rejects(approveMdmChangeRequest({organizationId:1,id,actorId:1,reason:'Self approval'}),/Maker-checker/);
+  await approveMdmChangeRequest({organizationId:1,id,actorId:2,reason:'Independent review'});
+  await assert.rejects(applyMdmChangeRequest({organizationId:1,id,actorId:2}),/Create the requested SKU/);
+  assert.equal((await call(base)).body.data.items[0].status,'approved','Missing master must not corrupt approval status');
+  // Represents authorized creation through the existing item-master workflow.
+  await pool.query("INSERT INTO inventory_items(id,organization_id,sku,name,quantity,cost) VALUES(91000,1,'REQUEST-TEST','Requested item',0,0)");
+  const {fulfillInventoryItemRequest}=await import('../server/modules/inventory/item-request-service');
+  await assert.rejects(fulfillInventoryItemRequest(2,id,3),/NOT_FOUND/);
+  await pool.query(`CREATE FUNCTION fail_request_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='INVENTORY_ITEM_REQUEST_FULFILLED' THEN RAISE EXCEPTION 'request audit failed'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_request_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_request_audit()`);
+  await assert.rejects(fulfillInventoryItemRequest(1,id,2),/request audit failed/);
+  assert.equal((await call(base)).body.data.items[0].status,'approved');
+  await pool.query('DROP TRIGGER fail_request_audit ON audit_logs');
+  const [a,b]=await Promise.all([fulfillInventoryItemRequest(1,id,2),fulfillInventoryItemRequest(1,id,2)]);
+  assert.equal(a.entityId,91000);assert.equal(b.entityId,91000);
+  assert.equal((await pool.query("SELECT count(*)::int n FROM mdm_change_request_steps WHERE step='apply'")).rows[0].n,1);
+  assert.equal((await pool.query('SELECT quantity FROM inventory_items WHERE id=91000')).rows[0].quantity,0);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM stock_movements WHERE item_id=91000')).rows[0].n,0);
+  console.log('Item request lifecycle passed: strict input, permissions, requester/tenant isolation, replay, independent approval, maintained-item linkage, audit rollback and no stock creation.');
+}

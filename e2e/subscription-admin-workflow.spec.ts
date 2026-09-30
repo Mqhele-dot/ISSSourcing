@@ -138,7 +138,6 @@ test.describe("subscription admin workflow", () => {
 
   test.afterAll(async () => {
     await restoreOrgSettings(snapshot);
-    await pool.end().catch(() => undefined);
   });
 
   test("admin can view plans, usage, locked features, and change plan in local mode", async ({ page }) => {
@@ -164,17 +163,11 @@ test.describe("subscription admin workflow", () => {
     await expect(page.getByTestId("subscription-change-plan-standard")).toBeDisabled();
   });
 
-  test("viewer can inspect subscription state but cannot manage lifecycle", async ({ page }) => {
+  test("viewer is denied the administrator subscription workspace", async ({ page }) => {
     await loginAs(page, "e2e_subscription_viewer", viewerUserId);
     await page.goto("/admin/subscription", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("subscription-admin-page")).toBeVisible();
-    await expect(page.getByTestId("subscription-permission-denied")).toContainText(
-      "You need settings:configure permission to manage subscription.",
-    );
-    await expect(page.getByTestId("subscription-billing-portal")).toBeDisabled();
-    await expect(page.getByTestId("subscription-change-plan-growth")).toBeDisabled();
-    await expect(page.getByTestId("subscription-start-trial")).toBeDisabled();
-    await expect(page.getByTestId("subscription-cancel")).toBeDisabled();
+    await expect(page.getByRole("heading", { name: "Access denied" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("subscription-admin-page")).toHaveCount(0);
 
     const viewerCookie = (await loginForTests("e2e_subscription_viewer", TEST_PASSWORD)) ?? "";
     const denied = await apiJsonRequest("/subscription/change-plan", {

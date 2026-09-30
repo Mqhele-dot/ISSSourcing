@@ -24,6 +24,7 @@ export const navigationAccessCatalog = [
     { path: "/inventory", label: "Inventory" },
     { path: "/inventory/warehouse-operations", label: "Warehouse operations" },
     { path: "/inventory/put-away", label: "Put-away" },
+    { path: "/inventory/positions", label: "Stock positions" },
     { path: "/inventory/cycle-counts", label: "Cycle counts" },
     { path: "/inventory/reorder", label: "Reorder requests" },
     { path: "/inventory/barcodes", label: "Barcode scanner" },

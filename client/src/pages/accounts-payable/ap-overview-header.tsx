@@ -29,9 +29,9 @@ export function ApOverviewHeader({ stats, formatMoney }: Props) {
         icon={<AlertTriangle className="h-4 w-4 text-muted-foreground" />}
       />
       <KpiCard
-        title="Approved for pay"
+        title="Approved invoices"
         value={stats.approvedCount}
-        hint="Invoices ready for batching"
+        hint="Approval status only; payment readiness also requires outstanding balance and match evidence"
         icon={<CheckCircle2 className="h-4 w-4 text-muted-foreground" />}
       />
       <KpiCard

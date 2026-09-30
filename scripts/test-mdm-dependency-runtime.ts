@@ -28,26 +28,28 @@ async function createFixture() {
 
   await pool.query(
     `
-      INSERT INTO currencies (code, name, symbol, region_code, region_name, is_main_for_region, exchange_rate_to_zar, active, updated_at)
-      VALUES ('ZAR', 'South African Rand', 'R', 'ZA', 'South Africa', TRUE, 1, TRUE, NOW())
-      ON CONFLICT (code) DO UPDATE SET active = TRUE, exchange_rate_to_zar = 1, updated_at = NOW()
+      WITH updated AS (
+        UPDATE currencies SET active = TRUE, exchange_rate_to_zar = 1, updated_at = NOW()
+        WHERE organization_id = 1 AND code = 'ZAR' RETURNING id
+      )
+      INSERT INTO currencies (organization_id, code, name, symbol, region_code, region_name, is_main_for_region, exchange_rate_to_zar, active, updated_at)
+      SELECT 1, 'ZAR', 'South African Rand', 'R', 'ZA', 'South Africa', TRUE, 1, TRUE, NOW()
+      WHERE NOT EXISTS (SELECT 1 FROM updated)
     `,
   );
 
   const fromUom = await pool.query<{ id: number }>(
     `
-      INSERT INTO units_of_measure (code, name, symbol, active, updated_at)
-      VALUES ($1, $2, 'ea', TRUE, NOW())
-      ON CONFLICT (code) DO UPDATE SET active = TRUE, updated_at = NOW()
+      INSERT INTO units_of_measure (organization_id, code, name, symbol, active, updated_at)
+      VALUES (1, $1, $2, 'ea', TRUE, NOW())
       RETURNING id
     `,
     [`DEP-EA-${suffix}`, `Dependency Each ${suffix}`],
   );
   const toUom = await pool.query<{ id: number }>(
     `
-      INSERT INTO units_of_measure (code, name, symbol, active, updated_at)
-      VALUES ($1, $2, 'box', TRUE, NOW())
-      ON CONFLICT (code) DO UPDATE SET active = TRUE, updated_at = NOW()
+      INSERT INTO units_of_measure (organization_id, code, name, symbol, active, updated_at)
+      VALUES (1, $1, $2, 'box', TRUE, NOW())
       RETURNING id
     `,
     [`DEP-BOX-${suffix}`, `Dependency Box ${suffix}`],
@@ -55,9 +57,8 @@ async function createFixture() {
 
   const tax = await pool.query<{ id: number }>(
     `
-      INSERT INTO tax_codes (code, name, rate, type, country_code, active, updated_at)
-      VALUES ($1, $2, 15, 'vat', 'ZA', TRUE, NOW())
-      ON CONFLICT (code) DO UPDATE SET active = TRUE, updated_at = NOW()
+      INSERT INTO tax_codes (organization_id, code, name, rate, type, country_code, active, updated_at)
+      VALUES (1, $1, $2, 15, 'vat', 'ZA', TRUE, NOW())
       RETURNING id
     `,
     [`DEP-VAT-${suffix}`, `Dependency VAT ${suffix}`],

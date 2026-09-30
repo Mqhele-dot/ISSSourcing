@@ -52,7 +52,18 @@ function defaultRequiredDate(): string {
   return `${year}-${month}-${day}`;
 }
 
-const LOCKED_REQUISITION_STATUSES = new Set(["APPROVED", "CONVERTED", "CLOSED", "CANCELLED"]);
+const LOCKED_REQUISITION_STATUSES = new Set([
+  "SUBMITTED",
+  "PENDING",
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "REJECTED",
+  "CONVERTED",
+  "CONVERTED_TO_RFQ",
+  "CONVERTED_TO_PO",
+  "CLOSED",
+  "CANCELLED",
+]);
 
 function isValidRequisitionLine(line: ReqLineDraft): boolean {
   const commercialValuesAreValid = line.quantity > 0 && Number(line.unitPrice) > 0;
@@ -105,8 +116,13 @@ function validateRequisitionDraft(input: {
 function lockedReasonForStatus(status: unknown): string {
   const normalized = String(status || "").trim().toUpperCase();
   if (!LOCKED_REQUISITION_STATUSES.has(normalized)) return "";
+  if (normalized === "SUBMITTED" || normalized === "PENDING" || normalized === "PENDING_APPROVAL") {
+    return "This requisition is submitted for approval and its commercial details are locked.";
+  }
   if (normalized === "APPROVED") return "This requisition is approved and locked to preserve approval history.";
-  if (normalized === "CONVERTED") return "This requisition has been converted to a purchase order and can no longer be edited.";
+  if (normalized === "REJECTED") return "This requisition is rejected and its reviewed version can no longer be edited.";
+  if (normalized === "CONVERTED_TO_RFQ") return "This requisition has been converted to an RFQ and can no longer be edited.";
+  if (normalized === "CONVERTED" || normalized === "CONVERTED_TO_PO") return "This requisition has been converted to a purchase order and can no longer be edited.";
   if (normalized === "CLOSED") return "This requisition is closed and no longer accepts changes.";
   return "This requisition is cancelled and no longer accepts changes.";
 }

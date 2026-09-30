@@ -42,7 +42,7 @@ test.describe("procurement reporting browser evidence", () => {
   test("line preview shows all line types, data-quality rows, and bounded paging", async ({ page }) => {
     await loginAsSeededUser(page, "admin", 1);
     await page.goto("/analytics/reports/purchase-requisitions", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("reports-purchase_requisitions-line-preview")).toBeVisible();
+    await expect(page.getByTestId("reports-purchase_requisitions-line-preview")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("report-preview-loading")).toBeHidden({ timeout: 15_000 });
     await expect(page.getByTestId("report-line-catalog").first()).toBeVisible();
     await expect(page.getByTestId("report-line-non_stock").first()).toContainText("Temporary site consumables");
@@ -62,6 +62,8 @@ test.describe("procurement reporting browser evidence", () => {
     await loginAsSeededUser(page, "admin", 1);
     await page.goto("/admin/system-diagnostics?view=integrations", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("diagnostics-workspace-integrations")).toBeVisible();
+    await page.getByTestId("diagnostics-evidence-filter-integrations").click();
+    await page.getByRole("option", { name: "All evidence" }).click();
     await expect(page.getByTestId("diagnostic-finding-EXPORT_JOB_FAILURES")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("diagnostic-finding-EXPORT_JOB_FAILURES")).toContainText(/Next step:/i);
     const text = await page.getByTestId("diagnostic-finding-EXPORT_JOB_FAILURES").textContent();

@@ -83,7 +83,8 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
     mutationFn: async (data: InventoryItemForm) => {
       if (initialData) {
         // Update existing item
-        return apiRequest("PUT", `/api/inventory/${initialData.id}`, data);
+        const {quantity: _physicalStock,...masterData}=data;
+        return apiRequest("PUT", `/api/inventory/${initialData.id}`, masterData);
       } else {
         // Create new item
         return apiRequest("POST", "/api/inventory", data);
@@ -233,12 +234,13 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                 name="quantity"
                 render={({ field }) => (
                   <FormItem className="item-quantity-field">
-                    <FormLabel>Quantity</FormLabel>
+                    <FormLabel>On-hand quantity (read only)</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
                         placeholder="0"
                         className="item-quantity-input"
+                        disabled
                         {...field}
                         onChange={(e) =>
                           field.onChange(
@@ -247,6 +249,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
                         }
                       />
                     </FormControl>
+                    <p className="text-sm text-muted-foreground">Creating an item does not create stock. Use receiving or an authorized stock adjustment.</p>
                     <FormMessage />
                   </FormItem>
                 )}

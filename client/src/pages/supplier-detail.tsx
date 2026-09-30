@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { requestJson } from "@/lib/queryClient";
 import type { Supplier } from "@shared/schema";
 import { PageHeader } from "@/components/page-header";
+import { InspectionRuleEditor } from "@/components/inventory/inspection-rule-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,7 +50,7 @@ export default function SupplierDetailPage() {
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6" data-testid="supplier-detail-page">
       <PageHeader
         title={isLoading ? "Supplier" : data?.name ?? "Supplier"}
-        description="Read-only profile. Use the suppliers list for edits."
+        description="Supplier profile and receipt inspection policy. Use the suppliers list for contact edits."
         breadcrumb={
           <button
             type="button"
@@ -113,6 +114,7 @@ export default function SupplierDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+      {data&&!isError&&<InspectionRuleEditor subjectType="supplier" subjectId={id}/>}
     </div>
   );
 }

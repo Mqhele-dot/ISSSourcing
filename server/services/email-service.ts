@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 
-let transporter: nodemailer.Transporter;
+let transporter: Transporter;
 let transporterInitialized = false;
 
 async function initializeTransporter() {

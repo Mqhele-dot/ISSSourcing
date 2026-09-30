@@ -73,6 +73,7 @@ function sendApStructuredError(res: Response, error: unknown) {
 }
 
 type AuthBundle = {
+  ensurePermission: (resource: string, action: string) => RequestHandler;
   ensureAuthenticated: RequestHandler;
   ensureRole: (roles: string[]) => RequestHandler;
   ensureTwoFactorAuthenticated: RequestHandler;
@@ -403,7 +404,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/receipts", ...apWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/receipts", ...apWrite, auth.ensurePermission("stock_movements", "execute"), async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const payload = req.body && typeof req.body === "object" ? req.body : {};
@@ -426,7 +427,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
           : null;
       return sendOk(
         res,
-        await createReceiptRecord(receipt, items, actor.userId, { warehouseId, warehouseLocation }),
+        await createReceiptRecord(receipt, items, actor.userId, { warehouseId, warehouseLocation, idempotencyKey:req.get("Idempotency-Key") }),
         201,
       );
     } catch (error) {
@@ -435,8 +436,11 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
           details: error.flatten(),
         });
       }
-      console.error("Error creating AP receipt:", error);
-      return sendError(res, 500, "AP_RECEIPT_CREATE_FAILED", error instanceof Error ? error.message : "Failed to create AP receipt");
+      const message=error instanceof Error?error.message:"";
+      if(message.startsWith("RECEIPT_"))return sendError(res,message.endsWith("DENIED")?403:409,message,message.replaceAll("_"," "));
+      if(message==="po_not_found")return sendError(res,404,"RECEIPT_PO_NOT_FOUND","Purchase order not found.");
+      if(message==="invalid_receive_state"||message.startsWith("receive_exceeds_remaining"))return sendError(res,409,"RECEIPT_STATE_CONFLICT","Refresh the PO and check its remaining quantity and approval status.");
+      return sendError(res, 500, "AP_RECEIPT_CREATE_FAILED", "Receipt was not saved. Changes rolled back.");
     }
   });
 
@@ -464,7 +468,9 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     if (query.eligibility === "payable") {
       conditions.push("invoice.status::text IN ('APPROVED','PARTIALLY_PAID','OVERDUE')");
       conditions.push("COALESCE(invoice.due_amount, invoice.total, 0) > 0");
-      conditions.push("(invoice.purchase_order_id IS NULL OR latest_match.status::text = 'MATCHED')");
+      // Match the payment workspace's PO/GRN evidence requirement before
+      // pagination and counting, rather than hiding unmatched rows in the UI.
+      conditions.push("invoice.purchase_order_id IS NOT NULL AND latest_match.status::text = 'MATCHED'");
     }
     if (query.eligibility === "due") {
       // Mirrors the Control Tower "due / overdue" KPI: overdue, due today,

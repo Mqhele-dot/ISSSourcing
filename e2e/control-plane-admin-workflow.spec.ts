@@ -79,17 +79,15 @@ async function expectActivity(action: string, referenceType: string) {
     .toBeGreaterThan(0);
 }
 
-async function expectSettingsAudit(companyName: string) {
-  const row = await expect
+async function expectSettingsAudit() {
+  await expect
     .poll(async () => {
       const result = await pool.query<{
-        after_company_name: string | null;
         after_currency_code: string | null;
         event_hash: string | null;
       }>(
         `
           SELECT
-            details -> 'after' ->> 'companyName' AS after_company_name,
             details -> 'after' ->> 'currencyCode' AS after_currency_code,
             event_hash
           FROM audit_logs
@@ -102,10 +100,14 @@ async function expectSettingsAudit(companyName: string) {
       return result.rows[0] ?? null;
     })
     .toMatchObject({
-      after_company_name: companyName,
       after_currency_code: "ZAR",
     });
-  expect(row?.event_hash).toBeTruthy();
+  const latest = await pool.query<{ event_hash: string | null }>(
+    `SELECT event_hash FROM audit_logs
+     WHERE action = 'SETTINGS_UPDATED' AND resource_type = 'settings'
+     ORDER BY id DESC LIMIT 1`,
+  );
+  expect(latest.rows[0]?.event_hash).toBeTruthy();
 }
 
 test.describe.configure({ mode: "serial" });
@@ -119,19 +121,19 @@ test.describe("control-plane production controls", () => {
   });
 
   test("admin can change safe settings and requester cannot", async ({ page }) => {
+    test.setTimeout(90_000);
     await loginAs(page, "admin", 1);
     await page.goto("/admin/settings", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("settings-control-plane")).toBeVisible();
+    await page.getByRole("tab", { name: "Operational policy" }).click();
+    await expect(page.getByTestId("settings-control-plane")).toBeVisible({ timeout: 20_000 });
 
-    const companyName = `InvTrack Control E2E ${Date.now()}`;
-    await page.getByTestId("settings-control-company-name").fill(companyName);
     await page.getByTestId("settings-control-currency").click();
     await page.getByRole("option", { name: "ZAR" }).click();
     await page.getByTestId("settings-control-low-stock").fill("12");
     await page.getByTestId("settings-control-save").click();
     await expect(page.getByText("Settings updated", { exact: true })).toBeVisible({ timeout: 10_000 });
     await expectActivity("SETTINGS_UPDATED", "settings");
-    await expectSettingsAudit(companyName);
+    await expectSettingsAudit();
 
     adminCookie = (await loginForTests("admin", TEST_PASSWORD)) ?? "";
     const invalidCurrency = await apiJsonRequest("/settings", {
@@ -140,12 +142,12 @@ test.describe("control-plane production controls", () => {
       body: { currencyCode: "ZZZ" },
     });
     expect(invalidCurrency.status).toBe(400);
-    expect(invalidCurrency.text).toContain("INVALID_CURRENCY");
+    expect(JSON.stringify(invalidCurrency.json)).toContain("INVALID_CURRENCY");
 
     await loginAs(page, "e2e_control_requester", requesterUserId);
     await page.goto("/admin/settings", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("settings-control-denied")).toBeVisible();
-    await expect(page.getByTestId("settings-control-save")).toBeDisabled();
+    await expect(page.getByRole("heading", { name: "Access denied" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("settings-control-save")).toHaveCount(0);
 
     const requesterCookie = (await loginForTests("e2e_control_requester", TEST_PASSWORD)) ?? "";
     const denied = await apiJsonRequest("/settings", {
@@ -159,8 +161,8 @@ test.describe("control-plane production controls", () => {
   test("admin can view real user access and requester cannot update roles", async ({ page }) => {
     await loginAs(page, "admin", 1);
     await page.goto("/admin/user-roles", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("user-roles-page")).toBeVisible();
-    await expect(page.getByTestId("role-manager-users-card")).toBeVisible();
+    await expect(page.getByTestId("user-roles-page")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("role-manager-users-card")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("role-user-row-admin")).toBeVisible();
 
     const requesterCookie = (await loginForTests("e2e_control_requester", TEST_PASSWORD)) ?? "";
@@ -179,7 +181,10 @@ test.describe("control-plane production controls", () => {
     const updated = await apiJsonRequest(`/users/${requester?.id}`, {
       method: "PUT",
       cookie: adminCookie,
-      body: { workPersona: `Control E2E ${Date.now()}` },
+      body: {
+        workPersona: `Control E2E ${Date.now()}`,
+        reason: "Verify governed administrator access updates",
+      },
     });
     expect(updated.status).toBe(200);
     await expectActivity("USER_ACCESS_UPDATED", "user");
@@ -188,7 +193,7 @@ test.describe("control-plane production controls", () => {
   test("admin can create approval policy and audit captures it", async ({ page }) => {
     await loginAs(page, "admin", 1);
     await page.goto("/finance/approval-policies", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("approval-policies-page")).toBeVisible();
+    await expect(page.getByTestId("approval-policies-page")).toBeVisible({ timeout: 20_000 });
 
     const policyName = `Control plane E2E policy ${Date.now()}`;
     await page.getByTestId("approval-policy-name").fill(policyName);

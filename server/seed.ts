@@ -218,18 +218,29 @@ async function ensureSuppliers(): Promise<Map<string, number>> {
 }
 
 async function ensureMasterData(): Promise<void> {
-  await db.insert(unitsOfMeasure).values([
+  const organizationId = 1;
+  const unitRows = [
     { code: "EA", name: "Each", symbol: "ea", system: "metric", active: true },
     { code: "BOX", name: "Box", symbol: "box", system: "custom", active: true },
     { code: "KG", name: "Kilogram", symbol: "kg", system: "metric", active: true },
-  ]).onConflictDoNothing({ target: unitsOfMeasure.code });
+  ];
+  for (const row of unitRows) {
+    const [existing] = await db.select({ id: unitsOfMeasure.id }).from(unitsOfMeasure)
+      .where(and(eq(unitsOfMeasure.organizationId, organizationId), eq(unitsOfMeasure.code, row.code))).limit(1);
+    if (!existing) await db.insert(unitsOfMeasure).values({ ...row, organizationId });
+  }
 
-  await db.insert(currencies).values([
+  const currencyRows = [
     { code: "ZAR", name: "South African Rand", symbol: "R", regionCode: "ZA", regionName: "South Africa", isMainForRegion: true, exchangeRateToZar: 1, decimalPlaces: 2, active: true },
     { code: "USD", name: "US Dollar", symbol: "$", regionCode: "US", regionName: "United States", isMainForRegion: true, exchangeRateToZar: 18.5, decimalPlaces: 2, active: true },
     { code: "EUR", name: "Euro", symbol: "EUR", regionCode: "EU", regionName: "European Union", isMainForRegion: true, exchangeRateToZar: 20.1, decimalPlaces: 2, active: true },
     { code: "GBP", name: "British Pound", symbol: "GBP", regionCode: "GB", regionName: "United Kingdom", isMainForRegion: true, exchangeRateToZar: 23.7, decimalPlaces: 2, active: true },
-  ]).onConflictDoNothing({ target: currencies.code });
+  ];
+  for (const row of currencyRows) {
+    const [existing] = await db.select({ id: currencies.id }).from(currencies)
+      .where(and(eq(currencies.organizationId, organizationId), eq(currencies.code, row.code))).limit(1);
+    if (!existing) await db.insert(currencies).values({ ...row, organizationId });
+  }
   await db.execute(sql`
     UPDATE currencies
     SET
@@ -237,31 +248,51 @@ async function ensureMasterData(): Promise<void> {
       region_name = CASE code WHEN 'ZAR' THEN 'South Africa' WHEN 'USD' THEN 'United States' WHEN 'EUR' THEN 'European Union' WHEN 'GBP' THEN 'United Kingdom' ELSE COALESCE(region_name, 'South Africa') END,
       is_main_for_region = CASE WHEN code IN ('ZAR', 'USD', 'EUR', 'GBP') THEN TRUE ELSE COALESCE(is_main_for_region, FALSE) END,
       exchange_rate_to_zar = CASE code WHEN 'ZAR' THEN 1 WHEN 'USD' THEN 18.5 WHEN 'EUR' THEN 20.1 WHEN 'GBP' THEN 23.7 ELSE COALESCE(exchange_rate_to_zar, 1) END
-    WHERE code IN ('ZAR', 'USD', 'EUR', 'GBP')
+    WHERE organization_id = ${organizationId} AND code IN ('ZAR', 'USD', 'EUR', 'GBP')
   `);
 
-  await db.insert(taxCodes).values([
+  const taxRows = [
     { code: "VAT15", name: "Standard VAT 15%", rate: 15, type: "vat", countryCode: "ZA", active: true },
     { code: "GST07", name: "GST 7%", rate: 7, type: "sales", countryCode: "US", active: true },
-  ]).onConflictDoNothing({ target: taxCodes.code });
+  ];
+  for (const row of taxRows) {
+    const [existing] = await db.select({ id: taxCodes.id }).from(taxCodes)
+      .where(and(eq(taxCodes.organizationId, organizationId), eq(taxCodes.code, row.code))).limit(1);
+    if (!existing) await db.insert(taxCodes).values({ ...row, organizationId });
+  }
 
-  await db.insert(commodityCodes).values([
+  const commodityRows = [
     { code: "432115", description: "Computers", category: "IT", active: true },
     { code: "441217", description: "Office writing instruments", category: "Office", active: true },
     { code: "561015", description: "Office furniture", category: "Furniture", active: true },
-  ]).onConflictDoNothing({ target: commodityCodes.code });
+  ];
+  for (const row of commodityRows) {
+    const [existing] = await db.select({ id: commodityCodes.id }).from(commodityCodes)
+      .where(and(eq(commodityCodes.organizationId, organizationId), eq(commodityCodes.code, row.code))).limit(1);
+    if (!existing) await db.insert(commodityCodes).values({ ...row, organizationId });
+  }
 
-  await db.insert(incoterms).values([
+  const incotermRows = [
     { code: "EXW", name: "Ex Works", description: "Buyer takes responsibility at seller premises", active: true },
     { code: "FOB", name: "Free On Board", description: "Seller responsible until loaded on vessel", active: true },
     { code: "DAP", name: "Delivered At Place", description: "Seller delivers to buyer destination", active: true },
-  ]).onConflictDoNothing({ target: incoterms.code });
+  ];
+  for (const row of incotermRows) {
+    const [existing] = await db.select({ id: incoterms.id }).from(incoterms)
+      .where(and(eq(incoterms.organizationId, organizationId), eq(incoterms.code, row.code))).limit(1);
+    if (!existing) await db.insert(incoterms).values({ ...row, organizationId });
+  }
 
-  await db.insert(paymentTerms).values([
+  const paymentTermRows = [
     { code: "NET30", name: "Net 30", netDays: 30, active: true },
     { code: "NET45", name: "Net 45", netDays: 45, active: true },
     { code: "COD", name: "Cash on Delivery", netDays: 0, active: true },
-  ]).onConflictDoNothing({ target: paymentTerms.code });
+  ];
+  for (const row of paymentTermRows) {
+    const [existing] = await db.select({ id: paymentTerms.id }).from(paymentTerms)
+      .where(and(eq(paymentTerms.organizationId, organizationId), eq(paymentTerms.code, row.code))).limit(1);
+    if (!existing) await db.insert(paymentTerms).values({ ...row, organizationId });
+  }
 
   await db.insert(departments).values([
     { code: "OPS", name: "Operations", costCenterId: "CC-OPS-001", active: true },
@@ -1091,6 +1122,10 @@ export async function seedDatabase(): Promise<DemoDataSummary> {
   const supplierMap = await ensureSuppliers();
 
   await ensureMasterData();
+  // The professional Master Data synchronizer runs once before seed data exists
+  // to establish tables, then again here to project seeded departments,
+  // currencies, and categories into their authoritative tenant-owned records.
+  await ensureProfessionalSupplyChainTables();
   await ensureSettings();
   const demoPasswordHash = await hashPassword("Admin123!");
   await ensureAdminUser(demoPasswordHash);

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { FileClock, Search, ShieldCheck, UserCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { requestJson, apiRequest } from "@/lib/queryClient";
@@ -70,9 +70,6 @@ export default function EmployeeProfilesPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const isLgUp = useMediaQuery("(min-width: 1024px)");
-  useEffect(() => {
-    if (!isLgUp) setLocation("/m/home");
-  }, [isLgUp, setLocation]);
   const [search, setSearch] = useState("");
   const [employeePage, setEmployeePage] = useState(1);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
@@ -237,7 +234,8 @@ export default function EmployeeProfilesPage() {
     return (
       <div className="mx-auto max-w-lg p-6 text-center text-sm text-muted-foreground">
         Employee profiles are available on large screens (1024px and wider). Use a desktop browser or resize the
-        window. Sending you to the mobile hub…
+        window. Your current page is preserved; no changes have been made.
+        <Link href="/m/home" className="mt-4 block underline">Open mobile hub</Link>
       </div>
     );
   }

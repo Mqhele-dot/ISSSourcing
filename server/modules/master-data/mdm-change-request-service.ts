@@ -1,4 +1,5 @@
 import { pool } from "../../db";
+import { fulfillInventoryItemRequest } from "../inventory/item-request-service";
 import {
   createMdmDomainRecord,
   isMdmDomain,
@@ -247,6 +248,13 @@ export async function applyMdmChangeRequest(input: {
   const beforeState =
     row.before_state && typeof row.before_state === "object" ? (row.before_state as Record<string, unknown>) : null;
   let afterState: Record<string, unknown> | null = null;
+
+  if(domain==='items'&&action==='create') {
+    try{return await fulfillInventoryItemRequest(input.organizationId,input.id,input.actorId);}
+    catch(error){throw new MdmApprovalError('ITEM_REQUEST_REVIEW_REQUIRED',error instanceof Error&&error.message==='ITEM_REQUEST_MASTER_REQUIRED'
+      ? 'Create the requested SKU and name in Inventory → Open Item Master, using active Master Data and zero opening stock, then apply this approved request to link it.'
+      : 'An independently approved item request is required before linking the item master.',409);}
+  }
 
   try {
     if (!isMdmDomain(domain)) {

@@ -44,6 +44,8 @@ import type { InventoryListItem } from "@/api/types";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { getInventoryAvailabilityStatus } from "@shared/functional-calculations";
+import { usePermissions } from "@/hooks/use-permissions";
+import { ItemRequestDialog } from "@/components/inventory/item-request-dialog";
 
 type Category = {
   id: number;
@@ -114,6 +116,9 @@ function recommendedInventoryAction(item: InventoryListItem): string {
 }
 
 export default function InventoryPage() {
+  const permissions=usePermissions();
+  const masterCreate=!permissions.isLoading&&!permissions.error&&permissions.hasPermission('inventory','create');
+  const canRequest=!permissions.isLoading&&!permissions.error&&permissions.hasPermission('stock_movements','execute');
   const [, setLocation] = useLocation();
   const search = useSearch();
   const { toast } = useToast();
@@ -382,7 +387,7 @@ export default function InventoryPage() {
         const payload = {
           name: createForm.name.trim(),
           sku: createForm.sku.trim(),
-          quantity: createForm.quantity,
+          quantity: "0",
           price: createForm.price,
           cost: createForm.cost.trim() ? createForm.cost : undefined,
           lowStockThreshold: createForm.lowStockThreshold,
@@ -416,6 +421,8 @@ export default function InventoryPage() {
         breadcrumb={<span>Inventory / Overview</span>}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {canRequest&&<ItemRequestDialog/>}
+            {masterCreate&&
             <Button
               type="button"
               onClick={() => setCreateOpen(true)}
@@ -423,8 +430,8 @@ export default function InventoryPage() {
               data-testid="inventory-create-item-button"
             >
               <Plus className="h-4 w-4" />
-              Add item
-            </Button>
+              Open Item Master
+            </Button>}
             <Button
               variant="outline"
               onClick={handleExportCsv}
@@ -1000,10 +1007,11 @@ export default function InventoryPage() {
                 type="number"
                 min="0"
                 step="1"
-                value={createForm.quantity}
-                onChange={(event) => updateCreateForm("quantity", event.target.value)}
+                value="0"
+                readOnly
                 data-testid="inventory-create-quantity"
               />
+              <p className="text-xs text-muted-foreground">Item creation does not create stock. Receive goods through a warehouse transaction after setup.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="inventory-create-price">Sales/reporting price</Label>

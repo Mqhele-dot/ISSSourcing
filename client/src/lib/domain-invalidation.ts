@@ -276,6 +276,7 @@ export async function invalidateContractDomain(queryClient: QueryClient): Promis
 /** Inventory quantity/item master changes: refresh procurement, logistics, AP, and dashboards (inventory drives PO receive and matching). */
 export async function invalidateInventoryDomain(queryClient: QueryClient): Promise<void> {
   await Promise.all([
+    invalidateKeyPrefix(queryClient, ["item-availability"]),
     invalidateKeyPrefix(queryClient, qk.inventory),
     invalidateMany(queryClient, [
       LEGACY_QUERY_PREFIXES.inventory,
@@ -303,6 +304,7 @@ export async function invalidateInventoryDomain(queryClient: QueryClient): Promi
 
 export async function invalidatePurchaseOrderDomain(queryClient: QueryClient): Promise<void> {
   await Promise.all([
+    invalidateKeyPrefix(queryClient, ["item-availability"]),
     invalidateKeyPrefix(queryClient, qk.purchaseOrders),
     invalidateMany(queryClient, [
       ...poLegacyPrefixes,

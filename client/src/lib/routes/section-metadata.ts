@@ -93,6 +93,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         keywords: "put away receiving bin grn warehouse tasks",
       },
       {
+        label: "Stock positions",
+        path: APP_ROUTES.inventory.positions,
+        icon: "package-search",
+        description: "Normalize locations and verify warehouse balance location evidence.",
+        keywords: "stock positions reconciliation bins zones sites",
+      },
+      {
         label: "Cycle counts",
         path: APP_ROUTES.inventory.cycleCounts,
         icon: "refresh-cw",

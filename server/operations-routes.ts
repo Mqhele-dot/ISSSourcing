@@ -203,6 +203,7 @@ function assertValidShipmentSourceTypeInput(value: string | null): string | null
 
 function mapAdjustInventoryError(error: unknown): never {
   const message = toErrorMessage(error);
+  if(message.includes("STOCK_INSPECTION_RECEIPT_REQUIRED"))throw contractError(409,"STOCK_INSPECTION_RECEIPT_REQUIRED","Use PO Receiving to record supplier and inspection evidence.");
   if (message === "delta_must_be_non_zero") {
     throw contractError(
       400,
@@ -257,6 +258,11 @@ function mapPurchaseStatusError(error: unknown): never {
 
 function mapPurchaseReceiveError(error: unknown): never {
   const message = toErrorMessage(error);
+  if(error instanceof z.ZodError)throw contractError(400,"INVALID_RECEIPT","Check receipt quantities, dates and identifiers.");
+  if(message.startsWith("RECEIPT_"))throw contractError(message.endsWith("DENIED")?403:409,message,message.replaceAll("_"," "));
+  const dbCode=(error as {code?:string})?.code;
+  if(dbCode==="23505")throw contractError(409,"RECEIPT_DUPLICATE_EVIDENCE","This serial or receipt number already exists. No changes were posted.");
+  if(dbCode==="40P01"||dbCode==="55P03")throw contractError(409,"RECEIPT_STOCK_BUSY","Stock is changing. Retry with the same idempotency key.");
   if (message === "po_not_found") {
     throw contractError(404, "PO_NOT_FOUND", "Purchase order not found");
   }
@@ -711,6 +717,16 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             : typeof req.body?.status === "string"
               ? req.body.status
               : "";
+        if (
+          process.env.NODE_ENV === "production" &&
+          ["approved", "sent"].includes(toStatus.trim().toLowerCase())
+        ) {
+          throw contractError(
+            409,
+            "CONTROLLED_PO_WORKFLOW_REQUIRED",
+            "Use the controlled purchase-order approval or dispatch action for this transition.",
+          );
+        }
         try {
           const detail = await withTimeout(
             transitionOperationalPurchaseOrderStatus(
@@ -854,10 +870,8 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
           },
         );
         const receiveMeta = {
-          receiver_user_id:
-            req.body?.receiver_user_id != null || req.body?.receiverUserId != null
-              ? Number(req.body?.receiver_user_id ?? req.body?.receiverUserId)
-              : undefined,
+          idempotency_key: String(req.get("Idempotency-Key")??"").trim(),
+          receiver_user_id: Number(req.user?.id),
           receiver_name:
             typeof (req.body?.receiver_name ?? req.body?.receiverName) === "string"
               ? String(req.body?.receiver_name ?? req.body?.receiverName)

@@ -27,6 +27,12 @@ import { registerFinanceRoutes } from "./finance/register-finance-routes";
 import { registerArRoutes } from "./finance/register-ar-routes";
 import { registerProcurementCompletionRoutes } from "./procurement-completion/register-procurement-completion-routes";
 import { registerInventoryFlowRoutes } from "./inventory-flow/register-inventory-flow-routes";
+import { registerCycleCountRoutes } from "./cycle-counts/register-cycle-count-routes";
+import { registerPositionRoutes } from "./inventory-positions/register-position-routes";
+import { registerSafetyHoldRoutes } from "./inventory-positions/register-safety-hold-routes";
+import { registerItemRequestRoutes } from "./inventory/register-item-request-routes";
+import { registerAvailabilityRoutes } from "./inventory-positions/register-availability-routes";
+import { registerInspectionRuleRoutes } from "./inventory-positions/register-inspection-rule-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -55,6 +61,12 @@ export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerContractRoutes(app, auth);
   registerWarehouseRoutes(app, auth);
   registerInventoryFlowRoutes(app, auth);
+  registerCycleCountRoutes(app, auth);
+  registerPositionRoutes(app, auth);
+  registerSafetyHoldRoutes(app, auth);
+  registerItemRequestRoutes(app, auth);
+  registerAvailabilityRoutes(app, auth);
+  registerInspectionRuleRoutes(app, auth);
   registerSupplierRoutes(app, auth);
   registerProcurementRoutes(app, auth);
   registerProcurementCompletionRoutes(app, auth);

@@ -387,7 +387,7 @@ export async function getControlTowerDashboard(
         SELECT
           i.id,
           COALESCE(NULLIF(trim(c.name), ''), 'Uncategorized') AS name,
-          (COALESCE(SUM(p.on_hand), COALESCE(i.quantity, 0)) - COALESCE(SUM(p.allocated), 0))::double precision AS available,
+          (CASE WHEN COALESCE((to_jsonb(i)->>'safety_hold')::boolean,false) THEN 0 ELSE COALESCE(SUM(p.on_hand), COALESCE(i.quantity, 0)) - COALESCE(SUM(p.allocated), 0) END)::double precision AS available,
           COALESCE(i.cost, i.price, 0)::double precision AS unit
         FROM inventory_items i
         LEFT JOIN inventory_positions p ON p.sku = i.sku
@@ -429,7 +429,7 @@ export async function getControlTowerDashboard(
       const s = row.status;
       const c = toNumber(row.count, 0);
       if (s === "DRAFT") draftReq += c;
-      else if (s === "PENDING") pendingReq += c;
+      else if (["PENDING", "PENDING_APPROVAL", "SUBMITTED"].includes(s)) pendingReq += c;
       else if (s === "APPROVED") approvedReq += c;
     }
     base.kpis.openRequisitions = draftReq + pendingReq;

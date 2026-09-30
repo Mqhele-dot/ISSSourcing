@@ -71,6 +71,12 @@ async function main() {
     exitTest(1);
     return;
   }
+  const approverCookie = await loginForTests("planner", "Admin123!");
+  if (!approverCookie) {
+    console.log("  ⚠ Independent planner login failed (seed users missing?).");
+    exitTest(1);
+    return;
+  }
 
   let failures = 0;
 
@@ -121,12 +127,45 @@ async function main() {
     itemIdForWrites = Number(firstItem.id);
   }
 
+  const departmentsRes = await apiJsonRequest("/departments", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/departments", 200, departmentsRes.status)) failures++;
+  const departmentRows = asArray<{ id?: unknown }>(unwrapData<unknown>(departmentsRes.json));
+  const departmentId = Number(departmentRows[0]?.id ?? 0);
+  if (!departmentId) {
+    console.log("  ✗ Missing active departments; run npm run db:seed");
+    exitTest(1);
+    return;
+  }
+  const mdmContextRes = await apiJsonRequest("/mdm/defaults/requisition-context", { method: "GET", cookie: adminCookie });
+  if (!expectStatus("GET /api/mdm/defaults/requisition-context", 200, mdmContextRes.status)) failures++;
+  const mdmContext = asRecord(unwrapData<unknown>(mdmContextRes.json));
+  const uoms = asArray<{ id?: unknown }>(mdmContext.unitsOfMeasure);
+  const taxCodes = asArray<{ id?: unknown }>(mdmContext.taxCodes);
+  const costCentres = asArray<{ id?: unknown; code?: unknown }>(mdmContext.costCentres);
+  const contextItems = asArray<{
+    id?: unknown;
+    unitOfMeasureId?: unknown;
+    defaultTaxCodeId?: unknown;
+    glAccountCode?: unknown;
+  }>(mdmContext.items);
+  const contextItem = contextItems.find((item) => Number(item.id) === itemIdForWrites);
+  const unitOfMeasureId = Number(contextItem?.unitOfMeasureId ?? uoms[0]?.id ?? 0);
+  const taxCodeId = Number(contextItem?.defaultTaxCodeId ?? taxCodes[0]?.id ?? 0);
+  const costCentreId = Number(costCentres[0]?.id ?? 0);
+  const glAccountCode = String(contextItem?.glAccountCode ?? costCentres[0]?.code ?? "GL-CONTRACT-TEST");
+  if (!unitOfMeasureId || !taxCodeId || !costCentreId) {
+    console.log("  ✗ Missing requisition UOM, tax, or cost-centre Master Data; run npm run db:seed");
+    exitTest(1);
+    return;
+  }
+
   const requiredDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const requisitionRes = await apiJsonRequest("/purchase-requisitions", {
     method: "POST",
-    cookie: adminCookie,
+    cookie: approverCookie,
     body: {
       supplierId,
+      departmentId,
       requiredDate,
       notes: "E2E procurement flow requisition",
       items: [
@@ -134,6 +173,10 @@ async function main() {
           itemId: itemIdForWrites,
           quantity: 2,
           unitPrice: Number(firstItem.price ?? 10),
+          unitOfMeasureId,
+          taxCodeId,
+          costCentreId,
+          glAccountCode,
         },
       ],
     },
@@ -151,12 +194,19 @@ async function main() {
     return;
   }
 
-  const approveRes = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/approve`, {
+  const submitRes = await apiJsonRequest(`/v2/procurement/requisitions/${requisitionId}/submit`, {
+    method: "POST",
+    cookie: approverCookie,
+    body: {},
+  });
+  if (!expectStatus("POST /api/v2/procurement/requisitions/:id/submit", 200, submitRes.status)) failures++;
+
+  const approveRes = await apiJsonRequest(`/v2/procurement/requisitions/${requisitionId}/approve`, {
     method: "POST",
     cookie: adminCookie,
     body: {},
   });
-  if (!expectStatus("POST /api/purchase-requisitions/:id/approve", 200, approveRes.status)) failures++;
+  if (!expectStatus("POST /api/v2/procurement/requisitions/:id/approve", 200, approveRes.status)) failures++;
 
   const convertRes = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/convert`, {
     method: "POST",

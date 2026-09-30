@@ -1074,7 +1074,7 @@ export async function getRequisitionContext(organizationId: number) {
         FROM suppliers
         WHERE organization_id = $1
           AND COALESCE(status, 'active') = 'active'
-          AND COALESCE(onboarding_status, 'prospective') = 'approved'
+          AND LOWER(COALESCE(onboarding_status, 'prospective')) = 'approved'
         ORDER BY name ASC
       `,
       [organizationId],

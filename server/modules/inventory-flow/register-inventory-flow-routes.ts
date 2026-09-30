@@ -4,6 +4,7 @@ import { z } from "zod";
 import { pool } from "../../db";
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId } from "../../organization-context";
+import { wholeStockQuantity } from "./whole-stock-quantity";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -41,6 +42,8 @@ async function transaction<T>(work: (client: PoolClient) => Promise<T>): Promise
 function handleError(res: Response, error: unknown): Response {
   if (error instanceof z.ZodError) return sendError(res, 400, "INVALID_REQUEST", "The put-away request is invalid.", { details: error.flatten() });
   const code = error instanceof Error ? error.message : String(error);
+  if (code === "INVALID_SPLIT_PUTAWAY_REQUIRED") return sendError(res,409,code,"This task would move only part of a warehouse balance. Split-bin posting is not available yet.",{hint:"Do not relabel the entire balance. Leave this task open until quantity-specific put-away is enabled."});
+  if (code === "INVALID_STOCK_QUANTITY_PRECISION") return sendError(res,400,code,"This stock store currently supports whole units only; the quantity was not rounded.");
   if (code === "NOT_FOUND") return sendError(res, 404, "PUTAWAY_TASK_NOT_FOUND", "The put-away task was not found.");
   if (code.startsWith("INVALID_") || code.startsWith("STATE_")) return sendError(res, 409, code, code.replaceAll("_", " ").toLowerCase());
   return sendError(res, 500, "PUTAWAY_OPERATION_FAILED", "The put-away operation failed.", {
@@ -169,8 +172,10 @@ export function registerInventoryFlowRoutes(app: Express, auth: AuthBundle): voi
         if (bins.length > 0 && !matchedBin) throw new Error("INVALID_DESTINATION_BIN");
         const stock = await client.query(`SELECT id,quantity FROM warehouse_inventory WHERE organization_id=$1 AND warehouse_id=$2 AND item_id=$3 FOR UPDATE`, [organizationId, row.warehouse_id, row.item_id]);
         if (!stock.rows[0]) throw new Error("INVALID_WAREHOUSE_STOCK");
+        const quantity = wholeStockQuantity(row.quantity);
+        if (quantity !== Number(stock.rows[0].quantity)) throw new Error("INVALID_SPLIT_PUTAWAY_REQUIRED");
         await client.query(`UPDATE warehouse_inventory SET location=$1,bin=$1,aisle=$2,updated_at=now() WHERE id=$3 AND organization_id=$4`, [requestedBin ?? "Warehouse stock", matchedBin?.aisle ?? null, stock.rows[0].id, organizationId]);
-        const movement = await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,warehouse_location,timestamp) VALUES ($1,$2,$3,'PUT_AWAY',$4,$5,'inventory_putaway',$6,$7,$8,$8,$9,now()) RETURNING id`, [organizationId, row.item_id, row.warehouse_id, Math.max(1, Math.round(Number(row.quantity))), row.id, `Put away from ${row.from_location} to ${requestedBin ?? "warehouse stock"}`, actorId, Number(stock.rows[0].quantity), requestedBin ?? "Warehouse stock"]);
+        const movement = await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,warehouse_location,timestamp) VALUES ($1,$2,$3,'PUT_AWAY',$4,$5,'inventory_putaway',$6,$7,$8,$8,$9,now()) RETURNING id`, [organizationId, row.item_id, row.warehouse_id, quantity, row.id, `Put away from ${row.from_location} to ${requestedBin ?? "warehouse stock"}`, actorId, Number(stock.rows[0].quantity), requestedBin ?? "Warehouse stock"]);
         const updated = await client.query(`UPDATE inventory_putaway_tasks SET status='COMPLETED',to_bin=$3,completed_at=now(),completed_by=$4,movement_id=$5,exception_reason=NULL,updated_at=now() WHERE organization_id=$1 AND id=$2 RETURNING *`, [organizationId, row.id, requestedBin, actorId, movement.rows[0].id]);
         await client.query(`UPDATE operational_exceptions SET status='resolved',resolved_at=now(),updated_at=now() WHERE organization_id=$1 AND status IN ('open','in_progress') AND related_refs @> $2::jsonb`, [organizationId, JSON.stringify({ putAwayTaskId: row.id })]);
         return updated.rows[0];

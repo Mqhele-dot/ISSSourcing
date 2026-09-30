@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { pool } from "../server/db.ts";
 import { assertProductionSchemaColumns, requisitionAndPoMdmColumns } from "./production-schema-preflight.ts";
-import { apiJsonRequest } from "./test-http.ts";
+import { apiJsonRequest, loginForTests } from "./test-http.ts";
 
 type ApiEnvelope<T> = { ok?: boolean; data?: T; error?: { code?: string; message?: string; details?: unknown } };
 
@@ -47,19 +47,40 @@ export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixt
     { table: "ap_invoice_match_results", column: "mismatch_summary" },
   ]);
 
+  await pool.query(`
+    INSERT INTO approval_policies (
+      organization_id, name, entity_type, amount_min, amount_max,
+      approval_level, approver_role, is_active, version, created_at, updated_at
+    )
+    SELECT 1, 'Workflow proof invoice approval', 'invoice', 0, 1000000,
+      1, 'admin', TRUE, 1, NOW(), NOW()
+    WHERE NOT EXISTS (
+      SELECT 1 FROM approval_policies
+      WHERE organization_id = 1
+        AND entity_type = 'invoice'
+        AND is_active = TRUE
+        AND amount_min <= 0
+        AND (amount_max IS NULL OR amount_max >= 1000000)
+    )
+  `);
+
   await pool.query(
     `
-      INSERT INTO currencies (code, name, symbol, region_code, region_name, is_main_for_region, exchange_rate_to_zar, active, updated_at)
-      VALUES ('ZAR', 'South African Rand', 'R', 'ZA', 'South Africa', TRUE, 1, TRUE, NOW())
-      ON CONFLICT (code) DO UPDATE SET active = TRUE, exchange_rate_to_zar = 1, updated_at = NOW()
+      WITH updated AS (
+        UPDATE currencies SET active = TRUE, exchange_rate_to_zar = 1, updated_at = NOW()
+        WHERE organization_id = 1 AND code = 'ZAR'
+        RETURNING id
+      )
+      INSERT INTO currencies (organization_id, code, name, symbol, region_code, region_name, is_main_for_region, exchange_rate_to_zar, active, updated_at)
+      SELECT 1, 'ZAR', 'South African Rand', 'R', 'ZA', 'South Africa', TRUE, 1, TRUE, NOW()
+      WHERE NOT EXISTS (SELECT 1 FROM updated)
     `,
   );
 
   const uom = await pool.query<{ id: number }>(
     `
-      INSERT INTO units_of_measure (code, name, symbol, active, updated_at)
-      VALUES ($1, $2, 'ea', TRUE, NOW())
-      ON CONFLICT (code) DO UPDATE SET active = TRUE, updated_at = NOW()
+      INSERT INTO units_of_measure (organization_id, code, name, symbol, active, updated_at)
+      VALUES (1, $1, $2, 'ea', TRUE, NOW())
       RETURNING id
     `,
     [`EA-${suffix}`, `Each ${suffix}`],
@@ -67,9 +88,8 @@ export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixt
 
   const tax = await pool.query<{ id: number }>(
     `
-      INSERT INTO tax_codes (code, name, rate, type, country_code, active, updated_at)
-      VALUES ($1, $2, 0, 'vat', 'ZA', TRUE, NOW())
-      ON CONFLICT (code) DO UPDATE SET active = TRUE, rate = 0, updated_at = NOW()
+      INSERT INTO tax_codes (organization_id, code, name, rate, type, country_code, active, updated_at)
+      VALUES (1, $1, $2, 0, 'vat', 'ZA', TRUE, NOW())
       RETURNING id
     `,
     [`VAT-${suffix}`, `VAT Zero ${suffix}`],
@@ -168,9 +188,11 @@ export async function ensureWorkflowFixture(label: string): Promise<WorkflowFixt
 
 export async function createSentWorkflowPo(cookie: string, fixture: WorkflowFixture, quantity: number): Promise<WorkflowPo> {
   const unitPrice = 100;
+  const requesterCookie = await loginForTests("planner", "Admin123!");
+  assert.ok(requesterCookie, "planner login is required for independent requisition approval proof");
   const create = await apiJsonRequest("/purchase-requisitions", {
     method: "POST",
-    cookie,
+    cookie: requesterCookie,
     body: {
       supplierId: fixture.supplierId,
       departmentId: fixture.departmentId,
@@ -195,7 +217,14 @@ export async function createSentWorkflowPo(cookie: string, fixture: WorkflowFixt
   assert.equal(create.status, 201, `create requisition failed: ${create.status} ${JSON.stringify(create.json)}`);
   const requisition = unwrapData<{ id: number }>(create.json, "create requisition");
 
-  const approve = await apiJsonRequest(`/purchase-requisitions/${requisition.id}/approve`, {
+  const submit = await apiJsonRequest(`/v2/procurement/requisitions/${requisition.id}/submit`, {
+    method: "POST",
+    cookie: requesterCookie,
+    body: {},
+  });
+  assert.equal(submit.status, 200, `submit requisition failed: ${submit.status} ${JSON.stringify(submit.json)}`);
+
+  const approve = await apiJsonRequest(`/v2/procurement/requisitions/${requisition.id}/approve`, {
     method: "POST",
     cookie,
     body: { comment: "Runtime receiving/AP approval" },
@@ -227,7 +256,12 @@ export async function createSentWorkflowPo(cookie: string, fixture: WorkflowFixt
     body: { createShipment: false },
   });
   if (send.status !== 200) {
-    await pool.query(`UPDATE purchase_orders SET status = 'sent', updated_at = NOW() WHERE id = $1`, [po.id]);
+    await pool.query(
+      `UPDATE purchase_orders
+       SET status = 'SENT', approval_status = 'APPROVED', approved_at = COALESCE(approved_at, NOW()), updated_at = NOW()
+       WHERE id = $1`,
+      [po.id],
+    );
   }
 
   return {
@@ -248,6 +282,7 @@ export async function receiveWorkflowPo(
   return apiJsonRequest(`/purchase/orders/${encodeURIComponent(poNumber)}/receive`, {
     method: "POST",
     cookie,
+    headers: { "Idempotency-Key": randomUUID() },
     body: {
       warehouseId: fixture.warehouseId,
       aisle: "A1",

@@ -1,0 +1,49 @@
+- main [ref=e3]:
+  - paragraph [ref=e4]: Disposable integration fixture — not your live database
+  - generic [ref=e5]:
+    - generic [ref=e9]:
+      - heading "Stock positions" [level=1] [ref=e10]
+      - paragraph [ref=e11]: Verify existing warehouse balances against normalized sites, zones and bins.
+    - note [ref=e12]:
+      - paragraph [ref=e13]: This release verifies location evidence only. It does not split balances, change quantities, or perform inspection. Item-wide safety holds are available separately after applying the safety migration.
+      - paragraph [ref=e14]: Per-bin/lot quality eligibility and projected supply are not enabled. Item-wide safety holds override available stock to zero. Existing reservations are shown at warehouse/item level, not as bin reservations. Any stock change invalidates the reconciliation snapshot.
+      - link "Manage canonical sites in Master Data" [ref=e15] [cursor=pointer]:
+        - /url: /admin/master-data/sites
+    - group [ref=e16]:
+      - generic "Location setup — warehouse permissions required" [ref=e17] [cursor=pointer]
+      - option "Select setup warehouse" [selected]
+      - option "Select master data site" [selected]
+    - generic [ref=e18]:
+      - heading "Warehouse balance reconciliation" [level=3] [ref=e20]
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - textbox "Search stock positions" [ref=e23]:
+            - /placeholder: Search SKU, item or warehouse
+          - generic [ref=e24]: Location state
+          - combobox "Location state" [ref=e25]:
+            - option "All" [selected]
+            - option "Unresolved"
+            - option "Reconciled"
+          - generic [ref=e26]: Rows
+          - combobox "Rows" [ref=e27]:
+            - option "25" [selected]
+            - option "50"
+            - option "100"
+        - status [ref=e28]: Loading stock positions…
+        - region "Stock positions table — horizontally scrollable" [ref=e29]:
+          - table [ref=e30]:
+            - rowgroup [ref=e31]:
+              - row [ref=e32]:
+                - columnheader "Item" [ref=e33]
+                - columnheader "Warehouse" [ref=e34]
+                - columnheader "On hand" [ref=e35]
+                - columnheader "Location evidence" [ref=e36]
+                - columnheader "Quality" [ref=e37]
+                - columnheader "Actions" [ref=e38]
+            - rowgroup
+        - generic [ref=e39]:
+          - generic [ref=e40]: No records
+          - button "First" [disabled]
+          - button "Previous" [disabled]
+          - button "Next" [disabled]
+          - button "Last" [disabled]

@@ -17,6 +17,7 @@ test.describe.configure({ mode: "serial" });
 test.describe("manual procurement line browser evidence", () => {
   let fixture: Awaited<ReturnType<typeof seedProcurementEvidenceFixture>>;
   let adminCookie = "";
+  let plannerCookie = "";
   let requisitionId = 0;
   let purchaseOrderId = 0;
   let purchaseOrderNumber = "";
@@ -26,19 +27,22 @@ test.describe("manual procurement line browser evidence", () => {
     requireDisposableE2eDatabase();
     fixture = await seedProcurementEvidenceFixture();
     adminCookie = (await loginForTests("admin", "Admin123!")) ?? "";
+    plannerCookie = (await loginForTests("planner", "Admin123!")) ?? "";
     assert.ok(adminCookie, "seeded admin cookie is required");
+    assert.ok(plannerCookie, "seeded planner cookie is required for independent approval");
   });
 
   test("user sees validation, creates catalogue/non-stock/service lines, and submits", async ({ page }) => {
+    test.setTimeout(90_000);
     await loginAsSeededUser(page, "admin", 1);
     await page.goto("/procurement/requisitions/new", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("requisition-form-page")).toBeVisible();
+    await expect(page.getByTestId("requisition-form-page")).toBeVisible({ timeout: 20_000 });
 
     await page.getByTestId("requisition-line-type-0-non_stock").click();
     await page.getByTestId("requisition-line-description-0").fill("Incomplete controlled line");
     await page.getByTestId("requisition-line-unit-price-0").fill("10");
-    await page.getByTestId("requisition-save-button").click();
-    await expect(page.getByText(/Add a valid catalogue or manual line/i)).toBeVisible();
+    await expect(page.getByTestId("requisition-save-button")).toBeDisabled();
+    await expect(page.getByText(/Complete required setup before saving/i)).toBeVisible();
 
     await chooseSearchableOption(
       page,
@@ -108,9 +112,15 @@ test.describe("manual procurement line browser evidence", () => {
   });
 
   test("approval and conversion preserve line evidence and lock the requisition", async ({ page }) => {
-    const approve = await apiJsonRequest(`/purchase-requisitions/${requisitionId}/approve`, {
+    const submit = await apiJsonRequest(`/v2/procurement/requisitions/${requisitionId}/submit`, {
       method: "POST",
       cookie: adminCookie,
+      body: {},
+    });
+    expect(submit.status).toBe(200);
+    const approve = await apiJsonRequest(`/v2/procurement/requisitions/${requisitionId}/approve`, {
+      method: "POST",
+      cookie: plannerCookie,
       body: { comment: "Independent Wave 7 browser evidence approval" },
     });
     expect(approve.status).toBe(200);
@@ -126,7 +136,7 @@ test.describe("manual procurement line browser evidence", () => {
 
     await loginAsSeededUser(page, "admin", 1);
     await page.goto(`/procurement/requisitions/${requisitionId}`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("requisition-header-locked-message")).toBeVisible();
+    await expect(page.getByTestId("requisition-header-locked-message")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("requisition-save-button")).toBeDisabled();
 
     await page.goto(`/procurement/orders/${encodeURIComponent(purchaseOrderNumber)}`, { waitUntil: "domcontentloaded" });

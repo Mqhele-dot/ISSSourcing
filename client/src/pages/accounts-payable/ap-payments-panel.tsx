@@ -116,7 +116,7 @@ export function ApPaymentsPanel({
         <CardContent className="space-y-4">
           {!invoicesLoadFailed ? (
             <p className="text-xs text-muted-foreground">
-              PO-linked invoices appear here only after a successful PO/GRN match. Exception or pending-match invoices stay blocked.
+              This workspace batches PO-linked invoices only after a successful PO/GRN match and with an outstanding balance. Unlinked, exception, or pending-match invoices are excluded.
             </p>
           ) : null}
           {!canManagePaymentBatches ? (
@@ -234,7 +234,7 @@ export function ApPaymentsPanel({
             type="button"
             data-testid="ap-create-batch-button"
             onClick={onCreateBatch}
-            disabled={invoicesLoadFailed || createBatchMutation.isPending}
+            disabled={invoicesLoadFailed || createBatchMutation.isPending || selectedInvoiceIds.length === 0}
           >
             {createBatchMutation.isPending ? "Creating batch..." : "Create AP payment batch"}
           </Button>

@@ -44,11 +44,8 @@ test.beforeAll(async () => {
   expect(line.rows[0].id).toBeGreaterThan(0);
 });
 
-test.afterAll(async () => {
-  await pool.end().catch(() => undefined);
-});
-
 test("supplier submits a structured quote and buyer sees it for evaluation", async ({ page }) => {
+  test.setTimeout(90_000);
   await login(page, "supplierdemo");
   await page.goto("/procurement/supplier-portal", { waitUntil: "load" });
   await page.getByTestId("supplier-portal-sourcing-tab").click();
@@ -65,6 +62,7 @@ test("supplier submits a structured quote and buyer sees it for evaluation", asy
   await page.goto(`/procurement/sourcing/${fixture.eventId}`, { waitUntil: "load" });
   await expect(page.getByTestId("sourcing-event-detail")).toContainText(fixture.title);
   await expect(page.getByTestId("sourcing-event-detail")).toContainText(fixture.supplierName);
+  await page.getByLabel("Early-close reason").fill("All invited supplier responses are received and commercial evaluation must proceed.");
   await page.getByRole("button", { name: "Close for evaluation" }).click();
   await expect(page.getByTestId("sourcing-evaluation-award-panel")).toBeVisible({ timeout: 20_000 });
   await page.getByLabel(/Landed cost/).fill("92");

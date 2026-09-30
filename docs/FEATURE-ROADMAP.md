@@ -1,6 +1,8 @@
 # Complete Feature List vs Current State — Professional Supply Chain Application
 
-This document maps the **Complete Feature List for a Professional Supply Chain Application** to the current ISSSourcing codebase. Status: **Implemented** | **Partial** | **Not started**.
+This is a historical feature inventory, not an authoritative statement of the current application. Many rows predate the current Master Data, approvals, receiving and AP implementations. Do not use an old "Not started" row as justification to build a parallel service.
+
+For the source-audited warehouse/logistics scope and staged completion plan, use [Warehouse and logistics completion audit — 15 September 2026](audits/warehouse-logistics-completion-2026-09-15.md). The governed catalog is `shared/erp-capability-catalog.ts`; source evidence does not by itself prove runtime readiness. Sections outside that focused audit still require revalidation.
 
 ---
 
@@ -88,8 +90,8 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 | Inventory adjustments | **Implemented** | Stock movements (receipt, issue, transfer, adjustment). |
 | Inventory valuation | **Partial** | Cost/price on items; analytics value; no full valuation report. |
 | Inventory movement history | **Implemented** | `stock_movements` with type, dates, references. |
-| Batch tracking | **Not started** | No batch/lot entity. |
-| Serial number tracking | **Not started** | No serial number entity. |
+| Batch tracking | **Partial** | Batch registration/issue and receiving evidence exist. Extend the existing records with cross-movement genealogy, holds, recall and operational FEFO; do not create another batch master. |
+| Serial number tracking | **Partial** | Serial registration/issue and receipt capture exist. End-to-end genealogy and return traceability require completion. |
 | Manufacturing / expiry date | **Partial** | `expiryDate` on inventory items; no manufacturing date. |
 
 ---
@@ -99,12 +101,12 @@ This document maps the **Complete Feature List for a Professional Supply Chain A
 | Feature | Status | Notes |
 |--------|--------|------|
 | Receiving goods | **Implemented** | PO receive; stock receipt movements. |
-| Put-away locations | **Implemented** | Posted GRN lines generate tenant-scoped tasks; completion validates configured bins, updates the canonical warehouse position, and records movement and exception evidence. |
+| Put-away locations | **Partial** | Tasks and configured-bin checks exist. Completion currently changes the item/warehouse balance location; true per-bin quantities, split put-away and directed recommendations require completion. |
 | Picking / packing / dispatch | **Partial** | Issue movements exist; no dedicated pick/pack/ship workflow. |
 | Zone management | **Partial** | Aisles/bins/locationDetails on warehouse. |
 | Aisle / bin locations | **Implemented** | Warehouse schema and UI (aisles, bins, location details). |
 | Barcode / QR scanning | **Implemented** | Barcode on items; barcode scanner page; find-by-barcode API. |
-| Cycle counting | **Partial** | `lastCountDate` on item; no formal cycle count process. |
+| Cycle counting | **Partial** | Count headers, lines, start and post actions exist. Server snapshots, blind counting, independent variance approval, tenant-safe child access and atomic/idempotent posting remain release blockers; see the focused audit. |
 | Stock transfers between warehouses | **Implemented** | Transfer API and logic. |
 
 ---

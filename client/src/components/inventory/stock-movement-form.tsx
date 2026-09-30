@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
+import { normalizeApiList, queryClient, requestJson } from "@/lib/queryClient";
 import { invalidateInventoryDomain } from "@/lib/domain-invalidation";
 
 type StockMovementFormProps = {
@@ -55,6 +55,7 @@ type InventoryItem = {
 };
 
 export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: StockMovementFormProps) {
+  const retry=useRef<{fingerprint:string;key:string}|null>(null);
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -119,7 +120,9 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
         : "/api/stock-movements/issue";
       
       // Make the API request
-      await apiRequest(
+      const fingerprint=JSON.stringify({type,data});
+      if(retry.current?.fingerprint!==fingerprint)retry.current={fingerprint,key:crypto.randomUUID()};
+      await requestJson(
         "POST", 
         endpoint, 
         {
@@ -130,8 +133,10 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
           referenceType: data.referenceType,
           referenceId: data.referenceId ? parseInt(data.referenceId) : null,
           unitCost: data.unitCost,
-        }
+        },
+        {headers:{"Idempotency-Key":retry.current.key}}
       );
+      retry.current=null;
       
       // Show success toast
       toast({

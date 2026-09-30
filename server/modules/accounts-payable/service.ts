@@ -6,6 +6,7 @@ import { storage } from "../../storage";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { getApprovalSuggestions } from "../../approval-suggestions";
 import { enforceApprovalPolicy } from "./ap-approval-policy";
+import { receiptEvidenceByPoLine } from "./receipt-match-evidence";
 import { writeApAuditLog, type ApAuditAction } from "./ap-audit-log";
 import { resolveSupplierCommercialDefaults } from "../procurement/supplier-defaults";
 import {
@@ -1249,157 +1250,39 @@ export async function createReceiptRecord(
   receipt: InsertApReceipt,
   items: InsertApReceiptItem[],
   userId: number,
-  options: { warehouseId?: number | null; warehouseLocation?: string | null } = {},
+  options: { warehouseId?: number | null; warehouseLocation?: string | null; idempotencyKey?: string } = {},
 ) {
   const orgId = getActiveOrganizationId();
   const po = await storage.getPurchaseOrder(Number(receipt.purchaseOrderId));
-  if (!po || Number(po.organizationId) !== orgId) {
-    throw new Error("Purchase order not found in active organization.");
+  if (!po || Number(po.organizationId) !== orgId) throw new Error("po_not_found");
+  if (receipt.supplierId != null && Number(receipt.supplierId) !== Number(po.supplierId)) throw new Error("RECEIPT_SUPPLIER_MISMATCH");
+  if (!options.warehouseId) throw new Error("RECEIPT_WAREHOUSE_REQUIRED");
+  if (!options.idempotencyKey) throw new Error("RECEIPT_IDEMPOTENCY_REQUIRED");
+  if (receipt.status && receipt.status !== "POSTED") throw new Error("RECEIPT_POSTED_COMMAND_REQUIRED");
+  const lines = await storage.getPurchaseOrderItems(po.id);
+  const inputs = [];
+  for (const entry of items) {
+    const matches = lines.filter(line => entry.purchaseOrderItemId != null
+      ? Number(line.id) === Number(entry.purchaseOrderItemId)
+      : Number(line.itemId) === Number(entry.itemId));
+    const line = matches.length === 1 ? matches[0] : undefined;
+    if (!line || Number(line.itemId) !== Number(entry.itemId)) throw new Error("RECEIPT_AMBIGUOUS_OR_UNKNOWN_LINE");
+    const quantity = Number(entry.quantity);
+    const accepted = entry.acceptedQuantity == null ? quantity : Number(entry.acceptedQuantity);
+    if (Number(entry.rejectedQuantity ?? 0) !== 0 || accepted !== quantity) throw new Error("RECEIPT_DISCREPANCY_REVIEW_REQUIRED");
+    const item = await storage.getInventoryItem(Number(entry.itemId));
+    if (!item || Number(item.organizationId) !== orgId) throw new Error("RECEIPT_ITEM_NOT_FOUND");
+    inputs.push({sku:item.sku,purchaseOrderItemId:Number(line.id),qty_received_now:quantity});
   }
-  if (receipt.supplierId != null && Number(receipt.supplierId) !== Number(po.supplierId)) {
-    throw new Error("Receipt supplier must match purchase order supplier.");
-  }
-  const poLines = await storage.getPurchaseOrderItems(po.id);
-  const poLineById = new Map(poLines.map((line) => [Number(line.id), line]));
-  const poLineByItem = new Map<number, (typeof poLines)[number]>();
-  for (const line of poLines) {
-    if (!poLineByItem.has(Number(line.itemId))) {
-      poLineByItem.set(Number(line.itemId), line);
-    }
-  }
-  return db.transaction(async (tx) => {
-    const requestedByLineId = new Map<number, number>();
-    for (const item of items) {
-      const lineId = item.purchaseOrderItemId ? Number(item.purchaseOrderItemId) : null;
-      const poLine = lineId ? poLineById.get(lineId) : poLineByItem.get(Number(item.itemId));
-      if (!poLine) {
-        throw new Error(`Receipt line item ${item.itemId} is not part of the purchase order.`);
-      }
-      if (Number(poLine.itemId) !== Number(item.itemId)) {
-        throw new Error(`Receipt line item ${item.itemId} does not match purchase order line item.`);
-      }
-      const accepted = toNumber(item.acceptedQuantity, item.quantity);
-      const priorRequested = requestedByLineId.get(Number(poLine.id)) ?? 0;
-      const remaining = Math.max(toNumber(poLine.quantity, 0) - toNumber(poLine.receivedQuantity, 0) - priorRequested, 0);
-      if (accepted > remaining) {
-        throw new Error(`Receipt quantity exceeds remaining receivable quantity for PO line ${poLine.id}.`);
-      }
-      requestedByLineId.set(Number(poLine.id), priorRequested + accepted);
-    }
-
-    const [created] = await tx
-      .insert(apReceipts)
-      .values({
-        organizationId: orgId,
-        receiptNumber:
-          receipt.receiptNumber?.trim() || `RCV-${Date.now().toString().slice(-8)}`,
-        purchaseOrderId: Number(receipt.purchaseOrderId),
-        supplierId: receipt.supplierId ?? null,
-        status: receipt.status ?? "POSTED",
-        receivedDate: receipt.receivedDate ?? new Date(),
-        receivedBy: receipt.receivedBy ?? userId,
-        notes: receipt.notes ?? null,
-      })
-      .returning();
-
-    for (const item of items) {
-      const poLine =
-        (item.purchaseOrderItemId ? poLineById.get(Number(item.purchaseOrderItemId)) : undefined) ??
-        poLineByItem.get(Number(item.itemId));
-      if (!poLine) {
-        throw new Error("Unable to resolve purchase order line for receipt item.");
-      }
-      const acceptedQty = toNumber(item.acceptedQuantity, item.quantity);
-      await tx.insert(apReceiptItems).values({
-        receiptId: created.id,
-        purchaseOrderItemId: Number(poLine.id),
-        itemId: Number(item.itemId),
-        quantity: toNumber(item.quantity, 0),
-        acceptedQuantity: acceptedQty,
-        rejectedQuantity: toNumber(item.rejectedQuantity, 0),
-        notes: item.notes ?? null,
-      });
-      await tx
-        .update(purchaseOrderItems)
-        .set({
-          receivedQuantity: sql`${purchaseOrderItems.receivedQuantity} + ${acceptedQty}`,
-        })
-        .where(eq(purchaseOrderItems.id, Number(poLine.id)));
-
-      const warehouseId =
-        options.warehouseId != null && Number.isFinite(Number(options.warehouseId)) && Number(options.warehouseId) > 0
-          ? Number(options.warehouseId)
-          : null;
-      const receiptInventoryQty = Math.round(acceptedQty);
-      if (warehouseId && receiptInventoryQty > 0) {
-        const [itemRow] = await tx
-          .select({ quantity: inventoryItems.quantity })
-          .from(inventoryItems)
-          .where(and(eq(inventoryItems.id, Number(item.itemId)), eq(inventoryItems.organizationId, orgId)))
-          .limit(1);
-        const previousItemQty = toNumber(itemRow?.quantity, 0);
-        await tx
-          .update(inventoryItems)
-          .set({
-            quantity: previousItemQty + receiptInventoryQty,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(inventoryItems.id, Number(item.itemId)), eq(inventoryItems.organizationId, orgId)));
-
-        const [warehouseRow] = await tx
-          .select({ id: warehouseInventory.id, quantity: warehouseInventory.quantity })
-          .from(warehouseInventory)
-          .where(
-            and(
-              eq(warehouseInventory.organizationId, orgId),
-              eq(warehouseInventory.warehouseId, warehouseId),
-              eq(warehouseInventory.itemId, Number(item.itemId)),
-            ),
-          )
-          .limit(1);
-        const previousWarehouseQty = toNumber(warehouseRow?.quantity, 0);
-        if (warehouseRow) {
-          await tx
-            .update(warehouseInventory)
-            .set({
-              quantity: previousWarehouseQty + receiptInventoryQty,
-              location: options.warehouseLocation ?? undefined,
-              updatedAt: new Date(),
-            })
-            .where(eq(warehouseInventory.id, warehouseRow.id));
-        } else {
-          await tx.insert(warehouseInventory).values({
-            organizationId: orgId,
-            warehouseId,
-            itemId: Number(item.itemId),
-            quantity: receiptInventoryQty,
-            location: options.warehouseLocation ?? null,
-            updatedAt: new Date(),
-          });
-        }
-
-        await tx.insert(stockMovements).values({
-          organizationId: orgId,
-          itemId: Number(item.itemId),
-          warehouseId,
-          type: "RECEIPT",
-          quantity: receiptInventoryQty,
-          referenceId: created.id,
-          referenceType: "ap_receipt",
-          notes: `AP receipt ${created.receiptNumber} for PO ${po.orderNumber}`,
-          userId,
-          receiverUserId: userId,
-          warehouseLocation: options.warehouseLocation ?? null,
-          receivedAt: receipt.receivedDate ?? new Date(),
-          previousQuantity: previousWarehouseQty,
-          newQuantity: previousWarehouseQty + receiptInventoryQty,
-          timestamp: new Date(),
-        });
-      }
-    }
-
-    return created;
+  const {postGoodsReceipt} = await import("../inventory/goods-receipt-service");
+  const result = await postGoodsReceipt(orgId,userId,{
+    orderId:po.id,warehouseId:options.warehouseId,key:options.idempotencyKey,
+    lines:inputs,location:options.warehouseLocation??null,
+    receivedAt:receipt.receivedDate??undefined,grnNumber:receipt.receiptNumber??null,
+    notes:receipt.notes??undefined,
   });
+  const [created] = await db.select().from(apReceipts).where(and(eq(apReceipts.organizationId,orgId),eq(apReceipts.id,result.receiptId))).limit(1);
+  return created;
 }
 
 /** Idempotent AP receipt for operational PO receive (does not double-update PO line quantities). */
@@ -1511,16 +1394,16 @@ export async function evaluateInvoiceMatch(
       ),
   ]);
 
-  const receiptItemsByItemId = new Map<number, number>();
   const receiptIds = receiptRows.map((row) => row.id);
   const receiptLineRows =
     receiptIds.length > 0
-      ? await db.select().from(apReceiptItems).where(inArray(apReceiptItems.receiptId, receiptIds))
+      ? await db.select().from(apReceiptItems).where(and(inArray(apReceiptItems.receiptId, receiptIds), sql`NOT EXISTS (
+          SELECT 1 FROM receipt_inspection_evidence ie
+          WHERE ie.organization_id=${orgId} AND ie.receipt_item_id=${apReceiptItems.id}
+          AND NOT EXISTS (SELECT 1 FROM inventory_safety_releases sr WHERE sr.hold_id=ie.hold_id)
+        )`))
       : [];
-  for (const line of receiptLineRows) {
-    const current = receiptItemsByItemId.get(line.itemId) ?? 0;
-    receiptItemsByItemId.set(line.itemId, current + toNumber(line.acceptedQuantity, line.quantity));
-  }
+  const receivedByPoLine = receiptEvidenceByPoLine(poItems, receiptLineRows, receiptRows.length === 0);
 
   const priceTolerancePct = clampPct(options.priceTolerancePct);
   const quantityTolerancePct = clampPct(options.quantityTolerancePct);
@@ -1532,7 +1415,9 @@ export async function evaluateInvoiceMatch(
   for (const invItem of invItems) {
     const poItem = invItem.purchaseOrderItemId != null
       ? poItems.find((candidate) => Number(candidate.id) === Number(invItem.purchaseOrderItemId))
-      : poItems.find((candidate) => candidate.itemId != null && candidate.itemId === invItem.itemId);
+      : poItems.filter((candidate) => candidate.itemId != null && candidate.itemId === invItem.itemId).length === 1
+        ? poItems.find((candidate) => candidate.itemId != null && candidate.itemId === invItem.itemId)
+        : undefined;
     const lineKey = invItem.purchaseOrderItemId != null ? `po-line:${invItem.purchaseOrderItemId}` : `item:${invItem.itemId}`;
     if (!poItem) {
       mismatches.push({
@@ -1562,8 +1447,7 @@ export async function evaluateInvoiceMatch(
       });
     }
 
-    const receivedQty =
-      (invItem.itemId == null ? undefined : receiptItemsByItemId.get(invItem.itemId)) ?? toNumber(poItem.receivedQuantity, 0);
+    const receivedQty = receivedByPoLine.get(poItem.id) ?? 0;
     const invoicedQty = toNumber(invItem.quantity, 0);
     const maxQty = receivedQty * (1 + quantityTolerancePct / 100);
     if (invoicedQty > maxQty) {

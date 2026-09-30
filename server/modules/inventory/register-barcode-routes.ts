@@ -1,4 +1,5 @@
 import type { Express, Request, RequestHandler, Response } from "express";
+import { stockGuardError } from "./stock-guard-error";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { insertBarcodeSchema } from "@shared/schema";
@@ -139,6 +140,9 @@ export function registerBarcodeRoutes(
       if (error instanceof InventoryScanMovementError) {
         return sendError(res, error.status, error.code, error.message, { details: error.details });
       }
+      const guard=stockGuardError(error);
+      if(guard==="STOCK_INSPECTION_RECEIPT_REQUIRED")return sendError(res,409,guard,"Use PO Receiving so supplier and inspection evidence can be recorded before stock is available.");
+      if(guard)return sendError(res,409,guard,"Stock is held or changing. Review safety holds and retry after eligibility is confirmed.");
       console.error("Error posting scanned inventory movement:", error);
       return sendError(res, 500, "SCAN_MOVEMENT_FAILED", "The scanned stock movement could not be posted.");
     }

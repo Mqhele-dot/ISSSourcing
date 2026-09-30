@@ -33,7 +33,23 @@ const evidence:Record<string,Partial<ErpCapability>>={
     featureFlag:"procurement.phase2Enabled",
   },
   "procurement.supplier-price-lists":{apis:["/api/v2/procurement/supplier-price-lists"],permissions:["purchases:read","purchases:manage","purchases:approve"],evidence:["test:procurement-completion-contracts"],featureFlag:"procurement.phase3Enabled"},
-  "procurement.purchase-returns":{routes:["/procurement/receiving"],apis:["/api/v2/procurement/returns"],permissions:["purchases:read","purchases:manage","purchases:approve"],evidence:["test:procurement-completion-contracts"],featureFlag:"procurement.phase4Enabled"},
+  "procurement.purchase-returns":{status:"partial",routes:["/procurement/receiving"],apis:["/api/v2/procurement/returns"],permissions:["purchases:read","purchases:manage","purchases:approve"],evidence:["test:procurement-completion-contracts","docs/audits/warehouse-logistics-completion-2026-09-15.md"],featureFlag:"procurement.phase4Enabled"},
+  // Source-audited scope, not proof that runtime/release checks have passed.
+  // Stock counts also represents warehouse.stock-counts through its existing alias.
+  "inventory.stock-counts":{status:"partial",routes:["/inventory/cycle-counts"],apis:["/api/cycle-counts","/api/cycle-count-lines","/api/cycle-counts/:id/post"],evidence:["docs/audits/warehouse-logistics-completion-2026-09-15.md"]},
+  "inventory.multi-bin-stock":{status:"partial",evidence:["docs/audits/warehouse-logistics-completion-2026-09-15.md"]},
+  "inventory.stock-valuation":{status:"partial",evidence:["docs/audits/warehouse-logistics-completion-2026-09-15.md"]},
+  "warehouse.put-away":{status:"partial",routes:["/inventory/put-away"],apis:["/api/v2/inventory/put-away"],evidence:["docs/audits/warehouse-logistics-completion-2026-09-15.md"]},
 };
 export const erpCapabilityCatalog: readonly ErpCapability[]=[...unique.values()].map(item=>({...item,...evidence[item.id]}));
 export const erpCapabilitySummary = Object.freeze({ rawTotal:rawCapabilities.length, total:erpCapabilityCatalog.length, implemented:erpCapabilityCatalog.filter(x=>x.status==="implemented").length, partial:erpCapabilityCatalog.filter(x=>x.status==="partial").length, missing:erpCapabilityCatalog.filter(x=>x.status==="missing").length });
+
+/** Feature enablement is not verification; preserve the actual evidence timestamp. */
+export function resolveCapabilityAvailability(
+  catalog: readonly ErpCapability[],
+  isEnabled: (flag: string) => boolean,
+): readonly ErpCapability[] {
+  return catalog.map(item => item.featureFlag && !isEnabled(item.featureFlag)
+    ? {...item, status: "disabled" as const}
+    : item);
+}

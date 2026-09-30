@@ -137,7 +137,7 @@ export async function ensureSuppliersTaxIdColumn(): Promise<void> {
 
 /** Keep the persisted RBAC resource enum aligned with the server permission catalog. */
 export async function ensurePermissionResourceEnumValues(): Promise<void> {
-  const requiredValues = ["invoices", "billing", "taxes", "payments", "master_data"];
+  const requiredValues = ["invoices", "billing", "taxes", "payments", "master_data", "finance"];
   try {
     const type = await pool.query<{ exists: boolean }>(
       "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'resource') AS exists",

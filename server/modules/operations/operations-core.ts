@@ -1,4 +1,5 @@
 import { pool } from "../../db";
+import { postGoodsReceipt } from "../inventory/goods-receipt-service";
 import { initializeOperationalData } from "./operational-ddl";
 import { refsMatch, toNumber, toString } from "./operational-utils";
 import {
@@ -387,6 +388,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
   const itemsResult = await pool.query<{
+    safety_hold: boolean;
     id: number;
     sku: string;
     name: string;
@@ -414,6 +416,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
       i.updated_at,
       i.expiry_date,
       i.manufacturing_date
+      ,COALESCE((to_jsonb(i)->>'safety_hold')::boolean,false) AS safety_hold
     FROM inventory_items i
     ${whereSql}
     ORDER BY i.name ASC
@@ -510,7 +513,7 @@ export async function listOperationalInventory(filters: InventoryFilterInput) {
       const fallbackOnHand = toNumber(row.quantity, 0);
       const onHand = aggregate ? aggregate.onHand : fallbackOnHand;
       const allocated = aggregate ? aggregate.allocated : 0;
-      const available = onHand - allocated;
+      const available = row.safety_hold ? 0 : onHand - allocated;
       const lowStockThreshold = toNumber(row.low_stock_threshold, 0);
       const location = toString(row.default_location) ?? toString(row.location);
       const movement = movementBySku.get(row.sku);
@@ -722,13 +725,14 @@ export async function getOperationalInventoryDetail(skuOrId: string) {
       [orgId, item.id],
     ),
   ]);
+  const safety = await pool.query<{held:boolean}>("SELECT COALESCE((to_jsonb(i)->>'safety_hold')::boolean,false) AS held FROM inventory_items i WHERE id=$1 AND organization_id=$2",[item.id,orgId]);
   const positions: InventoryPositionRecord[] = positionRows.rows.map((row) => ({
     warehouseId: row.warehouse_id,
     warehouseName: row.warehouse_name,
     location: row.location ? `${row.warehouse_name} — ${row.location}` : row.warehouse_name,
     onHand: toNumber(row.quantity),
     allocated: toNumber(row.allocated),
-    available: toNumber(row.quantity) - toNumber(row.allocated),
+    available: safety.rows[0]?.held ? 0 : toNumber(row.quantity) - toNumber(row.allocated),
     updatedAt: row.updated_at,
   }));
   const warehouseQuantity = positions.reduce((sum, position) => sum + position.onHand, 0);
@@ -781,6 +785,7 @@ export async function adjustOperationalInventory(input: AdjustInventoryInput) {
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock($1, $2)", [orgId, item.id]);
+    if(input.delta>0)await client.query("SELECT assert_unlinked_receipt_inspection($1,$2)",[orgId,item.id]);
     const warehouseResult = await client.query<{ id: number; name: string }>(
       `SELECT id, name FROM warehouses WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
       [input.warehouseId, orgId],
@@ -955,6 +960,7 @@ type ReceivePurchaseLineInput = {
 };
 
 type ReceivePurchaseMetaInput = {
+  idempotency_key?: string;
   receiver_user_id?: number | null;
   receiver_name?: string | null;
   warehouse_location?: string | null;
@@ -1234,7 +1240,7 @@ export async function createOperationalShipment(input: {
       created_at,
       updated_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16, $17, now(), now())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::timestamp, $13::timestamptz, $14, $15, $16, $17, now(), now())
     RETURNING id, po_number, carrier, status, eta, drift_minutes, tracking_number, created_at, updated_at
     `,
     [
@@ -1616,7 +1622,16 @@ export async function transitionOperationalPurchaseOrderStatus(
   const updateResult = await pool.query(
     `
     UPDATE purchase_orders
-    SET status = $2, updated_at = now()
+    SET status = $2,
+        approval_status = CASE
+          WHEN $2 = 'approved' THEN 'APPROVED'
+          ELSE approval_status
+        END,
+        approved_at = CASE
+          WHEN $2 = 'approved' THEN COALESCE(approved_at, now())
+          ELSE approved_at
+        END,
+        updated_at = now()
     WHERE id = $1 AND organization_id = $3
     `,
     [order.id, toStatus, organizationId],
@@ -1810,433 +1825,25 @@ async function resolveContractDefaultWarehouseForPo(purchaseOrderId: number): Pr
   return r.rows[0]?.default_warehouse_id ?? null;
 }
 
-async function applyWarehouseInventoryReceipt(params: {
-  organizationId: number;
-  itemId: number;
-  warehouseId: number | null;
-  quantity: number;
-  location: string | null;
-}) {
-  if (params.warehouseId == null || params.quantity <= 0) return;
-  const existing = await pool.query<{ id: number; quantity: number }>(
-    `
-    SELECT id, quantity
-    FROM warehouse_inventory
-    WHERE organization_id = $1
-      AND warehouse_id = $2
-      AND item_id = $3
-    LIMIT 1
-    `,
-    [params.organizationId, params.warehouseId, params.itemId],
-  );
-  const row = existing.rows[0];
-  if (row) {
-    await pool.query(
-      `
-      UPDATE warehouse_inventory
-      SET quantity = quantity + $2,
-          location = COALESCE($3, location),
-          updated_at = now()
-      WHERE id = $1
-      `,
-      [row.id, params.quantity, params.location],
-    );
-    return;
-  }
-  await pool.query(
-    `
-    INSERT INTO warehouse_inventory (
-      organization_id,
-      item_id,
-      warehouse_id,
-      quantity,
-      location,
-      updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, now())
-    `,
-    [params.organizationId, params.itemId, params.warehouseId, params.quantity, params.location],
-  );
-}
-
 export async function receiveOperationalPurchaseOrder(
-  poOrId: string,
-  lines: ReceivePurchaseLineInput[],
-  receiveMeta: ReceivePurchaseMetaInput = {},
-  actor = "system",
+  poOrId:string,lines:ReceivePurchaseLineInput[],receiveMeta:ReceivePurchaseMetaInput={},_actor="system",
 ) {
-  const organizationId = getActiveOrganizationId();
-  const order = await resolvePurchaseOrder(poOrId);
-  if (!order) {
-    throw new Error("po_not_found");
-  }
-
-  const currentStatus = normalizePurchaseStatus(order.status);
-  if (!["approved", "sent", "partially_received"].includes(currentStatus)) {
-    throw new Error("invalid_receive_state");
-  }
-
-  if (!Array.isArray(lines) || lines.length === 0) {
-    throw new Error("lines_required");
-  }
-
-  const contractDefaultWarehouseId =
-    receiveMeta.warehouse_id == null ? await resolveContractDefaultWarehouseForPo(order.id) : null;
-  const effectiveReceiveMeta: ReceivePurchaseMetaInput = {
-    ...receiveMeta,
-    warehouse_id: receiveMeta.warehouse_id ?? contractDefaultWarehouseId,
-  };
-  const putaway = await resolveReceivePutaway(effectiveReceiveMeta);
-
-  const currentLines = await getPurchaseOrderLines(order.id);
-  const receivableCatalogLines = currentLines.filter(
-    (line): line is PurchaseOrderLine & { itemId: number; sku: string } =>
-      line.lineType === "CATALOG" && line.itemId != null && Boolean(line.sku),
-  );
-  const lineBySku = new Map(receivableCatalogLines.map((line) => [line.sku, line]));
-
-  const apReceiptLines: Array<{ purchaseOrderItemId: number; itemId: number; acceptedQty: number }> = [];
-
-  const inventoryChanges: Array<{
-    sku: string;
-    location: string;
-    delta: number;
-    available: number;
-    onHand: number;
-  }> = [];
-  const mismatchExceptions: Array<{ id: number; sku: string; created: boolean }> = [];
-
-  const MAX_BATCH_LEN = 256;
-  const MAX_SERIAL_TOKENS = 200;
-  const MAX_SERIAL_TOKEN_LEN = 128;
-
-  for (const lineInput of lines) {
-    const sku = String(lineInput.sku ?? "").trim();
-    if (!sku) {
-      throw new Error("line_sku_required");
-    }
-    const receiveNow = Number(lineInput.qty_received_now);
-    const batchNumber =
-      typeof lineInput.batch_number === "string"
-        ? lineInput.batch_number.trim().slice(0, MAX_BATCH_LEN)
-        : "";
-    const serialNumbers = Array.isArray(lineInput.serial_numbers)
-      ? lineInput.serial_numbers
-          .map((s) => String(s).trim().slice(0, MAX_SERIAL_TOKEN_LEN))
-          .filter(Boolean)
-          .slice(0, MAX_SERIAL_TOKENS)
-      : [];
-    const line = lineBySku.get(sku);
-
-    if (!line) {
-      throw new Error(`line_not_found:${sku}`);
-    }
-    if (!Number.isFinite(receiveNow) || receiveNow <= 0) {
-      throw new Error(`invalid_receive_qty:${sku}`);
-    }
-    if (!Number.isInteger(receiveNow)) {
-      throw new Error(`invalid_receive_qty_integer:${sku}`);
-    }
-
-    const remaining = Math.max(line.qtyOrdered - line.qtyReceived, 0);
-    if (receiveNow > remaining) {
-      throw new Error(`receive_exceeds_remaining:${sku}`);
-    }
-
-    await pool.query(
-      `
-      UPDATE purchase_order_items
-      SET received_quantity = COALESCE(received_quantity, 0) + $2
-      WHERE id = $1
-      `,
-      [line.id, receiveNow],
-    );
-
-    if (receiveNow > 0) {
-      apReceiptLines.push({
-        purchaseOrderItemId: line.id,
-        itemId: line.itemId,
-        acceptedQty: receiveNow,
-      });
-      const receiveWarehouseId = putaway.warehouseId;
-      if (!receiveWarehouseId) throw new Error("warehouse_required");
-      const location = putaway.locationFromPutaway ?? `Warehouse #${receiveWarehouseId}`;
-
-      const adjustment = await adjustOperationalInventory({
-        skuOrId: line.sku,
-        warehouseId: receiveWarehouseId,
-        delta: receiveNow,
-        reason: "PO Receive",
-        ref: order.order_number,
-        createdBy: "po-receive",
-      });
-
-      inventoryChanges.push({
-        sku: line.sku,
-        location,
-        delta: receiveNow,
-        available: adjustment.summary.available,
-        onHand: adjustment.summary.onHand,
-      });
-
-      const receivedAt = receiveMeta.received_at ?? new Date();
-      /** Stock movement / serial location label (structured putaway or legacy string). */
-      const movementLocationLabel = location;
-
-      await pool.query(
-        `
-        INSERT INTO stock_movements (
-          organization_id,
-          item_id,
-          warehouse_id,
-          type,
-          quantity,
-          reference_id,
-          reference_type,
-          notes,
-          user_id,
-          receiver_user_id,
-          receiver_name,
-          warehouse_location,
-          received_at,
-          timestamp,
-          created_at
-        )
-        VALUES ($11, $1, $10, 'RECEIPT', $2, $3, 'purchase_order', $4, $5, $6, $7, $8, $9, now(), now())
-        `,
-        [
-          line.itemId,
-          receiveNow,
-          order.id,
-          `Received against PO ${order.order_number}`,
-          effectiveReceiveMeta.receiver_user_id ?? null,
-          effectiveReceiveMeta.receiver_user_id ?? null,
-          effectiveReceiveMeta.receiver_name ?? null,
-          movementLocationLabel,
-          receivedAt,
-          receiveWarehouseId,
-          getActiveOrganizationId(),
-        ],
-      );
-
-      await applyWarehouseInventoryReceipt({
-        organizationId: getActiveOrganizationId(),
-        itemId: line.itemId,
-        warehouseId: receiveWarehouseId,
-        quantity: receiveNow,
-        location,
-      });
-
-      if (batchNumber) {
-        const existingBatch = await pool.query<{ id: number }>(
-          `
-          SELECT id
-          FROM inventory_batches
-          WHERE item_id = $1
-            AND COALESCE(warehouse_id, 0) = COALESCE($3::integer, 0)
-            AND batch_number = $2
-          LIMIT 1
-          `,
-          [line.itemId, batchNumber, receiveWarehouseId],
-        );
-
-        if (existingBatch.rows[0]?.id) {
-          await pool.query(
-            `
-            UPDATE inventory_batches
-            SET quantity_received = quantity_received + $2,
-                quantity_on_hand = quantity_on_hand + $2,
-                updated_at = now()
-            WHERE id = $1
-            `,
-            [existingBatch.rows[0].id, receiveNow],
-          );
-        } else {
-          await pool.query(
-            `
-            INSERT INTO inventory_batches (item_id, warehouse_id, batch_number, quantity_received, quantity_on_hand)
-            VALUES ($1, $2, $3, $4, $4)
-            `,
-            [line.itemId, receiveWarehouseId, batchNumber, receiveNow],
-          );
-        }
-      }
-
-      if (serialNumbers.length > 0) {
-        for (const serial of serialNumbers) {
-          await pool.query(
-            `
-            INSERT INTO inventory_serials (item_id, warehouse_id, serial_number, status, current_location)
-            VALUES ($1, $2, $3, 'available', $4)
-            ON CONFLICT (serial_number)
-            DO UPDATE SET
-              item_id = EXCLUDED.item_id,
-              warehouse_id = EXCLUDED.warehouse_id,
-              status = 'available',
-              current_location = EXCLUDED.current_location,
-              updated_at = now()
-            `,
-            [line.itemId, receiveWarehouseId, serial, movementLocationLabel],
-          );
-        }
-      }
-
-      let remainingToFulfill = receiveNow;
-      const allocationRows = await pool.query<{ id: number; quantity: number }>(
-        `
-        SELECT id, quantity
-        FROM inventory_allocations
-        WHERE order_id = $1
-          AND item_id = $2
-          AND status = 'reserved'
-        ORDER BY created_at ASC
-        `,
-        [order.id, line.itemId],
-      );
-      for (const allocation of allocationRows.rows) {
-        if (remainingToFulfill <= 0) break;
-        const reservedQty = Number(allocation.quantity ?? 0);
-        if (reservedQty <= 0) continue;
-        const consume = Math.min(reservedQty, remainingToFulfill);
-        const nextQty = reservedQty - consume;
-        await pool.query(
-          `
-          UPDATE inventory_allocations
-          SET quantity = $2,
-              status = CASE WHEN $2 <= 0 THEN 'fulfilled' ELSE status END
-          WHERE id = $1
-          `,
-          [allocation.id, nextQty],
-        );
-        remainingToFulfill -= consume;
-      }
-    }
-  }
-
-  const refreshedLines = await getPurchaseOrderLines(order.id);
-  const fullyReceived = refreshedLines.every((line) => line.qtyReceived >= line.qtyOrdered);
-  const nextStatus = fullyReceived ? "received" : "partially_received";
-
-  await pool.query(
-    `
-    UPDATE purchase_orders
-    SET status = $2, updated_at = now()
-    WHERE id = $1
-    `,
-    [order.id, nextStatus],
-  );
-
-  const targetShipmentId =
-    receiveMeta.shipment_id != null && Number.isFinite(Number(receiveMeta.shipment_id))
-      ? Number(receiveMeta.shipment_id)
-      : null;
-
-  const shipmentCandidates = await pool.query<{
-    id: number;
-    status: string;
-  }>(
-    targetShipmentId != null
-      ? `
-    SELECT id, status
-    FROM shipments
-    WHERE po_number = $1 AND id = $2 AND organization_id = $3
-    `
-      : `
-    SELECT id, status
-    FROM shipments
-    WHERE po_number = $1 AND organization_id = $2
-    `,
-    targetShipmentId != null ? [order.order_number, targetShipmentId, organizationId] : [order.order_number, organizationId],
-  );
-
-  if (targetShipmentId != null && shipmentCandidates.rows.length === 0) {
-    throw new Error("shipment_not_found_for_po");
-  }
-
-  const shipmentUpdates: Array<{ shipmentId: number; toStatus: string }> = [];
-  for (const shipment of shipmentCandidates.rows) {
-    if (shipment.status !== "delivered") {
-      await pool.query(
-        `
-        UPDATE shipments
-        SET status = 'delivered', updated_at = now()
-        WHERE id = $1 AND organization_id = $2
-        `,
-        [shipment.id, organizationId],
-      );
-      await pool.query(
-        `
-        INSERT INTO shipment_events (shipment_id, status, note)
-        VALUES ($1, 'delivered', $2)
-        `,
-        [shipment.id, `Auto-delivered from PO receipt ${order.order_number}`],
-      );
-      shipmentUpdates.push({ shipmentId: shipment.id, toStatus: "delivered" });
-    }
-  }
-
-  const grnTrim =
-    receiveMeta.grn_number != null && String(receiveMeta.grn_number).trim()
-      ? String(receiveMeta.grn_number).trim()
-      : null;
-  if (grnTrim && targetShipmentId != null) {
-    await pool.query(
-      `UPDATE shipments SET grn_number = $2, updated_at = now() WHERE id = $1 AND po_number = $3 AND organization_id = $4`,
-      [targetShipmentId, grnTrim, order.order_number, organizationId],
-    );
-  }
-
-  await pool.query(
-    `
-    INSERT INTO purchase_order_events (po_number, event_type, note, payload)
-    VALUES ($1, 'receive', $2, $3::jsonb)
-    `,
-    [
-      order.order_number,
-      "PO receive processed",
-      JSON.stringify({ lines, inventoryChanges, shipmentUpdates }),
-    ],
-  );
-
-  await recordActivity({
-    actor,
-    entityType: "purchase_order",
-    entityId: order.order_number,
-    action: "receive",
-    summary: {
-      poNumber: order.order_number,
-      linesReceived: lines.length,
-      inventoryChanges: inventoryChanges.length,
-      shipmentUpdates: shipmentUpdates.length,
-      mismatchExceptions: mismatchExceptions.length,
-      nextStatus,
-    },
+  const organizationId=getActiveOrganizationId();
+  const order=await resolvePurchaseOrder(poOrId);
+  if(!order)throw new Error("po_not_found");
+  const key=receiveMeta.idempotency_key;
+  if(!key||key.length<8||key.length>128)throw new Error("RECEIPT_IDEMPOTENCY_KEY_REQUIRED");
+  const fallback=receiveMeta.warehouse_id==null?await resolveContractDefaultWarehouseForPo(order.id):null;
+  const putaway=await resolveReceivePutaway({...receiveMeta,warehouse_id:receiveMeta.warehouse_id??fallback});
+  if(!putaway.warehouseId)throw new Error("warehouse_required");
+  const result=await postGoodsReceipt(organizationId,Number(receiveMeta.receiver_user_id),{
+    orderId:order.id,warehouseId:putaway.warehouseId,key,lines,location:putaway.locationFromPutaway,
+    ...(receiveMeta.received_at?{receivedAt:receiveMeta.received_at}:{}),
+    shipmentId:receiveMeta.shipment_id,grnNumber:receiveMeta.grn_number,
   });
-
-  if (apReceiptLines.length > 0) {
-    try {
-      const { syncOperationalReceiveToApReceipt } = await import("../accounts-payable/service");
-      await syncOperationalReceiveToApReceipt({
-        purchaseOrderId: order.id,
-        receiptLines: apReceiptLines,
-        receivedByUserId: receiveMeta.receiver_user_id ?? null,
-      });
-    } catch (apErr) {
-      console.warn("[operations] AP receipt bridge failed:", apErr);
-    }
-  }
-
-  const updatedOrder = await getOperationalPurchaseOrderDetail(order.order_number);
-  if (!updatedOrder) {
-    throw new Error("po_not_found");
-  }
-
-  return {
-    order: updatedOrder,
-    inventoryChanges,
-    shipmentUpdates,
-    mismatchExceptions,
-  };
+  const updatedOrder=await getOperationalPurchaseOrderDetail(order.order_number);
+  if(!updatedOrder)throw new Error("po_not_found");
+  return {order:updatedOrder,...result};
 }
 
 async function ensureLateShipmentException(shipment: {

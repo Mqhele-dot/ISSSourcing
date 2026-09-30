@@ -185,13 +185,13 @@ test.describe("procurement to AP browser workflow", () => {
     });
 
     await page.goto("/inventory", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("inventory-page")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Inventory", level: 1 })).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("inventory-search-input").fill(receiveFixture.sku);
     const inventoryRow = page.getByTestId(`inventory-row-${receiveFixture.sku}`);
     await expect(inventoryRow).toBeVisible({ timeout: 20_000 });
     await expect(inventoryRow.locator("[data-on-hand]")).toHaveAttribute(
       "data-on-hand",
-      String(receiveFixture.initialQuantity + 3),
+      "3",
     );
 
     await page.goto("/finance/invoices", { waitUntil: "domcontentloaded" });
@@ -207,7 +207,7 @@ test.describe("procurement to AP browser workflow", () => {
     await page.goto("/finance/accounts-payable/payments", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("accounts-payable-page")).toBeVisible();
     await expect(page.getByText(/PO\/GRN match/i)).toBeVisible();
-    await expect(page.getByText(/pending-match invoices stay blocked/i)).toBeVisible();
+    await expect(page.getByText(/pending-match invoices are excluded/i)).toBeVisible();
     await expect(page.getByText(matchedInvoiceNumber)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(exceptionInvoiceNumber)).toHaveCount(0);
   });

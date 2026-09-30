@@ -176,6 +176,7 @@ export async function sendPurchaseOrder(
   return normalizePurchaseOrderDetail(raw);
 }
 
+const receiptRetryKeys=new Map<string,string>();
 export async function receivePurchaseOrder(
   po: string,
   lines: Array<{
@@ -200,6 +201,9 @@ export async function receivePurchaseOrder(
   const poNumber = normalizeOperationalPoParam(po);
   assertPoNumberForMutation(poNumber);
   assertNonEmptyReceiveLines(lines);
+  const retryFingerprint=JSON.stringify({poNumber,lines,receiveOptions});
+  const retryKey=receiptRetryKeys.get(retryFingerprint)??crypto.randomUUID();
+  receiptRetryKeys.set(retryFingerprint,retryKey);
   const shipmentId =
     receiveOptions?.shipmentId != null && Number.isFinite(Number(receiveOptions.shipmentId))
       ? Number(receiveOptions.shipmentId)
@@ -226,10 +230,11 @@ export async function receivePurchaseOrder(
         ? { grn_number: String(receiveOptions.grnNumber).trim() }
         : {}),
     },
-    httpOptions,
+    {...httpOptions,headers:{"Idempotency-Key":retryKey}},
   );
 
   const normalized = normalizePurchaseReceiveResult(result);
+  receiptRetryKeys.delete(retryFingerprint);
   const firstChange = normalized.inventoryChanges[0];
   const mismatchCreated = normalized.mismatchExceptions.some((entry) => entry.created);
   const baseMessage = firstChange

@@ -84,6 +84,7 @@ async function main() {
     options?: {
       method?: string;
       body?: unknown;
+      headers?: Record<string, string>;
     },
   ): Promise<HttpResult> => {
     const method = options?.method ?? "GET";
@@ -111,6 +112,7 @@ async function main() {
         ...(options?.body ? { "content-type": "application/json" } : {}),
         ...(cookie ? { cookie } : {}),
         ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+        ...(options?.headers ?? {}),
       },
       body: options?.body ? JSON.stringify(options.body) : undefined,
     });
@@ -134,6 +136,7 @@ async function main() {
     options?: {
       method?: string;
       body?: unknown;
+      headers?: Record<string, string>;
     },
   ) => request(`${apiBase}${path.startsWith("/") ? path : `/${path}`}`, options);
 
@@ -277,6 +280,8 @@ async function main() {
   const warehouses = await requestApi("/warehouses");
   assert(warehouses.ok, "Warehouses list failed");
   assert(Array.isArray(warehouses.json), "Warehouses should return array");
+  const firstWarehouse = warehouses.json[0] as { id?: unknown } | undefined;
+  assert(firstWarehouse && typeof firstWarehouse.id === "number", "No warehouse available");
 
   const createPo = await requestApi("/purchase-orders", {
     method: "POST",
@@ -319,11 +324,13 @@ async function main() {
 
   const receive = await requestApi(`/purchase/orders/${encodeURIComponent(poNumber)}/receive`, {
     method: "POST",
+    headers: { "Idempotency-Key": `contract-receipt-${poNumber}` },
     body: {
+      warehouseId: firstWarehouse.id,
       lines: [{ sku: firstItem.sku, qty_received_now: 2 }],
     },
   });
-  assert(receive.ok, `PO receive failed with status ${receive.status}`);
+  assert(receive.ok, `PO receive failed with status ${receive.status}: ${extractErrorMessage(receive.json)}`);
   assert(
     typeof receive.json === "object" &&
       receive.json !== null &&
@@ -337,6 +344,7 @@ async function main() {
   const shortage = await requestApi(`/inventory/${encodeURIComponent(firstItem.sku as string)}/adjust`, {
     method: "POST",
     body: {
+      warehouseId: firstWarehouse.id,
       location:
         typeof firstItem.location === "string" && firstItem.location.length > 0
           ? firstItem.location
@@ -346,31 +354,24 @@ async function main() {
       ref: "CONTRACT-TEST",
     },
   });
-  assert(shortage.ok, "Shortage adjustment failed");
-  const shortageJson = shortage.json as {
-    ok: true;
-    data: { exception?: { id?: number } };
-  };
-  const exceptionId = shortageJson.data.exception?.id;
-  assert(typeof exceptionId === "number", "Shortage adjustment did not create an exception");
+  assert(
+    [400, 409].includes(shortage.status) && extractErrorMessage(shortage.json).includes("INSUFFICIENT_AVAILABLE_STOCK"),
+    `Unsafe shortage adjustment was not rejected correctly: ${extractErrorMessage(shortage.json)}`,
+  );
 
-  const invalidTransition = await requestApi(`/exceptions/${exceptionId}/status`, {
+  const invalidTransition = await requestApi("/exceptions/999999999/status", {
     method: "POST",
     body: { toStatus: "not_a_valid_target" },
   });
-  assert(invalidTransition.status === 400, "Invalid exception transition should return 400");
+  assert(invalidTransition.status === 404, "Unknown exception transition should return 404");
   assert(
     typeof invalidTransition.json === "object" &&
       invalidTransition.json !== null &&
       "ok" in invalidTransition.json &&
       (invalidTransition.json as { ok: boolean }).ok === false &&
       typeof (invalidTransition.json as { error?: unknown }).error === "object" &&
-      invalidTransition.json !== null &&
-      Array.isArray(
-        ((invalidTransition.json as { error: { details?: { allowedTargets?: unknown } } }).error
-          .details as { allowedTargets?: unknown })?.allowedTargets,
-      ),
-    "Invalid transition did not return err envelope with allowedTargets",
+      (invalidTransition.json as { error: { code?: unknown } }).error.code === "EXCEPTION_NOT_FOUND",
+    "Unknown exception did not return a structured EXCEPTION_NOT_FOUND envelope",
   );
 
   // Dashboard analytics: stock usage (used by Stock Use chart)

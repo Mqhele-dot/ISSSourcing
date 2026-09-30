@@ -36,7 +36,7 @@ export const INVENTORY_BASE_SQL = `
            CASE WHEN wt.item_key IS NULL THEN COALESCE(i.quantity, 0)::int ELSE GREATEST(COALESCE(i.quantity, 0) - wt.quantity, 0)::int END AS unassigned_quantity,
            CASE WHEN wt.item_key IS NULL THEN COALESCE(i.quantity, 0)::int ELSE wt.quantity END AS on_hand,
            COALESCE(at.quantity, 0)::int AS allocated,
-           (CASE WHEN wt.item_key IS NULL THEN COALESCE(i.quantity, 0)::int ELSE wt.quantity END - COALESCE(at.quantity, 0))::int AS available,
+           (CASE WHEN COALESCE((to_jsonb(i)->>'safety_hold')::boolean,false) THEN 0 ELSE CASE WHEN wt.item_key IS NULL THEN COALESCE(i.quantity, 0)::int ELSE wt.quantity END - COALESCE(at.quantity, 0) END)::int AS available,
            COALESCE(wt.positions, 0)::int AS warehouse_position_count,
            (wt.item_key IS NOT NULL AND COALESCE(i.quantity, 0) <> wt.quantity) AS has_quantity_mismatch,
            COALESCE(wt.location, i.default_location, i.location) AS location,

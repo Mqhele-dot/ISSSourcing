@@ -153,6 +153,7 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
         sku: typeof req.body?.sku === "string" ? req.body.sku.trim() : req.body?.sku,
         name: typeof req.body?.name === "string" ? req.body.name.trim() : req.body?.name,
       });
+      if(Number(validatedData.quantity??0)!==0)return res.status(400).json({code:"ITEM_MASTER_INITIAL_STOCK_FORBIDDEN",message:"Create the item with zero stock, then receive or adjust stock through a governed warehouse transaction."});
       const settings = await storage.getSettings();
       const effectiveWarehouseId = validatedData.defaultWarehouseId ?? settings.defaultWarehouseId ?? null;
       if (effectiveWarehouseId && !(await storage.getWarehouse(effectiveWarehouseId))) {
@@ -170,6 +171,7 @@ export function registerInventoryCrudRoutes(app: Express, auth: AuthBundle): voi
       }
       const effectiveData = {
         ...validatedData,
+        quantity: 0,
         defaultWarehouseId: effectiveWarehouseId,
         lowStockThreshold: validatedData.lowStockThreshold ?? settings.lowStockDefaultThreshold ?? 10,
         unitOfMeasure: validatedData.unitOfMeasure || settings.defaultUnit || "each",

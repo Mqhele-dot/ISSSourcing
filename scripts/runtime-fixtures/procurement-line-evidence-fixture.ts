@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { pool } from "../../server/db";
-import { apiJsonRequest } from "../test-http";
+import { apiJsonRequest, loginForTests } from "../test-http";
 
 type ApiEnvelope<T> = { ok?: boolean; data?: T };
 
@@ -35,21 +35,23 @@ export type ProcurementEvidenceFixture = {
 export async function seedProcurementEvidenceFixture(): Promise<ProcurementEvidenceFixture> {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 10_000)}`.slice(-12);
   await pool.query(
-    `INSERT INTO currencies (code, name, symbol, region_code, region_name, is_main_for_region, exchange_rate_to_zar, active, updated_at)
-     VALUES ('ZAR', 'South African Rand', 'R', 'ZA', 'South Africa', TRUE, 1, TRUE, NOW())
-     ON CONFLICT (code) DO UPDATE SET active = TRUE, exchange_rate_to_zar = 1, updated_at = NOW()`,
+    `WITH updated AS (
+       UPDATE currencies SET active = TRUE, exchange_rate_to_zar = 1, updated_at = NOW()
+       WHERE organization_id = 1 AND code = 'ZAR' RETURNING id
+     )
+     INSERT INTO currencies (organization_id, code, name, symbol, region_code, region_name, is_main_for_region, exchange_rate_to_zar, active, updated_at)
+     SELECT 1, 'ZAR', 'South African Rand', 'R', 'ZA', 'South Africa', TRUE, 1, TRUE, NOW()
+     WHERE NOT EXISTS (SELECT 1 FROM updated)`,
   );
   const uom = await pool.query<{ id: number }>(
-    `INSERT INTO units_of_measure (code, name, symbol, active, updated_at)
-     VALUES ($1, $2, 'ea', TRUE, NOW())
-     ON CONFLICT (code) DO UPDATE SET active = TRUE, updated_at = NOW()
+    `INSERT INTO units_of_measure (organization_id, code, name, symbol, active, updated_at)
+     VALUES (1, $1, $2, 'ea', TRUE, NOW())
      RETURNING id`,
     [`W7-${suffix}`, `Wave 7 Each ${suffix}`],
   );
   const tax = await pool.query<{ id: number }>(
-    `INSERT INTO tax_codes (code, name, rate, type, country_code, active, updated_at)
-     VALUES ($1, $2, 15, 'vat', 'ZA', TRUE, NOW())
-     ON CONFLICT (code) DO UPDATE SET active = TRUE, updated_at = NOW()
+    `INSERT INTO tax_codes (organization_id, code, name, rate, type, country_code, active, updated_at)
+     VALUES (1, $1, $2, 15, 'vat', 'ZA', TRUE, NOW())
      RETURNING id`,
     [`W7V${suffix}`, `Wave 7 VAT ${suffix}`],
   );
@@ -71,8 +73,10 @@ export async function seedProcurementEvidenceFixture(): Promise<ProcurementEvide
   const supplier = await pool.query<{ id: number }>(
     `INSERT INTO suppliers (
        organization_id, name, status, contact_name, email, default_currency_code,
-       tax_code_id, default_department_id, updated_at
-     ) VALUES (1, $1, 'active', 'Wave 7 Test', $2, 'ZAR', $3, $4, NOW())
+       tax_code_id, default_department_id, onboarding_status, compliance_status,
+       approved_at, approved_by_user_id, updated_at
+     ) VALUES (1, $1, 'active', 'Wave 7 Test', $2, 'ZAR', $3, $4,
+       'APPROVED', 'compliant', NOW(), 1, NOW())
      RETURNING id`,
     [`Wave 7 Supplier ${suffix}`, `wave7-${suffix}@example.test`, tax.rows[0].id, department.rows[0].id],
   );
@@ -143,9 +147,11 @@ export function mixedLineBody(fixture: ProcurementEvidenceFixture) {
 }
 
 export async function createAndConvertMixedLineRequisition(cookie: string, fixture: ProcurementEvidenceFixture) {
+  const requesterCookie = (await loginForTests("planner", "Admin123!")) ?? "";
+  assert.ok(requesterCookie, "seeded planner cookie is required for independent requisition approval evidence");
   const createdResponse = await apiJsonRequest("/purchase-requisitions", {
     method: "POST",
-    cookie,
+    cookie: requesterCookie,
     body: mixedLineBody(fixture),
   });
   assert.equal(createdResponse.status, 201, `create mixed requisition failed: ${JSON.stringify(createdResponse.json)}`);
@@ -153,7 +159,13 @@ export async function createAndConvertMixedLineRequisition(cookie: string, fixtu
     createdResponse.json,
     "create mixed requisition",
   );
-  const approve = await apiJsonRequest(`/purchase-requisitions/${requisition.id}/approve`, {
+  const submit = await apiJsonRequest(`/v2/procurement/requisitions/${requisition.id}/submit`, {
+    method: "POST",
+    cookie: requesterCookie,
+    body: {},
+  });
+  assert.equal(submit.status, 200, `submit mixed requisition failed: ${JSON.stringify(submit.json)}`);
+  const approve = await apiJsonRequest(`/v2/procurement/requisitions/${requisition.id}/approve`, {
     method: "POST",
     cookie,
     body: { comment: "Wave 7 runtime evidence approval" },

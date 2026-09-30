@@ -1901,17 +1901,12 @@ export default function MasterDataPage() {
     window.setTimeout(() => document.getElementById("mdm-approval-queue")?.scrollIntoView({ behavior:"smooth", block:"start" }), 100);
   }
 
-  useEffect(() => {
-    if (!isLgUp) {
-      setLocation("/m/home");
-    }
-  }, [isLgUp, setLocation]);
-
   if (!isLgUp) {
     return (
       <div className="mx-auto max-w-lg p-6 text-center text-sm text-muted-foreground">
         Master data is available on large screens (1024px and wider). Use a desktop browser or resize the window.
-        Sending you to the mobile hub...
+        Your current page is preserved; no changes have been made.
+        <a href="/m/home" className="mt-4 block underline">Open mobile hub</a>
       </div>
     );
   }

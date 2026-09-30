@@ -18,8 +18,6 @@ import {
   insertCarrierSchema,
   insertCommodityCodeSchema,
   insertCurrencySchema,
-  insertCycleCountLineSchema,
-  insertCycleCountSchema,
   insertDepartmentSchema,
   insertIncotermSchema,
   insertInventoryAllocationSchema,
@@ -34,8 +32,6 @@ import {
   carriers,
   commodityCodes,
   currencies,
-  cycleCountLines,
-  cycleCounts,
   departments,
   documents,
   incoterms,
@@ -1295,74 +1291,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
   registerMasterDataCrud("/api/inventory-batches", inventoryBatches, insertInventoryBatchSchema as any);
   registerMasterDataCrud("/api/inventory-serials", inventorySerials, insertInventorySerialSchema as any);
   registerMasterDataCrud("/api/inventory-allocations", inventoryAllocations, insertInventoryAllocationSchema as any);
-  registerMasterDataCrud("/api/cycle-counts", cycleCounts, insertCycleCountSchema as any);
-  registerMasterDataCrud("/api/cycle-count-lines", cycleCountLines, insertCycleCountLineSchema as any);
-
-  app.post("/api/cycle-counts/:id/post", ...masterWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return sendError(res, 400, "INVALID_ID", "Invalid cycle count ID");
-
-      const cycleCountRows = await db.select().from(cycleCounts).where(eq(cycleCounts.id, id));
-      const cycleCount = cycleCountRows[0];
-      if (!cycleCount) return sendError(res, 404, "NOT_FOUND", "Cycle count not found");
-
-      const lines = await db.select().from(cycleCountLines).where(eq(cycleCountLines.cycleCountId, id));
-      if (lines.length === 0) {
-        return sendError(res, 400, "CYCLE_COUNT_EMPTY", "Cycle count has no lines to post");
-      }
-
-      let totalVariance = 0;
-      const adjustments: Array<{ itemId: number; variance: number; movementId: number }> = [];
-      for (const line of lines) {
-        const counted = Number(line.countedQuantity ?? 0);
-        const system = Number(line.systemQuantity ?? 0);
-        const variance = counted - system;
-        totalVariance += variance;
-
-        await db
-          .update(cycleCountLines)
-          .set({ variance })
-          .where(eq(cycleCountLines.id, line.id));
-
-        if (variance !== 0) {
-          const movement = await storage.createStockMovement({
-            itemId: line.itemId,
-            warehouseId: cycleCount.warehouseId,
-            type: "ADJUSTMENT",
-            quantity: variance,
-            destinationWarehouseId: cycleCount.warehouseId,
-            notes: `Cycle count #${id} adjustment`,
-            referenceId: id,
-            referenceType: "cycle_count",
-            userId: (req as Request & { user?: { id: number } }).user?.id ?? null,
-          } as any);
-          adjustments.push({ itemId: line.itemId, variance, movementId: movement.id });
-        }
-      }
-
-      const updatedRows = (await db
-        .update(cycleCounts)
-        .set({
-          status: "completed",
-          variance: totalVariance,
-          countedBy: (req as Request & { user?: { id: number } }).user?.id ?? null,
-          countDate: new Date(),
-        } as any)
-        .where(eq(cycleCounts.id, id))
-        .returning()) as any[];
-      const updated = updatedRows[0];
-
-      return sendOk(res, {
-        cycleCount: updated,
-        adjustments,
-        totalVariance,
-      });
-    } catch (error) {
-      console.error("Error posting cycle count:", error);
-      return sendError(res, 500, "CYCLE_COUNT_POST_FAILED", "Failed to post cycle count");
-    }
-  });
+  // Cycle counts are registered by the dedicated inventory domain router.
 
   app.get("/api/approval-policies", ...masterRead, async (req: Request, res: Response) => {
     try {

@@ -61,7 +61,7 @@ test.describe("diagnostics workspace browser evidence", () => {
     test(`${workspace} opens from URL state with distinct controlled content`, async ({ page }) => {
       await loginAsSeededUser(page, "admin", 1);
       await page.goto(`/admin/system-diagnostics?view=${workspace}`, { waitUntil: "domcontentloaded" });
-      await expect(page.getByTestId(`diagnostics-tab-${workspace}`)).toHaveAttribute("data-state", "active");
+      await expect(page.getByTestId(`diagnostics-tab-${workspace}`)).toHaveAttribute("data-state", "active", { timeout: 20_000 });
       await expect(page.getByTestId(`diagnostics-workspace-${workspace}`)).toBeVisible();
       await expect(page.getByTestId(`diagnostics-visible-count-${workspace}`)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId(`diagnostics-filters-${workspace}`)).toBeVisible();
@@ -71,6 +71,8 @@ test.describe("diagnostics workspace browser evidence", () => {
   test("known failures are categorized, filtered, probed, and safely redacted", async ({ page }) => {
     await loginAsSeededUser(page, "admin", 1);
     await page.goto("/admin/system-diagnostics?view=integrations", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("diagnostics-evidence-filter-integrations").click();
+    await page.getByRole("option", { name: "All evidence" }).click();
     await expect(page.getByTestId("diagnostic-finding-EXPORT_JOB_FAILURES")).toBeVisible({ timeout: 15_000 });
     await page.getByTestId("diagnostics-status-filter-integrations").click();
     await page.getByRole("option", { name: "Failed" }).click();

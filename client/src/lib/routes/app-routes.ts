@@ -107,6 +107,7 @@ export const APP_ROUTES = {
     cycleCounts: "/inventory/cycle-counts",
     warehouseOperations: "/inventory/warehouse-operations",
     putAway: "/inventory/put-away",
+    positions: "/inventory/positions",
     shipments: "/inventory/shipments",
     receiving: "/inventory/receiving",
     movements: "/inventory/movements",

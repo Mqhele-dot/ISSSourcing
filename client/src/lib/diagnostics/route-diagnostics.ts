@@ -31,7 +31,7 @@ const ROUTE_MARKERS: Array<{ match: (path: string) => boolean; selectors: string
   { match: (path) => /^\/procurement\/quotations\/[^/]+$/.test(path), selectors: [`[data-testid="quotation-review-page"]`] },
   { match: (path) => path === "/procurement/quotations", selectors: [`[data-testid="quotations-page"]`] },
   { match: (path) => path === "/procurement/suppliers" || path === "/suppliers", selectors: [`[data-testid="suppliers-page"]`] },
-  { match: (path) => path === "/procurement/contracts" || path === "/contracts", selectors: [`[data-testid="contracts-page"]`] },
+  { match: (path) => path === "/procurement/contracts" || path === "/contracts", selectors: [`[data-testid="blanket-agreements-page"]`] },
   { match: (path) => path.startsWith("/supplier-portal") || path === "/procurement/supplier-portal", selectors: [`[data-testid="supplier-portal-page"]`] },
   { match: (path) => path.startsWith("/finance/accounts-payable"), selectors: [`[data-testid="accounts-payable-page"]`] },
   { match: (path) => path === "/reports" || path.startsWith("/analytics/reports"), selectors: [`[data-testid="reports-page"]`] },

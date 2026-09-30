@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchApprovalSuggestions } from "@/api/client";
 import { PageHeader } from "@/components/page-header";
@@ -317,11 +317,7 @@ export default function ApprovalPoliciesPage() {
     },
   });
 
-  const [, setLocation] = useLocation();
   const isLgUp = useMediaQuery("(min-width: 1024px)");
-  useEffect(() => {
-    if (!isLgUp) setLocation("/m/home");
-  }, [isLgUp, setLocation]);
 
   const startEdit = (p: ApprovalPolicy) => {
     setEditingId(p.id);
@@ -355,7 +351,8 @@ export default function ApprovalPoliciesPage() {
     return (
       <div className="mx-auto max-w-lg p-6 text-center text-sm text-muted-foreground">
         Approval policies are available on large screens (1024px and wider). Use a desktop browser or resize the
-        window. Sending you to the mobile hub…
+        window. Your current page is preserved; no changes have been made.
+        <Link href="/m/home" className="mt-4 block underline">Open mobile hub</Link>
       </div>
     );
   }

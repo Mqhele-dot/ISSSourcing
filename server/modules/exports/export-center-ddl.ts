@@ -66,6 +66,11 @@ export async function initializeExportCenterData(): Promise<void> {
   `);
 
   await pool.query(`
+    ALTER TABLE export_jobs
+      ADD COLUMN IF NOT EXISTS retry_of_job_id INTEGER REFERENCES export_jobs(id);
+  `);
+
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS export_history_org_created_idx
       ON export_history (organization_id, created_at DESC);
   `);
@@ -83,5 +88,10 @@ export async function initializeExportCenterData(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS export_jobs_status_created_idx
       ON export_jobs (status, created_at ASC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS export_jobs_org_retry_created_idx
+      ON export_jobs (organization_id, retry_of_job_id, created_at DESC);
   `);
 }

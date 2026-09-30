@@ -40,7 +40,12 @@ export async function executeInventoryScanMovement(input: {
   data: InventoryScanMovementInput;
 }) {
   const action = `BARCODE_SCAN_${input.data.direction}`;
-  const duplicate = await db
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL lock_timeout='5s'`);
+    const authorized=await tx.execute(sql`SELECT u.id FROM users u JOIN organization_members om ON om.user_id=u.id AND om.organization_id=${input.organizationId} AND om.active=true AND om.status='active' WHERE u.id=${input.userId} AND (u.warehouse_id IS NULL OR u.warehouse_id=${input.data.warehouseId})`);
+    if(!authorized.rows.length)throw new InventoryScanMovementError("WAREHOUSE_ACCESS_DENIED","Your warehouse scope does not allow this scan.",403);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.organizationId}:scan-key:${input.idempotencyKey}`},0))`);
+  const duplicate = await tx
     .select()
     .from(workflowIdempotency)
     .where(
@@ -58,10 +63,12 @@ export async function executeInventoryScanMovement(input: {
         409,
       );
     }
+    const previous=duplicate[0].response as {request?:unknown;movement?:{userId?:number|null}}|null;
+    if(previous?.movement?.userId!==input.userId)throw new InventoryScanMovementError("IDEMPOTENCY_KEY_REUSED","This retry belongs to another operator.",409);
+    if(JSON.stringify(previous?.request)!==JSON.stringify(input.data))throw new InventoryScanMovementError("IDEMPOTENCY_KEY_REUSED","Use a new retry key for changed scan details.",409);
     return { duplicate: true, ...(duplicate[0].response ?? {}) };
   }
 
-  return db.transaction(async (tx) => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.organizationId}:${input.data.warehouseId}:${input.data.value}`}, 0))`,
     );
@@ -126,6 +133,10 @@ export async function executeInventoryScanMovement(input: {
       );
     }
     const item = [...matches.values()][0];
+    if(input.data.direction==="IN")await tx.execute(sql`SELECT assert_unlinked_receipt_inspection(${input.organizationId},${item.id})`);
+    await tx.execute(sql`SELECT id FROM inventory_items WHERE id=${item.id} AND organization_id=${input.organizationId} FOR UPDATE`);
+    const scope=await tx.execute(sql`SELECT u.id FROM users u JOIN organization_members om ON om.user_id=u.id AND om.organization_id=${input.organizationId} AND om.active=true AND om.status='active' WHERE u.id=${input.userId} AND (u.warehouse_id IS NULL OR u.warehouse_id=${warehouse.id})`);
+    if(!scope.rows.length)throw new InventoryScanMovementError("WAREHOUSE_ACCESS_DENIED","Your warehouse scope does not allow this scan.",403);
     if (String(item.status ?? "active").toLowerCase() !== "active") {
       throw new InventoryScanMovementError("SCAN_ITEM_INACTIVE", "Inactive inventory items cannot be moved.", 409);
     }
@@ -148,7 +159,7 @@ export async function executeInventoryScanMovement(input: {
           eq(warehouseInventory.itemId, item.id),
         ),
       )
-      .limit(1);
+      .limit(1).for("update");
 
     const resolvedLocation = input.data.location || position?.location || item.location || null;
     if (input.data.direction === "IN" && settings?.requireLocationForItems && !resolvedLocation) {
@@ -161,6 +172,10 @@ export async function executeInventoryScanMovement(input: {
     const previousQuantity = Number(position?.quantity ?? 0);
     const signedQuantity = input.data.direction === "IN" ? input.data.quantity : -input.data.quantity;
     const newQuantity = previousQuantity + signedQuantity;
+    if(input.data.direction==="OUT") {
+      const reservations=await tx.execute(sql`SELECT COALESCE(sum(quantity),0)::int AS quantity FROM inventory_allocations WHERE organization_id=${input.organizationId} AND item_id=${item.id} AND (warehouse_id=${warehouse.id} OR warehouse_id IS NULL) AND status='reserved'`);
+      if(newQuantity<Number(reservations.rows[0]?.quantity??0))throw new InventoryScanMovementError("INSUFFICIENT_ELIGIBLE_STOCK","Stock reserved for demand cannot be scanned out as an unallocated issue.",409);
+    }
     if (newQuantity < 0 && !settings?.allowNegativeInventory) {
       throw new InventoryScanMovementError(
         "INSUFFICIENT_WAREHOUSE_STOCK",
@@ -190,6 +205,7 @@ export async function executeInventoryScanMovement(input: {
       });
     }
 
+    await tx.update(inventoryItems).set({quantity:sql`${inventoryItems.quantity}+${signedQuantity}`,updatedAt:new Date()}).where(and(eq(inventoryItems.id,item.id),eq(inventoryItems.organizationId,input.organizationId)));
     const [movement] = await tx
       .insert(stockMovements)
       .values({
@@ -211,6 +227,7 @@ export async function executeInventoryScanMovement(input: {
       .returning();
 
     const response = {
+      request:input.data,
       movement,
       item: { id: item.id, sku: item.sku, name: item.name, barcode: item.barcode },
       warehouse,

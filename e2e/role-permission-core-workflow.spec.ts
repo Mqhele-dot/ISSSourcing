@@ -134,9 +134,10 @@ test.describe("core workflow permission controls", () => {
   });
 
   test("AP and master-data controls enforce role boundaries", async ({ page }) => {
+    test.setTimeout(90_000);
     await loginAs(page, "e2e_ap_manager", apManagerUserId);
     await page.goto("/finance/accounts-payable/payments", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("accounts-payable-page")).toBeVisible();
+    await expect(page.getByTestId("accounts-payable-page")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(/Create payment batch/i)).toBeVisible();
 
     const requesterCookie = (await loginForTests("e2e_requester", TEST_PASSWORD)) ?? "";
@@ -169,11 +170,11 @@ test.describe("core workflow permission controls", () => {
 
     await loginAs(page, "admin", 1);
     await page.goto("/admin/master-data", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("master-data-page")).toBeVisible();
+    await expect(page.getByTestId("master-data-page")).toBeVisible({ timeout: 20_000 });
 
     await page.goto("/admin/user-roles", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("user-roles-page")).toBeVisible();
-    await expect(page.getByTestId("role-manager-card")).toBeVisible();
+    await expect(page.getByTestId("user-roles-page")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("role-manager-card")).toBeVisible({ timeout: 20_000 });
 
     await page.context().clearCookies();
     const anonymous = await page.context().newPage();

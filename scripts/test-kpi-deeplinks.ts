@@ -127,6 +127,8 @@ async function main() {
     cookie,
     baseUrl,
   });
+  const walkthroughDisabled =
+    walkthrough.status === 404 && extractErrorMessage(walkthrough.json).includes("DEMO_WALKTHROUGH_DISABLED");
   if (!walkthrough.ok && (walkthrough.status >= 500 || walkthrough.status === 429)) {
     console.warn(
       "⚠️ Skipping KPI deeplinks API checks: walkthrough failed.",
@@ -137,10 +139,14 @@ async function main() {
     process.exitCode = 0;
     return;
   }
-  assert(
-    walkthrough.ok,
-    `Walkthrough setup failed: ${walkthrough.status} ${extractErrorMessage(walkthrough.json)}`,
-  );
+  if (!walkthroughDisabled) {
+    assert(
+      walkthrough.ok,
+      `Walkthrough setup failed: ${walkthrough.status} ${extractErrorMessage(walkthrough.json)}`,
+    );
+  } else {
+    console.log("ℹ️ Demo walkthrough disabled; validating KPI filters against existing tenant data.");
+  }
 
   const exceptions = await apiJsonRequest("/exceptions?status=open&severity=high", { cookie, baseUrl });
   assert(exceptions.ok && exceptions.json?.ok === true, "Exceptions filter endpoint failed");
