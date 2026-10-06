@@ -20,6 +20,8 @@ export async function testPositions(app:Express,pool:Pool,call:Call) {
   assert.equal(result.body.data.items[0].locationState,"unresolved");
   assert.equal(result.body.data.items[0].onHand,"97");
   assert.equal(result.body.data.capabilities.qualityHolds,false);
+  assert.equal(result.body.data.capabilities.splitPositions,false);
+  assert.match(result.body.data.notice,/limited planning projection, not allocation authority/);
   assert.equal(result.body.data.summary.unresolved,1);
   assert.equal((await call(`${base}/locations?kind=sites&q=Johannesburg`)).body.data.items[0].id,1);
   assert.equal((await call(`${base}/locations?kind=bins&pageSize=1000`)).status,400);

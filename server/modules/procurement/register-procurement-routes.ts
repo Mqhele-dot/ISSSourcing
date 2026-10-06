@@ -499,6 +499,16 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   const poWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "planner", "admin"])];
   const poCreate = [auth.ensureAuthenticated, auth.ensurePermission("purchases", "create")];
   const poApprove = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("purchases", "approve")];
+  app.get("/api/v2/procurement/purchase-orders/recent", auth.ensureAuthenticated, auth.ensurePermission("purchases", "read"), async (_req: Request, res: Response) => {
+    try {
+      const rows = await pool.query(`SELECT id,order_number AS "orderNumber",supplier_id AS "supplierId",created_at AS "createdAt"
+        FROM purchase_orders WHERE organization_id=$1 ORDER BY created_at DESC,id DESC LIMIT 10`, [getActiveOrganizationId()]);
+      return sendOk(res, { items: rows.rows });
+    } catch (error) {
+      console.error("Recent purchase orders failed:", error);
+      return sendError(res, 500, "RECENT_PURCHASE_ORDERS_FAILED", "Could not load recent purchases. Please retry.");
+    }
+  });
     app.get("/api/purchase-requisitions", ...poRead, async (_req: Request, res: Response) => {
     try {
       const requisitions = await storage.getAllPurchaseRequisitions();
@@ -1996,6 +2006,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     ...poWrite,
     auth.ensureTwoFactorAuthenticated,
     async (req: Request, res: Response) => {
+    let communicationEventId: number | null = null;
     try {
       const id = Number(req.params.id);
       if (isNaN(id)) {
@@ -2019,18 +2030,23 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (String(order.approvalStatus).toUpperCase() !== "APPROVED") {
         return sendError(res, 409, "PO_APPROVAL_REQUIRED", "Purchase order must be independently approved before dispatch.");
       }
-      if (
-        process.env.NODE_ENV === "production"
-        && (!process.env.EMAIL_HOST?.trim() || !process.env.EMAIL_USER?.trim() || !process.env.EMAIL_PASS?.trim())
-      ) {
+      if (!process.env.EMAIL_HOST?.trim() || !process.env.EMAIL_USER?.trim() || !process.env.EMAIL_PASS?.trim()) {
         return sendError(res, 503, "EMAIL_PROVIDER_NOT_CONFIGURED", "Purchase order dispatch is not configured.", {
-          hint: "Configure the hosted SMTP provider before issuing purchase orders.",
+          hint: "Configure and verify the SMTP provider before issuing purchase orders. A local preview is not proof of delivery.",
         });
       }
+
+      const queued = await pool.query<{ id: number }>(`INSERT INTO supplier_communication_events
+        (organization_id,supplier_id,source_type,source_id,channel,status,recipient,actor_user_id)
+        VALUES($1,$2,'purchase_order',$3,'email','queued',$4,$5) RETURNING id`,
+        [organizationId, order.supplierId, id, email, Number(req.user?.id) || null]);
+      communicationEventId = queued.rows[0].id;
       
       const success = await storage.sendPurchaseOrderEmail(id, email);
       
       if (!success) {
+        await pool.query(`UPDATE supplier_communication_events SET status='failed',error_summary=$2
+          WHERE id=$1 AND organization_id=$3`, [communicationEventId, "The email provider rejected the dispatch request.", organizationId]);
         await db
           .update(purchaseOrders)
           .set({ dispatchStatus: "FAILED", dispatchError: "Email provider rejected the dispatch request.", updatedAt: new Date() })
@@ -2039,6 +2055,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           hint: "Verify the email provider and recipient, then retry the same approved revision.",
         });
       }
+      await pool.query(`UPDATE supplier_communication_events SET status='sent',occurred_at=now()
+        WHERE id=$1 AND organization_id=$2`, [communicationEventId, organizationId]);
       
       // Update the order status to SENT if successful
       await db
@@ -2074,6 +2092,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       
       return sendOk(res, { message: "Purchase order email sent successfully" });
     } catch (error) {
+      if (communicationEventId !== null) {
+        await pool.query(`UPDATE supplier_communication_events SET status='failed',error_summary=$2
+          WHERE id=$1 AND status='queued'`, [communicationEventId, "The dispatch did not complete; check the provider before retrying."]).catch(() => undefined);
+      }
       console.error("Error sending purchase order email:", error);
       return sendError(res, 500, "SEND_PO_EMAIL_FAILED", "Failed to send purchase order email");
     }

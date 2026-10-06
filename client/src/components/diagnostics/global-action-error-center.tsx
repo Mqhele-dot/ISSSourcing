@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Bug, Copy, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   actionErrorStore,
   pickLatestForFab,
@@ -19,15 +18,7 @@ import {
 import { requestJson } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 gap-0.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-x-4 sm:gap-y-1">
-      <dt className="text-xs font-medium text-muted-foreground sm:pt-0.5">{label}</dt>
-      <dd className="min-w-0 break-words text-sm text-foreground">{children}</dd>
-    </div>
-  );
-}
+import { userFacingError } from "@/lib/user-facing-error";
 
 export function GlobalActionErrorCenter() {
   const { toast } = useToast();
@@ -58,7 +49,7 @@ export function GlobalActionErrorCenter() {
           lastSoftToastAt.current = now;
           toast({
             title: "Some data could not be refreshed",
-            description: record.reason.slice(0, 200),
+            description: userFacingError({ message: record.reason, status: record.status }).slice(0, 200),
           });
         }
       }
@@ -66,10 +57,6 @@ export function GlobalActionErrorCenter() {
   }, [toast]);
 
   const canSeeDiagnostics = user?.role === "admin";
-  const prettyRaw = useMemo(
-    () => (activeRecord?.raw != null ? JSON.stringify(activeRecord.raw, null, 2) : "No payload captured"),
-    [activeRecord?.raw],
-  );
 
   const copyDiagnostics = async () => {
     if (!activeRecord) return;
@@ -98,17 +85,13 @@ export function GlobalActionErrorCenter() {
     } catch (error) {
       toast({
         title: "Retry failed",
-        description: error instanceof Error ? error.message : String(error),
+        description: userFacingError(error),
         variant: "destructive",
       });
     } finally {
       setRetrying(false);
     }
   };
-
-  const statusLabel = activeRecord?.status != null ? String(activeRecord.status) : "n/a";
-  const isClientError =
-    activeRecord?.status != null && activeRecord.status >= 400 && activeRecord.status < 500;
 
   const openDetails = () => {
     const r = pickLatestForFab(actionErrorStore.list());
@@ -159,7 +142,7 @@ export function GlobalActionErrorCenter() {
           <DialogHeader className="space-y-1 border-b border-border pb-4 text-left">
             <DialogTitle className="text-xl">Something went wrong</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              {activeRecord?.reason ??
+              {activeRecord ? userFacingError({ message: activeRecord.reason, status: activeRecord.status }) :
                 "The request did not complete. Review the details below or retry from the page."}
             </DialogDescription>
           </DialogHeader>
@@ -171,49 +154,19 @@ export function GlobalActionErrorCenter() {
                   Repeated {activeRecord.occurrenceCount}× (similar errors were grouped).
                 </p>
               ) : null}
-              <Alert variant={isClientError ? "default" : "destructive"} className="border">
-                <AlertTitle className="text-sm font-semibold">
-                  {activeRecord.method} {activeRecord.endpoint}
-                </AlertTitle>
-                <AlertDescription className="mt-1 space-y-1 text-sm">
-                  <span className="font-medium">HTTP {statusLabel}</span>
-                  {activeRecord.reason ? (
-                    <span className="block text-foreground/90">{activeRecord.reason}</span>
-                  ) : null}
-                </AlertDescription>
-              </Alert>
-
-              <dl className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-                <DetailRow label="Module">{activeRecord.module ?? "—"}</DetailRow>
-                <DetailRow label="Action">{activeRecord.action ?? "—"}</DetailRow>
-                <DetailRow label="Request ID">
-                  {activeRecord.requestId ? (
-                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{activeRecord.requestId}</code>
-                  ) : (
-                    "—"
-                  )}
-                </DetailRow>
-                <DetailRow label="Payload">{activeRecord.payloadSummary ?? "—"}</DetailRow>
-                <DetailRow label="Time">{new Date(activeRecord.timestamp).toLocaleString()}</DetailRow>
-              </dl>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Response body</p>
-                <ScrollArea className="max-h-40 rounded-md border border-border bg-muted/50">
-                  <pre className="whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-foreground">
-                    {prettyRaw}
-                  </pre>
-                </ScrollArea>
-              </div>
+              <p className="text-sm text-muted-foreground">Your work on this page has not been confirmed. Review the form, then try again.</p>
+              {activeRecord.requestId ? (
+                <p className="text-xs text-muted-foreground">If you contact support, quote reference {activeRecord.requestId}.</p>
+              ) : null}
             </div>
           ) : null}
 
           <DialogFooter className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:flex-wrap sm:justify-end">
-            <Button variant="outline" onClick={copyDiagnostics} className="gap-2" disabled={!activeRecord}>
+            {canSeeDiagnostics ? <Button variant="outline" onClick={copyDiagnostics} className="gap-2" disabled={!activeRecord}>
               <Copy className="h-4 w-4" />
               Copy full report
-            </Button>
-            {activeRecord ? (
+            </Button> : null}
+            {canSeeDiagnostics && activeRecord ? (
               <Button variant="outline" onClick={() => copyEndpoint(activeRecord.endpoint)} className="gap-2">
                 <Copy className="h-4 w-4" />
                 Copy endpoint

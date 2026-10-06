@@ -1111,6 +1111,11 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       );
       ALTER TABLE notifications ADD COLUMN IF NOT EXISTS occurrence_count INTEGER DEFAULT 1 NOT NULL;
       ALTER TABLE notifications ADD COLUMN IF NOT EXISTS last_occurred_at TIMESTAMP DEFAULT NOW() NOT NULL;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS target_path TEXT;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS finding_code TEXT;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS due_at TIMESTAMP;
+      ALTER TABLE notifications ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
       WITH duplicate_groups AS (
         SELECT
           MAX(id) AS keeper_id,
@@ -1146,12 +1151,11 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         AND notification.title = keepers.title
         AND notification.id <> keepers.keeper_id;
 
-      DELETE FROM notifications
-      WHERE read_at IS NOT NULL
-        AND COALESCE(last_occurred_at, created_at) < NOW() - INTERVAL '90 days';
-
       CREATE INDEX IF NOT EXISTS idx_notifications_org_user_recent
         ON notifications (organization_id, user_id, last_occurred_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_notifications_active_unread
+        ON notifications (organization_id, user_id, read_at)
+        WHERE archived_at IS NULL;
       CREATE TABLE IF NOT EXISTS notification_preferences (
         id SERIAL PRIMARY KEY,
         user_id INTEGER UNIQUE NOT NULL,
@@ -1237,6 +1241,47 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+      ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS daily_digest_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+      CREATE TABLE IF NOT EXISTS notification_delivery_keys (
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        delivery_key TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        claimed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        completed_at TIMESTAMP,
+        PRIMARY KEY (organization_id,user_id,delivery_key)
+      );
+      ALTER TABLE notification_delivery_keys ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMP NOT NULL DEFAULT NOW();
+      ALTER TABLE notification_delivery_keys ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+      CREATE TABLE IF NOT EXISTS supplier_communication_notes (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+        actor_user_id INTEGER NOT NULL REFERENCES users(id),
+        occurred_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        channel TEXT NOT NULL CHECK (channel IN ('phone','email','meeting','other')),
+        summary TEXT NOT NULL,
+        document_id INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS supplier_communication_notes_supplier_recent
+        ON supplier_communication_notes (organization_id,supplier_id,occurred_at DESC,id DESC);
+      CREATE TABLE IF NOT EXISTS supplier_communication_events (
+        id BIGSERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+        source_type TEXT NOT NULL,
+        source_id INTEGER NOT NULL,
+        channel TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('previewed','queued','sent','failed','acknowledged')),
+        recipient TEXT,
+        actor_user_id INTEGER REFERENCES users(id),
+        error_summary TEXT,
+        occurred_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS supplier_communication_events_supplier_recent
+        ON supplier_communication_events (organization_id,supplier_id,occurred_at DESC,id DESC);
       CREATE TABLE IF NOT EXISTS stock_count_targets (
         id SERIAL PRIMARY KEY,
         organization_id INTEGER DEFAULT 1 NOT NULL,

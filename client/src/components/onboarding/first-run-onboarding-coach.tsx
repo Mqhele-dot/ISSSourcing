@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   ArrowRight,
-  BarChart3,
   CheckCircle2,
   Database,
   FileCheck2,
-  PackageCheck,
-  Smartphone,
-  Truck,
   Users,
   X,
 } from "lucide-react";
@@ -27,6 +24,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAppReadinessState } from "@/hooks/use-app-readiness-state";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { pathWithoutQuery } from "@/lib/path-utils";
+import { requestJson } from "@/lib/queryClient";
 
 type CoachStep = {
   id: string;
@@ -38,29 +36,38 @@ type CoachStep = {
   adminOnly?: boolean;
 };
 
-const VERSION = "v1";
+const VERSION = "v2";
 
 const SETUP_STEPS: CoachStep[] = [
   {
-    id: "setup",
-    title: "Finish company setup",
-    description: "Set company name, currency, tax mode, warehouse, departments, and starter payment terms.",
-    route: APP_ROUTES.setup.product,
-    action: "Open setup wizard",
+    id: "company",
+    title: "Add company details",
+    description: "Confirm the business name and document details used throughout the app.",
+    route: APP_ROUTES.admin.companySetup,
+    action: "Open Company Setup",
     icon: Database,
     adminOnly: true,
   },
   {
-    id: "master-data",
-    title: "Load master data",
-    description: "Confirm currencies, tax codes, payment terms, departments, warehouses, and carriers.",
-    route: APP_ROUTES.admin.masterData,
-    action: "Open Master Data",
+    id: "warehouse",
+    title: "Set a default warehouse",
+    description: "Choose where incoming stock is received and counted by default.",
+    route: APP_ROUTES.admin.masterDataSection("warehouses"),
+    action: "Open Warehouses",
     icon: FileCheck2,
     adminOnly: true,
   },
   {
-    id: "suppliers",
+    id: "tax",
+    title: "Confirm tax codes",
+    description: "Review the active tax codes that purchasing documents can use.",
+    route: APP_ROUTES.admin.masterDataSection("taxCodes"),
+    action: "Open Tax Codes",
+    icon: FileCheck2,
+    adminOnly: true,
+  },
+  {
+    id: "supplier",
     title: "Add suppliers",
     description: "Create supplier profiles with currency, terms, tax, incoterms, carrier, and AP defaults.",
     route: APP_ROUTES.procurement.suppliers,
@@ -68,36 +75,13 @@ const SETUP_STEPS: CoachStep[] = [
     icon: Users,
   },
   {
-    id: "procurement",
-    title: "Create the first buying flow",
-    description: "Create a requisition or purchase order so approvals, receiving, AP, and reporting have a real path.",
-    route: APP_ROUTES.procurement.orders,
-    action: "Open Purchase Orders",
-    icon: PackageCheck,
-  },
-  {
-    id: "logistics",
-    title: "Connect receiving and logistics",
-    description: "Track inbound shipments, carriers, expected dates, receiving progress, and exceptions.",
-    route: APP_ROUTES.operations.logistics,
-    action: "Open Logistics",
-    icon: Truck,
-  },
-  {
-    id: "mobile",
-    title: "Try mobile workflows",
-    description: "Use the mobile hub for receive, pick, scan, approvals, and task-first warehouse work.",
-    route: APP_ROUTES.operations.mobileHub,
-    action: "Open Mobile Hub",
-    icon: Smartphone,
-  },
-  {
-    id: "analytics",
-    title: "Review dashboards",
-    description: "Check supplier, inventory, procurement, AP, logistics, and diagnostics health in one place.",
-    route: APP_ROUTES.analytics.root,
-    action: "Open Analytics",
-    icon: BarChart3,
+    id: "csv-import",
+    title: "Try a CSV import (optional)",
+    description: "Import a small, reviewed item file when you are ready; manual item entry is also available.",
+    route: APP_ROUTES.admin.documentExtractorMode("import"),
+    action: "Open Import",
+    icon: FileCheck2,
+    adminOnly: true,
   },
 ];
 
@@ -105,9 +89,9 @@ function storageKey(userId: number | string | undefined): string {
   return `invtrack:first-run-coach:${VERSION}:${userId ?? "anon"}`;
 }
 
-function userCanUseStep(role: string | undefined, step: CoachStep): boolean {
+function userCanUseStep(role: string | null | undefined, step: CoachStep): boolean {
   if (!step.adminOnly) return true;
-  return role === "admin" || role === "manager";
+  return role === "admin";
 }
 
 function readDismissed(key: string): boolean {
@@ -124,27 +108,33 @@ export function FirstRunOnboardingCoach() {
   const { user } = useAuth();
   const [path] = useLocation();
   const { phase, setup } = useAppReadinessState();
+  const progressQuery = useQuery({
+    queryKey: ["/api/onboarding/setup-progress"],
+    queryFn: () => requestJson<{ steps: Array<{ id: string; complete: boolean; required: boolean }> }>("GET", "/api/onboarding/setup-progress"),
+    enabled: Boolean(user),
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const key = storageKey(user?.id);
   const pathBase = pathWithoutQuery(path);
-  const availableSteps = useMemo(
-    () => SETUP_STEPS.filter((step) => userCanUseStep(user?.role ?? undefined, step)),
-    [user?.role],
-  );
+  const availableSteps = SETUP_STEPS;
   const activeStep = availableSteps[Math.min(activeIndex, availableSteps.length - 1)];
-  const progress = availableSteps.length > 0 ? ((activeIndex + 1) / availableSteps.length) * 100 : 0;
+  const completed = progressQuery.data?.steps.filter((step) => step.complete).length ?? 0;
+  const progress = (completed / SETUP_STEPS.length) * 100;
 
   useEffect(() => {
     if (!user || readDismissed(key)) return;
     if (pathBase === APP_ROUTES.auth || pathBase === APP_ROUTES.admin.onboarding) return;
     if (phase === "pending" || phase === "setup_check_temporarily_failed") return;
     if (setup?.onboarding.required && pathBase !== APP_ROUTES.setup.product) return;
+    if (!progressQuery.data || progressQuery.data.steps.every((step) => step.complete)) return;
 
     const timer = window.setTimeout(() => setOpen(true), 700);
     return () => window.clearTimeout(timer);
-  }, [key, pathBase, phase, setup?.onboarding.required, user]);
+  }, [key, pathBase, phase, setup?.onboarding.required, user, progressQuery.data]);
 
   if (!user || availableSteps.length === 0 || !activeStep) return null;
 
@@ -176,14 +166,14 @@ export function FirstRunOnboardingCoach() {
               <Badge variant="secondary">First setup guide</Badge>
               <h2 className="text-xl font-semibold leading-tight">Get ISSSourcing ready</h2>
               <p className="text-sm text-muted-foreground">
-                Follow this path to connect setup, suppliers, buying, inventory, logistics, AP, and reporting.
+                These checks reflect your saved company data, even when another administrator completes a step.
               </p>
             </div>
             <div className="mt-5 space-y-2">
               {availableSteps.map((step, index) => {
                 const StepIcon = step.icon;
                 const selected = index === activeIndex;
-                const done = index < activeIndex;
+                const done = progressQuery.data?.steps.some((entry) => entry.id === step.id && entry.complete) ?? false;
                 return (
                   <button
                     key={step.id}
@@ -201,7 +191,7 @@ export function FirstRunOnboardingCoach() {
                       <StepIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     )}
                     <span className={selected ? "font-medium text-foreground" : "text-muted-foreground"}>
-                      {step.title}
+                      {step.title}{done ? " — done" : ""}
                     </span>
                   </button>
                 );
@@ -231,7 +221,7 @@ export function FirstRunOnboardingCoach() {
                   <span>
                     Step {activeIndex + 1} of {availableSteps.length}
                   </span>
-                  <span>{Math.round(progress)}%</span>
+                  <span>{completed} of {SETUP_STEPS.length} complete</span>
                 </div>
                 <Progress value={progress} />
               </div>
@@ -255,8 +245,7 @@ export function FirstRunOnboardingCoach() {
             <div className="mt-6 rounded-md border bg-muted/30 p-4 text-sm">
               <p className="font-medium">Recommended order</p>
               <p className="mt-1 text-muted-foreground">
-                Setup first, then master data, suppliers, procurement, logistics, mobile workflows, and analytics. That order
-                prevents duplicate setup and gives every module clean reference data.
+                Company details, default warehouse, tax codes, then your first supplier. CSV import is optional.
               </p>
             </div>
 
@@ -269,12 +258,14 @@ export function FirstRunOnboardingCoach() {
                   {activeIndex >= availableSteps.length - 1 ? "Finish" : "Next"}
                 </Button>
               </div>
-              <Button type="button" asChild onClick={closeForNow}>
-                <Link href={activeStep.route}>
-                  {activeStep.action}
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
+              {userCanUseStep(user.role, activeStep) ? (
+                <Button type="button" asChild onClick={closeForNow}>
+                  <Link href={activeStep.route}>
+                    {activeStep.action}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : <p className="self-center text-sm text-muted-foreground">An administrator completes this step.</p>}
             </DialogFooter>
           </section>
         </div>

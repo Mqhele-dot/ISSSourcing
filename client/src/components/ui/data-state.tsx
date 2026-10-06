@@ -2,12 +2,10 @@ import type React from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { userFacingError } from "@/lib/user-facing-error";
 
 function formatErrorMessage(error: Error) {
-  const coded = error as Error & { code?: string; hint?: string };
-  const codePart = coded.code ? `[${coded.code}] ` : "";
-  const hintPart = coded.hint ? ` (${coded.hint})` : "";
-  return `${codePart}${error.message}${hintPart}`;
+  return userFacingError(error);
 }
 
 /** When present and data is empty, show "Temporarily unavailable" or "Degraded mode" instead of normal empty copy */

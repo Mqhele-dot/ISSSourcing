@@ -44,6 +44,7 @@ import { useToast } from "@/hooks/use-toast";
 import { type ReorderRequest, ReorderRequestStatus } from "@shared/schema";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
+import { ReorderPlanningPanel } from "./reorder-planning-panel";
 
 export default function ReorderRequestsPage() {
   const { toast } = useToast();
@@ -268,6 +269,7 @@ export default function ReorderRequestsPage() {
       </div>
 
       <ModuleTrainingPanel moduleId="reorder-requests" />
+      <ReorderPlanningPanel />
       
       <Card>
         <CardHeader className="pb-3">

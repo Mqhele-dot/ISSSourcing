@@ -8,9 +8,11 @@ import { startExportWorker } from "../modules/exports/export-worker";
 import { pool } from "../db";
 import { runWithTenantContext } from "../organization-context";
 import { runAuditIntegrityChecks } from "../services/audit-integrity-monitor";
+import { startActionInboxWorker } from "../services/action-inbox-worker";
 
 export function startBackgroundTasks(server: Server): void {
   startExportWorker();
+  startActionInboxWorker();
 
   const auditIntegrityIntervalMinutes = Math.max(60, Number(process.env.AUDIT_INTEGRITY_INTERVAL_MINUTES ?? 1440));
   void runAuditIntegrityChecks().catch((error) => {

@@ -67,6 +67,15 @@ async function withTransaction<T>(fn: (client: DbClient) => Promise<T>): Promise
   }
 }
 
+async function assertUnreservedStock(client: DbClient, organizationId: number, itemId: number, warehouseId: number, onHand: number, outgoing: number, failureCode: string) {
+  const allocations = await client.query(
+    `SELECT COALESCE(sum(quantity),0)::numeric::text AS quantity FROM inventory_allocations
+     WHERE organization_id=$1 AND item_id=$2 AND (warehouse_id=$3 OR warehouse_id IS NULL) AND status='reserved'`,
+    [organizationId, itemId, warehouseId],
+  );
+  if (onHand - Number(allocations.rows[0].quantity) < outgoing) throw new Error(failureCode);
+}
+
 async function assertPhaseEnabled(organizationId: number, phase: 1 | 2 | 3 | 4, client: Pick<DbClient, "query"> = pool) {
   const column = `phase${phase}_enabled`;
   const result = await client.query(`SELECT ${column} AS enabled FROM procurement_feature_settings WHERE organization_id=$1`, [organizationId]);
@@ -566,12 +575,14 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
         if (String(receipt.rows[0].status) !== "POSTED") throw new Error("STATE_RECEIPT_NOT_POSTED");
         const items = await client.query(`SELECT * FROM ap_receipt_items WHERE receipt_id=$1 ORDER BY id FOR UPDATE`, [receiptId]);
         for (const line of items.rows) {
-          const quantity = Math.round(Number(line.accepted_quantity ?? 0));
+          const acceptedQuantity = Number(line.accepted_quantity ?? 0);
+          const quantity = acceptedQuantity === 0 ? 0 : wholeStockQuantity(line.accepted_quantity);
           const movement = await client.query(`SELECT warehouse_id FROM stock_movements WHERE organization_id=$1 AND reference_type='ap_receipt' AND reference_id=$2 AND item_id=$3 ORDER BY id DESC LIMIT 1`, [org, receiptId, line.item_id]);
           const warehouseId = movement.rows[0]?.warehouse_id;
           if (warehouseId && quantity > 0) {
             const stock = await client.query(`SELECT id,quantity FROM warehouse_inventory WHERE organization_id=$1 AND warehouse_id=$2 AND item_id=$3 FOR UPDATE`, [org, warehouseId, line.item_id]);
             if (!stock.rows[0] || Number(stock.rows[0].quantity) < quantity) throw new Error("INSUFFICIENT_STOCK_FOR_REVERSAL");
+            await assertUnreservedStock(client, org, line.item_id, warehouseId, Number(stock.rows[0].quantity), quantity, "INSUFFICIENT_ELIGIBLE_STOCK_FOR_REVERSAL");
             await client.query(`UPDATE warehouse_inventory SET quantity=quantity-$1,updated_at=now() WHERE id=$2`, [quantity, stock.rows[0].id]);
             await client.query(`UPDATE inventory_items SET quantity=quantity-$1,updated_at=now() WHERE id=$2 AND organization_id=$3`, [quantity, line.item_id, org]);
             await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,timestamp) VALUES ($1,$2,$3,'RECEIPT_REVERSAL',$4,$5,'ap_receipt_reversal',$6,$7,$8,$9,now())`, [org, line.item_id, warehouseId, -quantity, receiptId, reason, userId || null, Number(stock.rows[0].quantity), Number(stock.rows[0].quantity) - quantity]);
@@ -1028,7 +1039,37 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
 
   for(const action of ["submit","approve","cancel"] as const){app.post(`/api/v2/procurement/returns/:id/${action}`,...(action==="approve"?approve:manage),async(req,res)=>{try{const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0),reason=String(req.body?.reason??"").trim();await assertPhaseEnabled(org,4);if(action==="cancel"&&reason.length<5)return sendError(res,400,"CANCELLATION_REASON_REQUIRED","A meaningful cancellation reason is required.");const from=action==="submit"?["DRAFT"]:action==="approve"?["PENDING_APPROVAL"]:["DRAFT","PENDING_APPROVAL","APPROVED"];const to=action==="submit"?"PENDING_APPROVAL":action==="approve"?"APPROVED":"CANCELLED";const result=await pool.query(`UPDATE purchase_returns SET status=$1,approved_by=CASE WHEN $1='APPROVED' THEN $2 ELSE approved_by END,approved_at=CASE WHEN $1='APPROVED' THEN now() ELSE approved_at END,reason=CASE WHEN $1='CANCELLED' AND $3<>'' THEN $3 ELSE reason END,updated_at=now() WHERE id=$4 AND organization_id=$5 AND status=ANY($6::text[]) AND ($1<>'APPROVED' OR created_by IS NULL OR created_by<>$2) RETURNING *`,[to,userId||null,reason,id,org,from]);if(!result.rows[0])return sendError(res,409,"RETURN_TRANSITION_BLOCKED","The transition is invalid or the creator attempted to approve their own return.");return sendOk(res,result.rows[0]);}catch(error){return handleError(res,error);}});}
 
-  app.post("/api/v2/procurement/returns/:id/dispatch",...manage,async(req,res)=>{try{const key=String(req.get("Idempotency-Key")??"").trim();if(!key)return sendError(res,400,"IDEMPOTENCY_KEY_REQUIRED","Idempotency-Key is required.");const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0);await assertPhaseEnabled(org,4);const result=await withTransaction(async(client)=>{const header=await client.query(`SELECT * FROM purchase_returns WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[id,org]);if(!header.rows[0])throw new Error("NOT_FOUND");if(header.rows[0].status==="DISPATCHED")return header.rows[0];if(header.rows[0].status!=="APPROVED")throw new Error("STATE_RETURN_NOT_APPROVED");const lines=await client.query(`SELECT * FROM purchase_return_lines WHERE return_id=$1 AND organization_id=$2 ORDER BY id FOR UPDATE`,[id,org]);for(const line of lines.rows){const qty=wholeStockQuantity(line.quantity);const stock=await client.query(`SELECT id,quantity FROM warehouse_inventory WHERE organization_id=$1 AND warehouse_id=$2 AND item_id=$3 FOR UPDATE`,[org,header.rows[0].warehouse_id,line.item_id]);if(!stock.rows[0]||Number(stock.rows[0].quantity)<qty)throw new Error("INSUFFICIENT_STOCK_FOR_RETURN");await client.query(`UPDATE warehouse_inventory SET quantity=quantity-$1,updated_at=now() WHERE id=$2`,[qty,stock.rows[0].id]);await client.query(`UPDATE inventory_items SET quantity=quantity-$1,updated_at=now() WHERE id=$2 AND organization_id=$3`,[qty,line.item_id,org]);await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,timestamp) VALUES ($1,$2,$3,'PURCHASE_RETURN',$4,$5,'purchase_return',$6,$7,$8,$9,now())`,[org,line.item_id,header.rows[0].warehouse_id,-qty,id,header.rows[0].reason,userId||null,Number(stock.rows[0].quantity),Number(stock.rows[0].quantity)-qty]);}const totals=await client.query(`SELECT COALESCE(sum(quantity*unit_price),0) subtotal,COALESCE(sum(tax_amount),0) tax FROM purchase_return_lines WHERE return_id=$1`,[id]);const subtotal=Number(totals.rows[0].subtotal),tax=Number(totals.rows[0].tax);await client.query(`INSERT INTO supplier_debit_notes (organization_id,debit_note_number,return_id,supplier_id,currency_code,subtotal,tax_amount,total_amount) SELECT $1,$2,$3,$4,COALESCE(po.currency_code,'ZAR'),$5,$6,$7 FROM purchase_orders po WHERE po.id=$8 AND po.organization_id=$1 ON CONFLICT (organization_id,return_id) DO NOTHING`,[org,`DN-${new Date().getUTCFullYear()}-${id}`,id,header.rows[0].supplier_id,subtotal,tax,subtotal+tax,header.rows[0].purchase_order_id]);const updated=await client.query(`UPDATE purchase_returns SET status='DISPATCHED',dispatched_at=now(),updated_at=now() WHERE id=$1 AND organization_id=$2 RETURNING *`,[id,org]);await recordActivity(client,org,"purchase_return",id,"PURCHASE_RETURN_DISPATCHED",{actorUserId:userId,idempotencyKey:key});return updated.rows[0];});return sendOk(res,result);}catch(error){return handleError(res,error);}});
+  app.post("/api/v2/procurement/returns/:id/dispatch", ...manage, async (req, res) => {
+    try {
+      const key = String(req.get("Idempotency-Key") ?? "").trim();
+      if (!key) return sendError(res, 400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required.");
+      const org = getActiveOrganizationId(), id = positiveInt(req.params.id, 0), userId = Number((req as any).user?.id ?? 0);
+      await assertPhaseEnabled(org, 4);
+      const result = await withTransaction(async (client) => {
+        const header = await client.query(`SELECT * FROM purchase_returns WHERE id=$1 AND organization_id=$2 FOR UPDATE`, [id, org]);
+        if (!header.rows[0]) throw new Error("NOT_FOUND");
+        if (header.rows[0].status === "DISPATCHED") return header.rows[0];
+        if (header.rows[0].status !== "APPROVED") throw new Error("STATE_RETURN_NOT_APPROVED");
+        const lines = await client.query(`SELECT * FROM purchase_return_lines WHERE return_id=$1 AND organization_id=$2 ORDER BY id FOR UPDATE`, [id, org]);
+        for (const line of lines.rows) {
+          const qty = wholeStockQuantity(line.quantity);
+          const stock = await client.query(`SELECT id,quantity FROM warehouse_inventory WHERE organization_id=$1 AND warehouse_id=$2 AND item_id=$3 FOR UPDATE`, [org, header.rows[0].warehouse_id, line.item_id]);
+          if (!stock.rows[0] || Number(stock.rows[0].quantity) < qty) throw new Error("INSUFFICIENT_STOCK_FOR_RETURN");
+          await assertUnreservedStock(client, org, line.item_id, header.rows[0].warehouse_id, Number(stock.rows[0].quantity), qty, "INSUFFICIENT_ELIGIBLE_STOCK_FOR_RETURN");
+          await client.query(`UPDATE warehouse_inventory SET quantity=quantity-$1,updated_at=now() WHERE id=$2`, [qty, stock.rows[0].id]);
+          await client.query(`UPDATE inventory_items SET quantity=quantity-$1,updated_at=now() WHERE id=$2 AND organization_id=$3`, [qty, line.item_id, org]);
+          await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,timestamp) VALUES ($1,$2,$3,'PURCHASE_RETURN',$4,$5,'purchase_return',$6,$7,$8,$9,now())`, [org, line.item_id, header.rows[0].warehouse_id, -qty, id, header.rows[0].reason, userId || null, Number(stock.rows[0].quantity), Number(stock.rows[0].quantity) - qty]);
+        }
+        const totals = await client.query(`SELECT COALESCE(sum(quantity*unit_price),0) subtotal,COALESCE(sum(tax_amount),0) tax FROM purchase_return_lines WHERE return_id=$1`, [id]);
+        const subtotal = Number(totals.rows[0].subtotal), tax = Number(totals.rows[0].tax);
+        await client.query(`INSERT INTO supplier_debit_notes (organization_id,debit_note_number,return_id,supplier_id,currency_code,subtotal,tax_amount,total_amount) SELECT $1,$2,$3,$4,COALESCE(po.currency_code,'ZAR'),$5,$6,$7 FROM purchase_orders po WHERE po.id=$8 AND po.organization_id=$1 ON CONFLICT (organization_id,return_id) DO NOTHING`, [org, `DN-${new Date().getUTCFullYear()}-${id}`, id, header.rows[0].supplier_id, subtotal, tax, subtotal + tax, header.rows[0].purchase_order_id]);
+        const updated = await client.query(`UPDATE purchase_returns SET status='DISPATCHED',dispatched_at=now(),updated_at=now() WHERE id=$1 AND organization_id=$2 RETURNING *`, [id, org]);
+        await recordActivity(client, org, "purchase_return", id, "PURCHASE_RETURN_DISPATCHED", { actorUserId: userId, idempotencyKey: key });
+        return updated.rows[0];
+      });
+      return sendOk(res, result);
+    } catch (error) { return handleError(res, error); }
+  });
 
   app.get("/api/v2/procurement/debit-notes", ...read, async (req, res) => {
     try {

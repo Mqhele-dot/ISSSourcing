@@ -45,6 +45,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         keywords: "operations monitoring",
       },
       {
+        label: "Action inbox",
+        path: APP_ROUTES.operations.actionInbox,
+        icon: "clipboard-list",
+        description: "Assigned work, due reminders, and retained action history.",
+        keywords: "approvals tasks reminders notifications",
+      },
+      {
         label: "Fuel operations",
         path: APP_ROUTES.operations.fuel,
         icon: "fuel",

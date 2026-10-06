@@ -3135,9 +3135,12 @@ export const notifications = pgTable("notifications", {
   entityId: integer("entity_id"),
   targetPath: text("target_path"),
   findingCode: text("finding_code"),
+  dueAt: timestamp("due_at"),
+  priority: text("priority").notNull().default("normal"),
   occurrenceCount: integer("occurrence_count").notNull().default(1),
   lastOccurredAt: timestamp("last_occurred_at").defaultNow().notNull(),
   readAt: timestamp("read_at"),
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -3151,6 +3154,8 @@ export const notificationPreferences = pgTable("notification_preferences", {
   approvalRequest: boolean("approval_request").default(true),
   contractExpiry: boolean("contract_expiry").default(true),
   shipmentDelay: boolean("shipment_delay").default(true),
+  dailyDigestEnabled: boolean("daily_digest_enabled").notNull().default(false),
+  reminderEnabled: boolean("reminder_enabled").notNull().default(true),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

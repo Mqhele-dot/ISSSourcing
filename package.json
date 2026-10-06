@@ -6,6 +6,9 @@
   "scripts": {
     "test:cycle-count-contract": "tsx scripts/test-cycle-count-contract.ts",
     "test:receipt-match-evidence": "tsx scripts/test-receipt-match-evidence.ts",
+    "test:notification-experience": "tsx scripts/test-notification-experience.ts",
+    "test:notification-runtime": "tsx scripts/test-notification-runtime.ts --local-disposable",
+    "test:small-business-reorder-runtime": "tsx scripts/test-small-business-reorder-runtime.ts --local-disposable",
     "test:cycle-count-runtime": "tsx scripts/test-cycle-count-runtime.ts",
     "test:warehouse-position-runtime": "tsx scripts/test-cycle-count-runtime.ts --positions",
     "dev": "tsx server/index.ts",

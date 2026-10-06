@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { parseSupplierRouteId, SUPPLIER_DETAIL_ROUTE_PATTERN } from "@/lib/supplier-detail-route";
+import { SupplierCommunications } from "./supplier-communications";
 
 export default function SupplierDetailPage() {
   const [, setLocation] = useLocation();
@@ -115,6 +116,7 @@ export default function SupplierDetailPage() {
         </Card>
       ) : null}
       {data&&!isError&&<InspectionRuleEditor subjectType="supplier" subjectId={id}/>}
+      {data&&!isError&&<SupplierCommunications supplierId={id}/>}
     </div>
   );
 }

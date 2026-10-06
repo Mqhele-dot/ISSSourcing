@@ -20,7 +20,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "../../db";
 import { mdmSupplierDocuments, organizationMembers, organizations, supplierPortalMappings, suppliers as supplierTable, users } from "@shared/schema";
-import { appendAuditEvent } from "../../services/audit-chain-service";
+import { appendAuditEvent, appendAuditEventWithClient } from "../../services/audit-chain-service";
 import { getCountryPack } from "../master-data/country-pack-registry";
 
 const supplierRepo = createSupplierRepository(storage);
@@ -298,6 +298,77 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       console.error("Error saving supplier portal mapping:", error);
       return sendError(res, 500, "SUPPLIER_PORTAL_MAPPING_FAILED", "Supplier portal mapping could not be saved.");
     }
+  });
+
+  app.get("/api/v2/suppliers/:id/communications", auth.ensureAuthenticated, auth.ensurePermission("suppliers", "read"), async (req: Request, res: Response) => {
+    const supplierId = Number(req.params.id);
+    const page = Number(req.query.page ?? 1);
+    const pageSize = Number(req.query.pageSize ?? 25);
+    if (!Number.isSafeInteger(supplierId) || supplierId <= 0 || !Number.isSafeInteger(page) || page <= 0 || ![25,50,100].includes(pageSize))
+      return sendError(res, 400, "SUPPLIER_TIMELINE_QUERY_INVALID", "Choose a valid supplier and page size.");
+    const org = getActiveOrganizationId();
+    try {
+      const owned = await pool.query("SELECT 1 FROM suppliers WHERE organization_id=$1 AND id=$2", [org, supplierId]);
+      if (!owned.rowCount) return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found.");
+      const source = `WITH timeline AS (
+        SELECT ('invitation:'||i.id) AS key,'rfq_invitation' AS kind,i.invited_at AS occurred_at,
+          ('RFQ invitation — '||i.status) AS summary,'sourcing_event' AS entity_type,i.event_id AS entity_id,i.invited_by_user_id AS actor_user_id,NULL::int AS document_id
+        FROM sourcing_invitations i WHERE i.organization_id=$1 AND i.supplier_id=$2
+        UNION ALL SELECT ('quote:'||q.id),'rfq_response',q.created_at,('Supplier quotation — '||q.status),'sourcing_event',q.event_id,q.submitted_by_user_id,NULL::int
+        FROM supplier_quotes q WHERE q.organization_id=$1 AND q.supplier_id=$2
+        UNION ALL SELECT ('po:'||p.id),'purchase_order',coalesce(p.email_sent_date,p.created_at),
+          ('Purchase order '||p.order_number||' created'),
+          'purchase_order',p.id,p.created_by_user_id,NULL::int FROM purchase_orders p WHERE p.organization_id=$1 AND p.supplier_id=$2
+        UNION ALL SELECT ('delivery:'||e.id),'outbound_email',e.occurred_at,
+          ('Purchase order email — '||e.status||CASE WHEN e.error_summary IS NOT NULL THEN ': '||e.error_summary ELSE '' END),
+          e.source_type,e.source_id,e.actor_user_id,NULL::int FROM supplier_communication_events e
+          WHERE e.organization_id=$1 AND e.supplier_id=$2 AND e.source_type='purchase_order'
+        UNION ALL SELECT ('confirmation:'||c.id),'po_confirmation',c.created_at,('PO confirmation — '||c.status),
+          'purchase_order',c.purchase_order_id,c.actor_user_id,NULL::int FROM po_supplier_confirmations c WHERE c.organization_id=$1 AND c.supplier_id=$2
+        UNION ALL SELECT ('document:'||d.id),'document',d.uploaded_at,('Document: '||d.file_name),
+          'document',d.id,d.uploaded_by,d.id FROM documents d WHERE d.organization_id=$1 AND d.entity_type='supplier' AND d.entity_id=$2
+        UNION ALL SELECT ('note:'||n.id),'contact_note',n.occurred_at,(n.channel||': '||n.summary),
+          'supplier',n.supplier_id,n.actor_user_id,n.document_id FROM supplier_communication_notes n WHERE n.organization_id=$1 AND n.supplier_id=$2
+      )`;
+      const count = await pool.query(`${source} SELECT count(*)::int AS total FROM timeline`, [org, supplierId]);
+      const items = await pool.query(`${source} SELECT key,kind,occurred_at AS "occurredAt",summary,entity_type AS "entityType",entity_id AS "entityId",actor_user_id AS "actorUserId",document_id AS "documentId" FROM timeline ORDER BY occurred_at DESC,key DESC LIMIT $3 OFFSET $4`, [org, supplierId, pageSize, (page-1)*pageSize]);
+      const total = Number(count.rows[0]?.total ?? 0);
+      return sendOk(res, { items: items.rows, total, page, pageSize, hasNext: page*pageSize<total });
+    } catch (error) {
+      console.error("Supplier communication timeline failed:", error);
+      return sendError(res, 500, "SUPPLIER_TIMELINE_FAILED", "Could not load this supplier's activity. Retry after checking setup.");
+    }
+  });
+
+  app.post("/api/v2/suppliers/:id/communications/notes", auth.ensureAuthenticated, auth.ensurePermission("suppliers", "update"), async (req: Request, res: Response) => {
+    const org = getActiveOrganizationId();
+    const supplierId = Number(req.params.id);
+    const channel = String(req.body?.channel ?? "").toLowerCase();
+    const summary = String(req.body?.summary ?? "").trim();
+    const documentId = req.body?.documentId == null || req.body.documentId === "" ? null : Number(req.body.documentId);
+    if (!Number.isSafeInteger(supplierId) || supplierId <= 0 || !["phone","email","meeting","other"].includes(channel) || summary.length < 3 || summary.length > 2000)
+      return sendError(res, 400, "SUPPLIER_CONTACT_INVALID", "Choose a channel and enter a short contact summary.");
+    if (documentId !== null && (!Number.isSafeInteger(documentId) || documentId <= 0))
+      return sendError(res, 400, "SUPPLIER_DOCUMENT_INVALID", "Choose a valid supplier document.");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const supplier = await client.query("SELECT id FROM suppliers WHERE organization_id=$1 AND id=$2", [org, supplierId]);
+      if (!supplier.rowCount) { await client.query("ROLLBACK"); return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found."); }
+      if (documentId !== null) {
+        const document = await client.query("SELECT id FROM documents WHERE organization_id=$1 AND entity_type='supplier' AND entity_id=$2 AND id=$3 AND archived_at IS NULL", [org, supplierId, documentId]);
+        if (!document.rowCount) { await client.query("ROLLBACK"); return sendError(res, 400, "SUPPLIER_DOCUMENT_INVALID", "This document is unavailable for this supplier."); }
+      }
+      const inserted = await client.query(`INSERT INTO supplier_communication_notes(organization_id,supplier_id,actor_user_id,channel,summary,document_id)
+        VALUES($1,$2,$3,$4,$5,$6) RETURNING id,occurred_at`, [org, supplierId, Number(req.user?.id), channel, summary, documentId]);
+      await appendAuditEventWithClient(client, { organizationId: org, actor: { userId: Number(req.user?.id) }, action: "SUPPLIER_CONTACT_LOGGED", resourceType: "supplier", resourceId: supplierId, details: { noteId: inserted.rows[0].id, channel, summary, documentId } });
+      await client.query("COMMIT");
+      return sendOk(res, { id: inserted.rows[0].id, occurredAt: inserted.rows[0].occurred_at }, 201);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      console.error("Supplier contact note failed:", error);
+      return sendError(res, 500, "SUPPLIER_CONTACT_FAILED", "Could not save the contact note. Please retry.");
+    } finally { client.release(); }
   });
 
   app.get("/api/suppliers/:id", ...supplierRead, async (req: Request, res: Response) => {

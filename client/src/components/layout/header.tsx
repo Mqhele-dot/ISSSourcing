@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { useFallbackState } from "@/hooks/use-fallback-state";
-import { Command as CommandPaletteIcon, LogOut, User, Settings, Bell, Palette, Search } from "lucide-react";
+import { Command as CommandPaletteIcon, LogOut, User, Settings, Bell, Palette, Search, X } from "lucide-react";
 import { requestOpenCommandPalette } from "@/components/command-menu";
 import { useAccent } from "@/components/accent-provider";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
@@ -25,6 +25,8 @@ import { queryClient, requestJson } from "@/lib/queryClient";
 import { getGlobalSearchTypeLabel } from "@/features/global-search/use-global-search";
 import { notificationTarget } from "@/lib/notifications/notification-target";
 import { ThemeToggleButton } from "@/components/theme-toggle-button";
+import { toast } from "@/hooks/use-toast";
+import { userFacingError } from "@/lib/user-facing-error";
 
 type Notification = {
   id: number;
@@ -66,6 +68,7 @@ export const Header: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeResult, setActiveResult] = useState(0);
   const { user, logoutMutation } = useAuth();
+  const notificationUserId = user?.id;
   const { accent, cycleAccent } = useAccent();
   const { badge: systemBadge } = useFallbackState();
   const environmentLabel = import.meta.env.DEV ? "DEV" : "PROD";
@@ -117,22 +120,49 @@ export const Header: React.FC = () => {
   );
   const permissionSummary = `${permissionCount} effective permission${permissionCount === 1 ? "" : "s"}`;
   const { data: notificationPage } = useQuery({
-    queryKey: [...qk.notifications, "recent"],
+    queryKey: [...qk.notifications, "recent", notificationUserId],
     queryFn: () => requestJson<NotificationResponse>("GET", "/api/notifications?page=1&pageSize=8"),
     enabled: !!user,
-    refetchInterval: 30000,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
   });
   const notifications = notificationPage?.items ?? [];
   const unreadCount = notificationPage?.unreadCount ?? 0;
+  const seenNotificationIds = useRef<Set<number> | null>(null);
+  useEffect(() => {
+    if (!notificationUserId || !notificationPage) {
+      seenNotificationIds.current = null;
+      return;
+    }
+    if (!seenNotificationIds.current) {
+      seenNotificationIds.current = new Set(notificationPage.items.map((item) => item.id));
+      return;
+    }
+    const fresh = notificationPage.items.find((item) => !item.readAt && !seenNotificationIds.current!.has(item.id));
+    for (const item of notificationPage.items) seenNotificationIds.current.add(item.id);
+    if (fresh) toast({ title: fresh.title, description: fresh.body ?? "Open the notification bell to review this update." });
+  }, [notificationPage, notificationUserId]);
   const markRead = useMutation({
     mutationFn: (id: number) => requestJson("POST", `/api/notifications/${id}/read`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.notifications });
     },
+    onError: (error) => toast({ title: "Notification could not be marked read", description: userFacingError(error), variant: "destructive" }),
   });
   const markAllRead = useMutation({
     mutationFn: () => requestJson("POST", "/api/notifications/mark-all-read"),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.notifications }),
+    onError: (error) => toast({ title: "Notifications could not be updated", description: userFacingError(error), variant: "destructive" }),
+  });
+  const archiveNotification = useMutation({
+    mutationFn: (id: number) => requestJson("POST", `/api/notifications/${id}/archive`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.notifications }),
+    onError: (error) => toast({ title: "Notification could not be cleared", description: userFacingError(error), variant: "destructive" }),
+  });
+  const archiveRead = useMutation({
+    mutationFn: () => requestJson("POST", "/api/notifications/archive-read"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.notifications }),
+    onError: (error) => toast({ title: "Read notifications could not be cleared", description: userFacingError(error), variant: "destructive" }),
   });
 
   const breadcrumb = location
@@ -314,11 +344,12 @@ export const Header: React.FC = () => {
           <span className="sr-only">Cycle accent palette</span>
         </Button>
 
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => { if (open) void queryClient.invalidateQueries({ queryKey: qk.notifications }); }}>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
+              aria-label={`Notifications: ${unreadCount} unread`}
               className="relative text-muted-foreground hover:text-foreground"
             >
               <Bell className="h-5 w-5" />
@@ -327,12 +358,15 @@ export const Header: React.FC = () => {
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               ) : null}
-              <span className="sr-only">Notifications</span>
+              <span className="sr-only" role="status" aria-live="polite">
+                Notifications: {unreadCount} unread
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-80" align="end">
             <DropdownMenuLabel className="flex items-center justify-between gap-3">
               <span>Notifications</span>
+              <span className="flex items-center gap-1">
               {unreadCount > 0 ? (
                 <Button
                   type="button"
@@ -348,6 +382,14 @@ export const Header: React.FC = () => {
                   Mark all read
                 </Button>
               ) : null}
+              {(notificationPage?.total ?? 0) > unreadCount ? (
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs"
+                  disabled={archiveRead.isPending}
+                  onClick={(event) => { event.preventDefault(); archiveRead.mutate(); }}>
+                  Clear read
+                </Button>
+              ) : null}
+              </span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {notifications.length === 0 ? (
@@ -356,13 +398,11 @@ export const Header: React.FC = () => {
               notifications
                 .slice()
                 .map((notification) => (
+                  <div key={notification.id} className="flex items-start border-b last:border-b-0">
                   <DropdownMenuItem
-                    key={notification.id}
-                    className="flex flex-col items-start gap-1 py-2"
+                    className="min-w-0 flex-1 flex-col items-start gap-1 py-2"
                     onClick={() => {
-                      if (!notification.readAt) {
-                        markRead.mutate(notification.id);
-                      }
+                      if (!notification.readAt) markRead.mutate(notification.id);
                       setLocation(notificationTarget(notification));
                     }}
                   >
@@ -380,8 +420,17 @@ export const Header: React.FC = () => {
                     ) : null}
                     <span className="text-[11px] font-medium text-primary">Open related workspace</span>
                   </DropdownMenuItem>
+                  <Button type="button" variant="ghost" size="icon" className="mt-1 h-8 w-8 shrink-0"
+                    aria-label={`Clear notification: ${notification.title}`}
+                    disabled={archiveNotification.isPending}
+                    onClick={() => archiveNotification.mutate(notification.id)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                  </div>
                 ))
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setLocation(APP_ROUTES.operations.actionInbox)}>Open Action Inbox</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

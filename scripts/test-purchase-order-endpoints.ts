@@ -18,6 +18,7 @@ import {
 } from "./test-http.ts";
 import { exitTest } from "./test-exit.ts";
 import { pool } from "../server/db.ts";
+import { assertDisposableDatabaseUrl } from "../server/config/database-safety.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -38,6 +39,14 @@ async function setOperationalPoStatus(orderNumber: string, status: string): Prom
 }
 
 async function main() {
+  assertDisposableDatabaseUrl(process.env.TEST_DATABASE_URL);
+  if (process.env.DATABASE_URL !== process.env.TEST_DATABASE_URL) {
+    throw new Error("The QA seeder and test must use the same disposable DATABASE_URL and TEST_DATABASE_URL.");
+  }
+  const ready = await fetch(`${getTestBaseUrl()}/api/ready`, { signal: AbortSignal.timeout(10_000) });
+  if (!ready.ok || ready.headers.get("x-test-database-mode") !== "disposable") {
+    throw new Error("The running app has not confirmed disposable test-database mode; refusing to seed QA records.");
+  }
   const seed = spawnSync("npm", ["run", "seed:functional-qa"], {
     cwd: repoRoot,
     shell: true,

@@ -4,6 +4,7 @@ import { SLOW_API_DIAGNOSTIC_TITLE } from "@shared/diagnostics/event-dedupe";
 import { setFallbackState } from "./fallback-store";
 import { actionErrorStore } from "./action-error-store";
 import { addDiagnosticEvent, redactDiagnosticDetails } from "./diagnostics/diagnostics-store";
+import { userFacingError } from "./user-facing-error";
 
 type ApiErrorEnvelope = {
   ok: false;
@@ -402,7 +403,7 @@ async function throwIfResNotOk(res: Response, context?: { method?: string; url?:
       requestId: res.headers.get("X-Request-Id") ?? undefined,
       stack: isDevRuntime ? new Error().stack : undefined,
     });
-    throw new Error(`${res.status}: ${message}`);
+    throw attachRequestId(new Error(userFacingError({ message, status: res.status, code: extractApiErrorCode(payload) })), res.headers.get("X-Request-Id"));
   }
 }
 
@@ -477,7 +478,7 @@ export async function invTrackFetch<T>(
         reportNetworkFailure({ method, url, error: err, requestPayload: data, durationMs });
       }
       if (err instanceof Error && err.name === "AbortError") {
-        const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & { status?: number };
+        const timeoutError = new Error("This is taking longer than expected. Check your connection and try again.") as Error & { status?: number };
         timeoutError.status = 408;
         throw timeoutError;
       }
@@ -516,7 +517,7 @@ export async function invTrackFetch<T>(
         stack: isDevRuntime ? new Error().stack : undefined,
         durationMs,
       });
-      const err = attachRequestId(new Error(`${res.status}: ${msg}`), res.headers.get("X-Request-Id")) as Error & {
+      const err = attachRequestId(new Error(userFacingError({ message: msg, status: res.status, code: extractApiErrorCode(payload) })), res.headers.get("X-Request-Id")) as Error & {
         status?: number;
         code?: string;
         details?: unknown;
@@ -573,7 +574,7 @@ export async function invTrackFetch<T>(
         durationMs,
       });
       const err = attachRequestId(
-        new Error(`${codePrefix}${payload.error.message}`),
+        new Error(userFacingError({ message: payload.error.message, status: res.status, code: payload.error.code, hint: payload.error.hint })),
         res.headers.get("X-Request-Id") ?? payload.error.requestId,
       ) as Error & { status?: number };
       err.status = res.status;
@@ -647,7 +648,7 @@ export async function apiRequest(
           stack: isDevRuntime ? new Error().stack : undefined,
           durationMs,
         });
-        const err = attachRequestId(new Error(`${res.status}: ${message}`), res.headers.get("X-Request-Id")) as Error & {
+        const err = attachRequestId(new Error(userFacingError({ message, status: res.status, code: extractApiErrorCode(payload) })), res.headers.get("X-Request-Id")) as Error & {
           status?: number;
         };
         err.status = res.status;
@@ -665,7 +666,7 @@ export async function apiRequest(
         reportNetworkFailure({ method, url, error: err, requestPayload: data, durationMs });
       }
       if (err instanceof Error && err.name === "AbortError") {
-        const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & {
+        const timeoutError = new Error("This is taking longer than expected. Check your connection and try again.") as Error & {
           status?: number;
         };
         timeoutError.status = 408;
@@ -735,7 +736,7 @@ export async function fetchAuthenticatedBlob(url: string, options?: { signal?: A
           stack: isDevRuntime ? new Error().stack : undefined,
           durationMs,
         });
-        const err = attachRequestId(new Error(`${res.status}: ${msg}`), res.headers.get("X-Request-Id")) as Error & {
+        const err = attachRequestId(new Error(userFacingError({ message: msg, status: res.status, code: extractApiErrorCode(payload) })), res.headers.get("X-Request-Id")) as Error & {
           status?: number;
         };
         err.status = res.status;
@@ -751,7 +752,7 @@ export async function fetchAuthenticatedBlob(url: string, options?: { signal?: A
         reportNetworkFailure({ method: "GET", url, error: err, requestPayload: undefined, durationMs });
       }
       if (err instanceof Error && err.name === "AbortError") {
-        const timeoutError = new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`) as Error & {
+        const timeoutError = new Error("This is taking longer than expected. Check your connection and try again.") as Error & {
           status?: number;
         };
         timeoutError.status = 408;
@@ -821,8 +822,7 @@ export function formatMutationError(
   url: string,
   error: unknown,
 ): string {
-  const reason = error instanceof Error ? error.message : String(error);
-  return `${action} failed: ${method} ${url} — ${reason}`;
+  return `${action} could not be completed. ${userFacingError(error)}`;
 }
 
 /**

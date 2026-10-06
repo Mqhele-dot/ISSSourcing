@@ -57,7 +57,7 @@ export function registerPositionRoutes(app:Express,auth:Auth) {
       s.name AS "siteName",z.name AS "zoneName",r.verified_at AS "lastVerifiedAt",a.quantity::text AS "warehouseItemReserved",
       CASE WHEN COALESCE((to_jsonb(i)->>'safety_hold')::boolean,false) THEN 'item_safety_hold' ELSE 'unassessed' END AS "qualityState" ${source} ${filter} ORDER BY w.id LIMIT $7 OFFSET $8`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
     const totals=await pool.query(`SELECT count(*)::int total,count(*) FILTER(WHERE ${reconciled})::int reconciled,COALESCE(sum(w.quantity),0)::text AS "onHand" ${source} ${filter}`,args);
-    sendOk(res,{items:rows.rows,total:totals.rows[0].total,page:query.page,pageSize:query.pageSize,summary:{...totals.rows[0],unresolved:totals.rows[0].total-totals.rows[0].reconciled},capabilities:{locationReconciliation:true,qualityHolds:false,splitPositions:false},notice:"Location reconciliation only. Quality eligibility and projected availability are not yet implemented."});
+    sendOk(res,{items:rows.rows,total:totals.rows[0].total,page:query.page,pageSize:query.pageSize,summary:{...totals.rows[0],unresolved:totals.rows[0].total-totals.rows[0].reconciled},capabilities:{locationReconciliation:true,qualityHolds:false,splitPositions:false},notice:"Location reconciliation only. Bin/lot-level quantities and quality eligibility are not implemented. The separate availability enquiry provides a limited planning projection, not allocation authority."});
   }));
   app.get("/api/v2/inventory/locations",...read,wrap(async(req,res)=>{
     const query=locationQuery.parse(req.query),org=getActiveOrganizationId(),user=actor(req);

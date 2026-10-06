@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { getActiveOrganizationId } from "../organization-context";
-import { notifications, users } from "@shared/schema";
+import { notificationPreferences, notifications, organizationMembers, users } from "@shared/schema";
 import { sendEmail, buildISSSourcingNotificationEmailHtml } from "./email-service";
 import { maybeSendSms } from "./sms-service";
 
@@ -15,7 +15,24 @@ export type EmitNotificationPayload = {
   entityId?: number;
   targetPath?: string;
   findingCode?: string;
+  dueAt?: Date;
+  priority?: "low" | "normal" | "high" | "urgent";
 };
+
+/** Match the workspace a recipient must be able to open; custom roles can receive role broadcasts too. */
+export function requiredNotificationAccess(payload: Omit<EmitNotificationPayload, "userId">): { resource: string; permission: string } | null {
+  const entity = String(payload.entityType ?? "").toLowerCase();
+  const type = payload.type.toLowerCase();
+  if (["invoice", "capture", "match_result", "payment_batch"].includes(entity) || type.startsWith("ap_")) {
+    return { resource: "invoices", permission: type.includes("approval") ? "approve" : "read" };
+  }
+  if (entity === "contract") return { resource: "purchases", permission: "read" };
+  if (entity === "supplier" || type.startsWith("supplier_")) return { resource: "suppliers", permission: "read" };
+  if (["inventory", "inventory_item", "stock", "gas_asset_profile"].includes(entity) || type.includes("stock")) return { resource: "inventory", permission: "read" };
+  if (["purchase_order", "requisition", "receipt"].includes(entity)) return { resource: "purchases", permission: type.includes("approval") ? "approve" : "read" };
+  if (entity === "shipment" || type.includes("shipment")) return { resource: "inventory", permission: "read" };
+  return null;
+}
 
 function safeInternalTargetPath(value: string | undefined): string | null {
   if (!value) return null;
@@ -57,9 +74,10 @@ async function upsertInAppNotification(payload: EmitNotificationPayload): Promis
         entityId: payload.entityId ?? null,
         targetPath: safeInternalTargetPath(payload.targetPath),
         findingCode: payload.findingCode ?? null,
+        dueAt: payload.dueAt ?? null,
+        priority: payload.priority ?? "normal",
         occurrenceCount: sql`${notifications.occurrenceCount} + 1`,
         lastOccurredAt: new Date(),
-        readAt: null,
       })
       .where(
         and(
@@ -81,6 +99,8 @@ async function upsertInAppNotification(payload: EmitNotificationPayload): Promis
     entityId: payload.entityId ?? null,
     targetPath: safeInternalTargetPath(payload.targetPath),
     findingCode: payload.findingCode ?? null,
+    dueAt: payload.dueAt ?? null,
+    priority: payload.priority ?? "normal",
     occurrenceCount: 1,
     lastOccurredAt: new Date(),
   } as typeof notifications.$inferInsert);
@@ -88,9 +108,23 @@ async function upsertInAppNotification(payload: EmitNotificationPayload): Promis
 }
 
 export async function emitNotification(payload: EmitNotificationPayload): Promise<void> {
+  const organizationId = getActiveOrganizationId();
+  const [member] = await db.select({ id: organizationMembers.id })
+    .from(organizationMembers)
+    .where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, payload.userId), eq(organizationMembers.active, true), eq(organizationMembers.status, "active")))
+    .limit(1);
+  if (!member) return;
+  const [prefs] = await db.select().from(notificationPreferences)
+    .where(eq(notificationPreferences.userId, payload.userId)).limit(1);
+  const kind = payload.type.toLowerCase();
+  if ((kind.includes("low_stock") && prefs?.lowStock === false)
+      || (kind.includes("approval") && prefs?.approvalRequest === false)
+      || (kind.includes("contract_expiry") && prefs?.contractExpiry === false)
+      || (kind.includes("shipment_delay") && prefs?.shipmentDelay === false)) return;
   const result = await upsertInAppNotification(payload);
 
-  if (result.created && process.env.DISABLE_NOTIFICATION_EMAIL !== "true") {
+  if (result.created && prefs?.emailEnabled !== false && process.env.DISABLE_NOTIFICATION_EMAIL !== "true"
+      && process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     try {
       const rows = await db
         .select({ email: users.email })
@@ -112,7 +146,7 @@ export async function emitNotification(payload: EmitNotificationPayload): Promis
     }
   }
 
-  if (result.created && process.env.DISABLE_NOTIFICATION_SMS !== "true") {
+  if (result.created && prefs?.smsEnabled === true && process.env.DISABLE_NOTIFICATION_SMS !== "true") {
     try {
       const u = await storage.getUser(payload.userId);
       const phone = u?.phone?.trim();
@@ -129,12 +163,23 @@ export async function emitNotificationToRoles(
   roles: string[],
   payload: Omit<EmitNotificationPayload, "userId">,
 ): Promise<void> {
-  const roleUsers = (await db.select().from(users)) as { id?: number; role?: string }[];
-  const targets = roleUsers.filter((user) =>
-    roles.some((role) => String(user.role ?? "").toLowerCase() === role.toLowerCase()),
-  );
-  for (const user of targets) {
-    if (!user.id) continue;
-    await emitNotification({ userId: Number(user.id), ...payload });
+  const members = await db.select({ userId: organizationMembers.userId, role: organizationMembers.applicationRole })
+    .from(organizationMembers)
+    .where(and(eq(organizationMembers.organizationId, getActiveOrganizationId()), eq(organizationMembers.active, true), eq(organizationMembers.status, "active")));
+  const allowedRoles = new Set(roles.map((role) => role.toLowerCase()));
+  const access = requiredNotificationAccess(payload);
+  for (const member of members) {
+    const role = member.role.toLowerCase();
+    let hasAccess = role === "admin";
+    if (!hasAccess && access) {
+      hasAccess = await storage.checkPermission(role, access.resource, access.permission);
+      if (!hasAccess && role === "custom") {
+        const customRoleId = await storage.getUserCustomRoleId(member.userId);
+        hasAccess = customRoleId ? await storage.checkCustomRolePermission(customRoleId, access.resource as any, access.permission as any) : false;
+      }
+    }
+    if (!hasAccess && access) continue;
+    if (!allowedRoles.has(role) && !(role === "custom" && hasAccess && access)) continue;
+    await emitNotification({ userId: member.userId, ...payload });
   }
 }

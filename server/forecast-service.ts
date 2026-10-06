@@ -62,8 +62,8 @@ export async function generateDemandForecast(
 
   // Only consider outgoing movements (sales, usage) for demand calculation
   const demandMovements = stockMovements.filter(movement => 
-    movement.type === "SALE" || 
-    movement.type === "ISSUE" // Using ISSUE as equivalent to USAGE
+    (movement.type === "SALE" || movement.type === "ISSUE") &&
+    !/(test|return|transfer|reversal|damage|expir)/i.test(String(movement.referenceType ?? ""))
   );
 
   // Populate historical data
@@ -79,42 +79,14 @@ export async function generateDemandForecast(
     }
   });
 
-  // Group by week for forecast calculation (to reduce noise)
-  const weeklyData: { [key: string]: number } = {};
-  let startWeek = format(parsedStartDate, "yyyy-ww");
-  let endWeek = format(parsedEndDate, "yyyy-ww");
-
-  dateRange.forEach(point => {
-    if (point.historical !== null) {
-      const pointDate = parse(point.date, "yyyy-MM-dd", new Date());
-      const weekNum = format(pointDate, "yyyy-ww");
-      
-      if (!weeklyData[weekNum]) {
-        weeklyData[weekNum] = 0;
-      }
-      
-      weeklyData[weekNum] += point.historical;
-    }
-  });
-
-  // Calculate average weekly demand
-  const weeklyDataPoints = Object.values(weeklyData);
-  const weekCount = weeklyDataPoints.length;
-  const nonZeroWeeks = weeklyDataPoints.filter(count => count > 0).length;
-  
-  // Simple moving average model
-  // In a real app, this would be a more sophisticated algorithm
-  let averageDemand = 0;
-  if (weekCount > 0) {
-    const totalDemand = weeklyDataPoints.reduce((sum, count) => sum + count, 0);
-    // Use non-zero weeks to avoid underestimating due to periods with no demand
-    averageDemand = nonZeroWeeks > 0 
-      ? totalDemand / nonZeroWeeks 
-      : totalDemand / weekCount;
-  }
-
-  // Calculate daily average (assume 7 days per week)
-  const dailyAverageDemand = averageDemand / 7;
+  // Use complete observed calendar days, including days with zero demand. A recent
+  // item without enough history has no forecast rather than an invented trend.
+  const observedDays = Math.max(0, Math.floor((today.getTime() - parsedStartDate.getTime()) / 86_400_000));
+  const historicalTotal = dateRange.reduce((sum, point) => {
+    const date = parse(point.date, "yyyy-MM-dd", new Date());
+    return isBefore(date, today) ? sum + (point.historical ?? 0) : sum;
+  }, 0);
+  const dailyAverageDemand = observedDays >= 14 ? historicalTotal / observedDays : null;
 
   // Generate forecast for dates in the future
   dateRange.forEach(point => {
@@ -122,24 +94,12 @@ export async function generateDemandForecast(
     
     // Only forecast future dates
     if (isAfter(pointDate, today)) {
-      // Add randomness to make the forecast look more realistic
-      const randomFactor = 0.8 + Math.random() * 0.4; // Between 0.8 and 1.2
-      point.forecast = Math.round(dailyAverageDemand * randomFactor);
-      
-      // Add some seasonal patterns (example: weekend boost)
-      const dayOfWeek = pointDate.getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) { // Weekend
-        point.forecast = Math.round(point.forecast * 1.3);
-      }
+      point.forecast = dailyAverageDemand === null ? null : Math.round(dailyAverageDemand * 100) / 100;
     }
     
-    // Calculate accuracy for dates where we have both historical and forecast
-    // In a real app, this would be based on prior forecasts vs. actual values
-    if (point.historical !== null && point.forecast !== null) {
-      const diff = Math.abs(point.historical - point.forecast);
-      const max = Math.max(point.historical, point.forecast);
-      point.accuracy = max > 0 ? 1 - (diff / max) : 1;
-    }
+    // Accuracy requires a saved forecast and a later observed actual; this
+    // endpoint has no such evidence, so it must not claim an accuracy score.
+    point.accuracy = null;
   });
 
   return dateRange;
@@ -151,7 +111,7 @@ export async function generateDemandForecast(
 export async function getTopItems(items: InventoryItem[], movements: StockMovement[], limit: number = 10): Promise<InventoryItem[]> {
   // Create a map to store demand by item ID
   const demandByItem: Map<number, number> = new Map();
-  const OUT_TYPES = new Set(["SALE", "ISSUE", "DAMAGE", "EXPIRE"]);
+  const OUT_TYPES = new Set(["SALE", "ISSUE"]);
 
   movements.forEach((movement) => {
     const t = String(movement.type ?? "").toUpperCase();
@@ -159,9 +119,7 @@ export async function getTopItems(items: InventoryItem[], movements: StockMoveme
     if (!Number.isFinite(qty) || qty === 0) return;
     const itemId = movement.itemId;
     const currentDemand = demandByItem.get(itemId) || 0;
-    if (OUT_TYPES.has(t)) {
-      demandByItem.set(itemId, currentDemand + qty);
-    } else if (t === "ADJUSTMENT" && Number(movement.quantity) < 0) {
+    if (OUT_TYPES.has(t) && !/(test|return|transfer|reversal|damage|expir)/i.test(String(movement.referenceType ?? ""))) {
       demandByItem.set(itemId, currentDemand + qty);
     }
   });

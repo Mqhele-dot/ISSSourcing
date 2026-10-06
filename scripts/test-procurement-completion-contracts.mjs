@@ -32,6 +32,10 @@ for (const table of [
 assert.doesNotMatch(migration, /CREATE TABLE IF NOT EXISTS (goods_receipts|grns)\b/i, "receiving must reuse canonical receipt evidence");
 assert.match(routes, /FROM ap_receipts r/, "v2 receiving must read canonical AP receipts");
 assert.match(routes, /RECEIPT_REVERSAL/, "receipt reversal must create compensating stock movements");
+assert.doesNotMatch(routes, /Math\.round\(Number\(line\.accepted_quantity/, "receipt reversal must not silently round accepted quantities");
+assert.match(routes, /acceptedQuantity === 0 \? 0 : wholeStockQuantity\(line\.accepted_quantity\)/, "receipt reversal must validate nonzero quantities at the stock boundary");
+assert.match(routes, /INSUFFICIENT_ELIGIBLE_STOCK_FOR_REVERSAL/, "receipt reversal must preserve active stock reservations");
+assert.match(routes, /INSUFFICIENT_ELIGIBLE_STOCK_FOR_RETURN/, "purchase return dispatch must preserve active stock reservations");
 assert.match(routes, /supplier_contract_releases r JOIN purchase_orders po[\s\S]*idempotency_key=\$2/, "contract release retries must resolve with their PO evidence before value mutation");
 for (const table of ["supplier_contract_price_breaks", "supplier_contract_versions", "supplier_contract_release_lines"]) {
   assert.match(blanketMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`), `${table} must preserve blanket agreement evidence`);

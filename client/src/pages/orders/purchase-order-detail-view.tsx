@@ -799,6 +799,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       <Printer className="h-4 w-4" aria-hidden />
                       Quick print
                     </Button>
+                    {data?.id ? <Button type="button" variant="outline"
+                      onClick={() => setLocation(`${APP_ROUTES.procurement.requisitionNew}?copyPoFrom=${data.id}`)}>
+                      Repeat purchase as draft
+                    </Button> : null}
                     <Can roles={["manager", "planner", "admin"]} reason="Requires Manager, Planner, or Admin">
                       <Button
                         variant="outline"

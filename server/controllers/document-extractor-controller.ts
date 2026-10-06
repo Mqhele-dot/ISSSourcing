@@ -20,6 +20,8 @@ import {
   FileType
 } from '../services/document-extractor-service';
 import { storage } from '../storage';
+import { getActiveOrganizationId } from '../organization-context';
+import { appendAuditEvent } from '../services/audit-chain-service';
 import type { AuthBundle } from '../modules/procurement/types';
 
 // File filter for accepted file types (attach to multer — do not omit or uploads bypass MIME allowlist).
@@ -380,6 +382,15 @@ export function registerDocumentExtractorRoutes(router: Router, auth: AuthBundle
         }
       }
       
+      if (recordsImported > 0 && extractedData.fileType === 'csv') {
+        await appendAuditEvent({
+          organizationId: getActiveOrganizationId(),
+          actor: { userId: (req.user as { id?: number } | undefined)?.id ?? null },
+          action: 'INVENTORY_CSV_IMPORTED',
+          resourceType: 'data_import',
+          details: { targetSchema, recordsImported },
+        });
+      }
       res.json({
         success: true,
         message: `Successfully imported ${recordsImported} records to ${targetSchema}`,

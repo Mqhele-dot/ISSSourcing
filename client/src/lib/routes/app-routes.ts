@@ -73,6 +73,7 @@ export const APP_ROUTES = {
     product: "/setup",
   },
   operations: {
+    actionInbox: "/operations/action-inbox",
     /** Desktop operations hub (cards + links; stays in desktop shell). */
     root: "/operations",
     /** Desktop page that explains and links into the `/m/*` mobile workflow shell. */

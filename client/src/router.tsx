@@ -31,6 +31,7 @@ const CompanySetupPage = lazy(() => import("@/pages/company-setup-page"));
 const UserRolesPage = lazy(() => import("@/pages/user-roles"));
 const SubscriptionPage = lazy(() => import("@/pages/subscription"));
 const ReorderPage = lazy(() => import("@/pages/reorder"));
+const ActionInboxPage = lazy(() => import("@/pages/action-inbox"));
 const BarcodeScannerPage = lazy(() => import("@/pages/barcode-scanner-page"));
 const RealTimeUpdatesPage = lazy(() => import("@/pages/real-time-updates-page"));
 const SyncTestPage = lazy(() => import("@/pages/sync-test-page"));
@@ -160,6 +161,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.analytics.savedReports} component={SavedReportsPage} />
         <ProtectedRoute path={APP_ROUTES.analytics.exportCenter} component={ExportCenterPage} />
 
+        <ProtectedRoute path={APP_ROUTES.operations.actionInbox} component={ActionInboxPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileWorkflows} component={MobileWorkflowsLauncherPage} />
         <ProtectedRoute path={APP_ROUTES.operations.root} component={ProductionOperationsOverviewPage} />
         <ProtectedRoute path={APP_ROUTES.operations.controlTower} component={ProductionControlTowerPage} />

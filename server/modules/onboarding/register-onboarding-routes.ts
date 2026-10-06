@@ -1,9 +1,9 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "../../db";
+import { db, pool } from "../../db";
 import { appSettings, organizationMembers, organizationSettings, organizations } from "@shared/schema";
-import { getOptionalTenantContext } from "../../organization-context";
+import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
 import { getCountryPack } from "../master-data/country-pack-registry";
 
 const bootstrapBody = z.object({
@@ -22,6 +22,33 @@ type Auth = {
  * Switches session to the new org when a session exists.
  */
 export function registerOnboardingRoutes(app: Express, auth: Auth): void {
+  app.get("/api/onboarding/setup-progress", auth.ensureAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      const organizationId = getActiveOrganizationId();
+      const result = await pool.query(`
+        SELECT
+          EXISTS (SELECT 1 FROM organization_settings WHERE organization_id=$1 AND nullif(trim(legal_name),'') IS NOT NULL) AS company,
+          EXISTS (SELECT 1 FROM warehouses WHERE organization_id=$1 AND is_default=true) AS warehouse,
+          EXISTS (SELECT 1 FROM tax_codes WHERE organization_id=$1 AND active=true) AS tax,
+          EXISTS (SELECT 1 FROM suppliers WHERE organization_id=$1 AND status='active') AS supplier,
+          EXISTS (SELECT 1 FROM audit_logs WHERE organization_id=$1 AND action='INVENTORY_CSV_IMPORTED') AS csv_import
+      `, [organizationId]);
+      const row = result.rows[0];
+      return res.json({
+        steps: [
+          { id: "company", complete: row.company, required: true },
+          { id: "warehouse", complete: row.warehouse, required: true },
+          { id: "tax", complete: row.tax, required: true },
+          { id: "supplier", complete: row.supplier, required: true },
+          { id: "csv-import", complete: row.csv_import, required: false },
+        ],
+        checkedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("GET /api/onboarding/setup-progress:", error);
+      return res.status(500).json({ ok: false, error: { code: "SETUP_PROGRESS_FAILED", message: "Could not check setup progress. Please retry." } });
+    }
+  });
   app.post(
     "/api/onboarding/bootstrap",
     auth.ensureAuthenticated,

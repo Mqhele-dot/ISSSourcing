@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, normalizeApiList, requestJson } from "@/lib/queryClient";
-import type { PurchaseRequisition, PurchaseRequisitionItem, Supplier, InventoryItem } from "@shared/schema";
+import type { PurchaseRequisition, PurchaseRequisitionItem, PurchaseOrder, PurchaseOrderItem, Supplier, InventoryItem } from "@shared/schema";
 import { invalidateRequisitionDomain } from "@/lib/domain-invalidation";
 import type { ReqLineDraft } from "@/pages/requisitions/requisition-lines-editor";
 
@@ -134,6 +134,8 @@ export function useRequisitionForm(params: {
   setLocation: (path: string) => void;
 }) {
   const { id, isNew, listPath, setLocation } = params;
+  const copySourceId = isNew && typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("copyFrom")) : 0;
+  const copyPoSourceId = isNew && typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("copyPoFrom")) : 0;
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -156,6 +158,17 @@ export function useRequisitionForm(params: {
       >("GET", `/api/purchase-requisitions/${id}`),
     enabled: !!id && !isNew,
   });
+  const copySourceQuery = useQuery({
+    queryKey: ["/api/purchase-requisitions", "copy-source", copySourceId],
+    queryFn: () => requestJson<PurchaseRequisition & { items?: PurchaseRequisitionItem[] }>("GET", `/api/purchase-requisitions/${copySourceId}`),
+    enabled: isNew && Number.isSafeInteger(copySourceId) && copySourceId > 0,
+  });
+  const copyPoQuery = useQuery({
+    queryKey: ["/api/purchase-orders", "copy-source", copyPoSourceId],
+    queryFn: () => requestJson<PurchaseOrder & { items?: PurchaseOrderItem[] }>("GET", `/api/purchase-orders/${copyPoSourceId}`),
+    enabled: isNew && Number.isSafeInteger(copyPoSourceId) && copyPoSourceId > 0,
+  });
+  const appliedCopySource = useRef<string | null>(null);
   const lockedReason = !isNew ? lockedReasonForStatus(requisition?.status) : "";
   const isLocked = Boolean(lockedReason);
 
@@ -279,20 +292,24 @@ export function useRequisitionForm(params: {
   }, [departmentId, effectiveDepartments]);
 
   useEffect(() => {
-    if (requisition) {
-      setNotes(requisition.notes ?? "");
-      setSupplierId(requisition.supplierId ?? "");
+    const source = requisition ?? (isNew ? copySourceQuery.data ?? copyPoQuery.data : undefined);
+    const sourceKey = source ? `${"orderNumber" in source ? "po" : "pr"}:${source.id}` : null;
+    if (source && (!isNew || appliedCopySource.current !== sourceKey)) {
+      if (isNew) appliedCopySource.current = sourceKey;
+      setNotes(source.notes ?? "");
+      setSupplierId(source.supplierId ?? "");
       setCurrencyCode(
-        ((requisition as PurchaseRequisition & { currencyCode?: string | null }).currencyCode ?? reportingCurrencyCode).toUpperCase(),
+        ((source as PurchaseRequisition & { currencyCode?: string | null }).currencyCode ?? reportingCurrencyCode).toUpperCase(),
       );
-      setDepartmentId((requisition as PurchaseRequisition & { departmentId?: number | null }).departmentId ?? "");
-      setJustification((requisition as PurchaseRequisition & { justification?: string | null }).justification ?? "");
-      setRequiredDate(requisition.requiredDate ? new Date(requisition.requiredDate).toISOString().slice(0, 10) : "");
-      setProjectId((requisition as PurchaseRequisition & { projectId?: number | null }).projectId ?? "");
-      if (requisition.items?.length) {
+      setDepartmentId((source as PurchaseRequisition & { departmentId?: number | null }).departmentId ?? "");
+      setJustification((source as PurchaseRequisition & { justification?: string | null }).justification ?? "");
+      const sourceDate = "requiredDate" in source ? source.requiredDate : source.expectedDeliveryDate;
+      setRequiredDate(sourceDate ? new Date(sourceDate).toISOString().slice(0, 10) : "");
+      setProjectId((source as PurchaseRequisition & { projectId?: number | null }).projectId ?? "");
+      if (source.items?.length) {
         setItems(
-          requisition.items.map((i) => ({
-            id: i.id,
+          source.items.map((i) => ({
+            id: isNew ? undefined : i.id,
             itemId: i.itemId ?? null,
             lineType: (i.lineType as ReqLineDraft["lineType"]) ?? "CATALOG",
             description: i.description ?? "",
@@ -309,7 +326,21 @@ export function useRequisitionForm(params: {
         );
       }
     }
-  }, [requisition, reportingCurrencyCode]);
+  }, [requisition, copySourceQuery.data, copyPoQuery.data, isNew, reportingCurrencyCode]);
+
+  const copyWarnings = useMemo(() => {
+    if (!isNew || (!copySourceQuery.data && !copyPoQuery.data) || !mdmContext) return [];
+    const warnings: string[] = [];
+    if (supplierId !== "" && !effectiveSuppliers.some((row) => row.id === supplierId)) warnings.push("The original supplier is not currently approved. Choose an active supplier.");
+    if (departmentId !== "" && !effectiveDepartments.some((row) => row.id === departmentId)) warnings.push("The original department is inactive. Choose an active department.");
+    if (!effectiveCurrencies.some((row) => row.code === currencyCode)) warnings.push("The original currency is unavailable. Choose an active currency.");
+    if (items.some((row) => row.lineType === "CATALOG" && !effectiveInventoryItems.some((item) => item.id === row.itemId))) warnings.push("At least one original item is no longer available. Replace it before saving.");
+    if (items.some((row) => row.taxCodeId && !mdmContext.taxCodes.some((tax) => tax.id === row.taxCodeId && tax.active !== false))) warnings.push("A copied tax code is inactive. Select an active tax code.");
+    if (items.some((row) => row.unitOfMeasureId && !effectiveUnitsOfMeasure.some((uom) => uom.id === row.unitOfMeasureId))) warnings.push("A copied unit of measure is inactive. Select an active unit.");
+    if (items.some((row) => row.costCentreId && !effectiveCostCentres.some((centre) => centre.id === row.costCentreId))) warnings.push("A copied cost centre is inactive. Select an active cost centre.");
+    if (requiredDate && new Date(requiredDate).getTime() < Date.now() - 86_400_000) warnings.push("The copied required date has passed. Choose a future date.");
+    return warnings;
+  }, [isNew, copySourceQuery.data, copyPoQuery.data, mdmContext, supplierId, departmentId, currencyCode, items, requiredDate, effectiveSuppliers, effectiveDepartments, effectiveCurrencies, effectiveInventoryItems, effectiveUnitsOfMeasure, effectiveCostCentres]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -487,10 +518,14 @@ export function useRequisitionForm(params: {
     ? ["Loading authoritative procurement Master Data"]
     : mdmError
       ? ["Procurement Master Data could not be loaded"]
-      : Object.values(validationErrors).filter((message): message is string => Boolean(message));
+      : [...Object.values(validationErrors).filter((message): message is string => Boolean(message)), ...copyWarnings];
   const canSubmit = !isLocked && submitBlockers.length === 0;
 
   const handleSubmit = useCallback(() => {
+    if (copyWarnings.length) {
+      toast({ title: "Review copied values", description: copyWarnings[0], variant: "destructive" });
+      return;
+    }
     if (isLocked) {
       toast({
         title: "Requisition is locked",
@@ -523,12 +558,16 @@ export function useRequisitionForm(params: {
     }
     if (isNew) createMutation.mutate();
     else updateMutation.mutate();
-  }, [validationErrors, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason]);
+  }, [validationErrors, items, isNew, createMutation, updateMutation, toast, isLocked, lockedReason, copyWarnings]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return {
     requisition,
+    copySource: copySourceQuery.data,
+    copyPoSource: copyPoQuery.data,
+    copyWarnings,
+    copySourceError: copySourceQuery.isError || copyPoQuery.isError,
     isLoading,
     suppliers: effectiveSuppliers,
     inventoryItems: effectiveInventoryItems,

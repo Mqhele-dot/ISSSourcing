@@ -220,6 +220,8 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
           body: `Insurance expiry is within 30 days.`,
           entityType: "supplier",
           entityId: supplier.id,
+          dueAt: new Date((supplier as { insuranceExpiry?: string | Date }).insuranceExpiry!),
+          priority: "high",
         });
         notificationsCreated += 1;
       }
@@ -230,6 +232,8 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
           body: `Contract end date is within 30 days.`,
           entityType: "contract",
           entityId: contract.id,
+          dueAt: new Date(contract.endDate!),
+          priority: "high",
         });
         notificationsCreated += 1;
       }
