@@ -12,7 +12,7 @@ export async function loginAsSeededUser(
   password = "Admin123!",
 ): Promise<void> {
   await page.addInitScript((id) => {
-    window.localStorage.setItem(`invtrack:first-run-coach:v1:${id}`, "done");
+    window.localStorage.setItem(`invtrack:first-run-coach:v2:${id}`, "done");
   }, userId);
   await page.context().clearCookies();
   await page.goto("/auth", { waitUntil: "load" });

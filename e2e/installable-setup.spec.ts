@@ -16,8 +16,8 @@ test.describe("Installable setup (verification)", () => {
   test("system diagnostics shows summary and copy JSON", async ({ page }) => {
     await gotoAuthed(page, "/admin/system-diagnostics");
     await expect(page.getByRole("heading", { name: /system diagnostics/i })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole("heading", { name: /^Summary$/ })).toBeVisible();
-    await expect(page.getByText(/Database \(authenticated check\)/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Overview$/ })).toBeVisible();
+    await expect(page.getByText(/^Database query$/)).toBeVisible();
     await expect(page.getByRole("button", { name: /copy diagnostics json/i })).toBeVisible();
   });
 

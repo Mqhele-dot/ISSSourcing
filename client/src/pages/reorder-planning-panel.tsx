@@ -30,7 +30,7 @@ function PlanningList({ kind }: { kind: "reorder-suggestions" | "slow-moving" })
   return <Card>
     <CardHeader>
       <CardTitle>{kind === "slow-moving" ? "Slow-moving stock" : "Demand-based suggestions"}</CardTitle>
-      <CardDescription>{kind === "slow-moving" ? "Stock with no eligible issue during the selected period." : "Review observed demand, available stock, and approved inbound supply before creating a request."}</CardDescription>
+      <CardDescription>{kind === "slow-moving" ? "Stock with no eligible issue during the selected period." : "Planning suggestions use warehouse totals, reservations, and approved inbound supply. They do not confirm quality-eligible stock for picking or allocation."}</CardDescription>
       <label className="text-sm">Lookback period <select className="ml-2 rounded border p-1" value={lookbackDays} onChange={(event) => { setLookbackDays(Number(event.target.value)); setPage(1); }}><option value={30}>30 days</option><option value={90}>90 days</option><option value={180}>180 days</option><option value={365}>365 days</option></select></label>
     </CardHeader>
     <CardContent className="space-y-3">

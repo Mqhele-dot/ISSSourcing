@@ -4,6 +4,8 @@
  * Idempotent: upserts headers, replaces FQA PO lines, upserts requisition.
  */
 import {
+  FQA_INVENTORY_MASTER,
+  FQA_SKUS,
   FQA_PO_001_HEADER_TOTAL,
   FQA_PO_001_LINES,
   FQA_REQUISITION_NUMBER,
@@ -163,6 +165,23 @@ async function upsertItemWithPosition(payload: {
        updated_at = now()`,
     [payload.sku, payload.defaultLocation, payload.onHand, payload.allocated],
   );
+  const position = await pool.query<{ id: number; item_id: number; warehouse_id: number }>(
+    `SELECT wi.id,i.id AS item_id,w.id AS warehouse_id
+     FROM inventory_items i JOIN warehouses w ON w.organization_id=i.organization_id AND w.name=$3
+     LEFT JOIN warehouse_inventory wi ON wi.organization_id=i.organization_id AND wi.item_id=i.id AND wi.warehouse_id=w.id
+     WHERE i.organization_id=$1 AND i.sku=$2 ORDER BY wi.id LIMIT 1`,
+    [ORG_ID, payload.sku, payload.defaultLocation],
+  );
+  const canonical = position.rows[0];
+  if (!canonical) throw new Error(`seed:functional-qa could not resolve warehouse for ${payload.sku}`);
+  if (canonical.id) {
+    await pool.query("UPDATE warehouse_inventory SET quantity=$1,location=$2,updated_at=now() WHERE id=$3", [payload.onHand, payload.defaultLocation, canonical.id]);
+  } else {
+    await pool.query(
+      `INSERT INTO warehouse_inventory(organization_id,item_id,warehouse_id,quantity,location,updated_at) VALUES($1,$2,$3,$4,$5,now())`,
+      [ORG_ID, canonical.item_id, canonical.warehouse_id, payload.onHand, payload.defaultLocation],
+    );
+  }
 }
 
 export async function seedFunctionalQA(): Promise<void> {
@@ -229,6 +248,7 @@ export async function seedFunctionalQA(): Promise<void> {
          VALUES ($1, $2, $3, $4, 'ZAR', NULL, now(), $5, now(), now())
          ON CONFLICT (organization_id, order_number) DO UPDATE SET
            status = EXCLUDED.status,
+           approval_status = 'DRAFT',
            total_amount = EXCLUDED.total_amount,
            supplier_id = EXCLUDED.supplier_id,
            currency_code = 'ZAR',
@@ -290,6 +310,42 @@ export async function seedFunctionalQA(): Promise<void> {
          updated_at = now()`,
       [ORG_ID, FQA_REQUISITION_NUMBER, adminForReq, FQA_REQUISITION_STATUS, 0, "Functional QA seed"],
     );
+    const fqaRequisition = await pool.query<{ id: number }>(
+      "SELECT id FROM purchase_requisitions WHERE organization_id=$1 AND requisition_number=$2",
+      [ORG_ID, FQA_REQUISITION_NUMBER],
+    );
+    if (!fqaRequisition.rows[0]) throw new Error("seed:functional-qa requisition missing for allocation evidence");
+    const disposableDatabase = (() => {
+      try {
+        const databaseUrl = process.env.DATABASE_URL;
+        return process.env.NODE_ENV === "test" && Boolean(databaseUrl) && databaseUrl === process.env.TEST_DATABASE_URL &&
+          /^\/iss_e2e_test_[a-f0-9]{32}$/.test(new URL(databaseUrl!).pathname);
+      } catch {
+        return false;
+      }
+    })();
+    if (disposableDatabase) {
+      // These four names are owned by this deterministic fixture. Remove competing seeded reservations
+      // only inside the exact disposable browser database, never in a local business database.
+      await pool.query(
+        `DELETE FROM inventory_allocations WHERE organization_id=$1 AND item_id IN
+         (SELECT id FROM inventory_items WHERE organization_id=$1 AND sku=ANY($2::text[]))`,
+        [ORG_ID, [...FQA_SKUS]],
+      );
+    } else {
+      await pool.query("DELETE FROM inventory_allocations WHERE organization_id=$1 AND requisition_id=$2", [ORG_ID, fqaRequisition.rows[0].id]);
+    }
+    for (const sku of FQA_SKUS) {
+      const quantity = FQA_INVENTORY_MASTER[sku].allocatedUi;
+      if (quantity <= 0) continue;
+      await pool.query(
+        `INSERT INTO inventory_allocations(organization_id,item_id,warehouse_id,quantity,requisition_id,status)
+         SELECT $1,i.id,w.id,$2,$3,'reserved' FROM inventory_items i
+         JOIN warehouses w ON w.organization_id=i.organization_id AND w.name=i.default_location
+         WHERE i.organization_id=$1 AND i.sku=$4`,
+        [ORG_ID, quantity, fqaRequisition.rows[0].id, sku],
+      );
+    }
 
     const adminId = await ensureAdminUserId();
     const due = new Date();

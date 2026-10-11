@@ -137,6 +137,14 @@ try {
   const after = Number((await pool.query("SELECT count(*) n FROM notifications WHERE type='due_reminder' AND organization_id=1")).rows[0].n);
   assert.equal(after - before, 1, "Due reminders must be deduplicated across worker retries.");
   assert.equal(Number((await pool.query("SELECT count(*) n FROM notification_delivery_keys WHERE completed_at IS NOT NULL")).rows[0].n), 1);
+  await pool.query(`INSERT INTO inventory_putaway_tasks(id,organization_id,item_id,warehouse_id,assigned_user_id,task_number,quantity,priority,due_at,status)
+    VALUES(11,1,7,8,1,'PA-DUE-11',1,'HIGH',now()+interval '12 hours','ASSIGNED')`);
+  await runActionInboxDeliveryCycle();
+  await runActionInboxDeliveryCycle();
+  assert.equal(Number((await pool.query("SELECT count(*) n FROM notifications WHERE type='putaway_reminder' AND organization_id=1 AND user_id=1")).rows[0].n), 1,
+    "Assigned put-away reminders must deduplicate.");
+  await pool.query("UPDATE inventory_putaway_tasks SET status='COMPLETED' WHERE id=11");
+  assert.equal((await call("/api/v2/action-inbox?state=active")).body.data.items.some((item: { id: string }) => item.id === "putaway:11"), false);
   console.log("Notification runtime passed: full unread count, archive history, repeat suppression, changed-event alerting, tenant isolation, role targeting and action-state propagation.");
 } finally {
   if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));

@@ -16,6 +16,8 @@ See **`.env.example`** for supported variables.
 
 1. Do **not** copy `.env` from the repo. Set variables in your host (e.g. Docker env, systemd, or platform env).
 2. Required: `DATABASE_URL`, `SESSION_SECRET`. Use a long random value for `SESSION_SECRET`.
+
+Supplier RFQ invitations are sent only through the explicit **Send invitation** action after publication. Configure `EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`, and an externally reachable `BASE_URL` (HTTPS in production). Without these values, the action returns a setup error and does not claim the message was sent. Previewing or publishing an RFQ does not send email.
 3. Set `NODE_ENV=production` and `AUTO_SEED_ON_EMPTY_DB=false` (or omit; production defaults to no auto-seed).
 
 See `.env.production.example` for a checklist.

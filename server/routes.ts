@@ -98,7 +98,7 @@ import {
 } from "./http/upload-config";
 import { csvBufferForExcel, workbookToBuffer } from "./http/export-helpers";
 import { appEnv } from "./config/env";
-import { isDisposableDatabaseUrl } from "./config/database-safety";
+import { databaseIdentity, isDisposableDatabaseUrl } from "./config/database-safety";
 import { getProductBootstrapHints } from "./lib/product-bootstrap";
 import { isAssignableNavigationPath } from "@shared/authority-catalogs";
 import { getBuildInfo } from "./lib/build-info";
@@ -2656,8 +2656,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/health", sendShallowHealth);
 
   const sendReadyPayload = async (res: Response) => {
-    if (isDisposableDatabaseUrl(process.env.TEST_DATABASE_URL)) {
+    if (isDisposableDatabaseUrl(process.env.TEST_DATABASE_URL) && process.env.DATABASE_URL && databaseIdentity(process.env.DATABASE_URL) === databaseIdentity(process.env.TEST_DATABASE_URL!)) {
       res.setHeader("X-Test-Database-Mode", "disposable");
+      res.setHeader("X-Test-Database-Identity", databaseIdentity(process.env.DATABASE_URL));
     }
     let buildPayload: ReturnType<typeof getBuildInfo>;
     let uploadOk = false;

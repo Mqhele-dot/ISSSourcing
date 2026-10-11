@@ -1,4 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import "dotenv/config";
+import { assertMatchedDisposableDatabaseUrls } from "./server/config/database-safety";
+
+// Playwright may start a web server before globalSetup runs. Refuse unsafe targets at config load.
+assertMatchedDisposableDatabaseUrls(process.env.DATABASE_URL, process.env.TEST_DATABASE_URL);
 
 /**
  * Two ways to run browser E2E:
@@ -27,7 +32,8 @@ export default defineConfig({
   use: {
     /* Prefer 127.0.0.1 because localhost can differ on some Windows setups. */
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000",
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
     /** Helpful when debugging boot/auth flakes locally; keep headless for CI. */
     video: process.env.PLAYWRIGHT_VIDEO === "off" || process.env.CI ? "off" : "retain-on-failure",
     headless: true,
@@ -37,7 +43,9 @@ export default defineConfig({
     },
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    ...(process.env.PLAYWRIGHT_MOBILE_GATE === "1"
+      ? [{ name: "chromium-mobile-390", use: { ...devices["Pixel 5"], viewport: { width: 390, height: 844 } } }]
+      : [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }]),
   ],
   ...(!externalDevServer
     ? {

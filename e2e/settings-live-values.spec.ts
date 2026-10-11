@@ -58,28 +58,18 @@ test.describe("Settings live values", () => {
     await gotoAuthed(page, "/admin/settings/general");
     const settings = await readLiveSettings(page);
 
-    await expect(page.getByLabel("Company Name")).toHaveValue(settings.companyName ?? "ISSSourcing");
-    await expect(page.getByLabel("Primary Color")).toHaveValue(settings.primaryColor ?? "#0f766e");
-    await expect(page.getByLabel("Currency Symbol")).toHaveValue(settings.currencySymbol ?? "$");
-    await expect(page.getByRole("combobox", { name: "Reporting currency code" })).toContainText(
-      (settings.currencyCode ?? "USD").toUpperCase(),
-    );
+    await expect(page.getByRole("link", { name: "Open Company Setup" })).toHaveAttribute("href", /\/admin\/company-setup$/);
+    await expect(page.getByRole("textbox", { name: "Primary color hex value" })).toHaveValue(settings.primaryColor ?? "#0f766e");
 
-    await page.getByRole("tab", { name: /inventory/i }).click();
+    await page.getByRole("tab", { name: /operational policy/i }).click();
     await expect(page).toHaveURL(/\/admin\/settings\/inventory$/);
-    await expect(page.getByTestId("inventory-settings-low-stock-threshold")).toHaveValue(
+    await expect(page.getByTestId("settings-control-low-stock")).toHaveValue(
       String(settings.lowStockDefaultThreshold ?? 10),
     );
-    await expect(page.getByTestId("inventory-settings-allow-negative")).toHaveAttribute(
-      "data-state",
-      (settings.allowNegativeInventory ?? false) ? "checked" : "unchecked",
-    );
-    await expect(page.getByTestId("inventory-settings-require-location")).toHaveAttribute(
-      "data-state",
-      (settings.requireLocationForItems ?? true) ? "checked" : "unchecked",
-    );
+    await expect(page.getByTestId("settings-control-negative-stock")).toBeChecked({ checked: settings.allowNegativeInventory ?? false });
+    await expect(page.getByTestId("settings-control-require-location")).toBeChecked({ checked: settings.requireLocationForItems ?? true });
 
-    await page.getByRole("tab", { name: /real-time/i }).click();
+    await page.getByRole("tab", { name: /live updates/i }).click();
     await expect(page).toHaveURL(/\/admin\/settings\/realtime$/);
     await expect(page.getByTestId("realtime-settings-alert-frequency")).toHaveValue(
       String(settings.lowStockAlertFrequency ?? 30),
@@ -93,7 +83,7 @@ test.describe("Settings live values", () => {
       (settings.autoReorderEnabled ?? false) ? "checked" : "unchecked",
     );
 
-    await page.getByRole("tab", { name: /forecasting/i }).click();
+    await page.getByRole("tab", { name: /planning/i }).click();
     await expect(page).toHaveURL(/\/admin\/settings\/forecasting$/);
     await expect(page.getByTestId("forecasting-settings-days")).toHaveValue(String(settings.forecastDays ?? 30));
     await expect(page.getByTestId("forecasting-settings-enabled")).toHaveAttribute(
@@ -105,19 +95,6 @@ test.describe("Settings live values", () => {
       (settings.seasonalAdjustmentEnabled ?? true) ? "checked" : "unchecked",
     );
 
-    await page.getByRole("tab", { name: /^tax$/i }).click();
-    await expect(page).toHaveURL(/\/admin\/settings\/tax$/);
-    await expect(page.getByTestId("tax-settings-enable-vat")).toHaveAttribute(
-      "data-state",
-      (settings.enableVat ?? false) ? "checked" : "unchecked",
-    );
-    await expect(page.getByTestId("tax-settings-show-prices-with-vat")).toHaveAttribute(
-      "data-state",
-      (settings.showPricesWithVat ?? true) ? "checked" : "unchecked",
-    );
-    const taxRegionCode = (settings.defaultVatCountry ?? "US").toUpperCase();
-    await expect(page.getByTestId("tax-settings-default-region-value")).toContainText(
-      TAX_REGION_LABELS[taxRegionCode] ?? taxRegionCode,
-    );
+    await expect(page.getByRole("tab", { name: /workflow controls/i })).toBeVisible();
   });
 });

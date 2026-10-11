@@ -57,7 +57,7 @@ initializeTransporter().catch((error) => {
   console.error('Email transporter initialization failed:', error);
 });
 
-interface EmailOptions {
+export interface EmailOptions {
   to: string;
   subject: string;
   html: string;
@@ -82,9 +82,9 @@ export function buildISSSourcingNotificationEmailHtml(title: string, bodyText: s
 /**
  * Send an email using the configured transporter
  */
-export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; info?: any; error?: Error }> {
+export async function sendEmail(options: EmailOptions, deliveryTransport?: Pick<Transporter, "sendMail">): Promise<{ success: boolean; info?: any; error?: Error }> {
   try {
-    if (!transporter) {
+    if (!deliveryTransport && !transporter) {
       await initializeTransporter();
     }
     
@@ -96,7 +96,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
       html: options.html
     };
     
-    const info = await transporter.sendMail(mailOptions);
+    const info = await (deliveryTransport ?? transporter).sendMail(mailOptions);
     
     // If using Ethereal, log the preview URL
     if (info.messageId && info.previewUrl) {

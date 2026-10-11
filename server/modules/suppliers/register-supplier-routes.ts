@@ -320,9 +320,9 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
           ('Purchase order '||p.order_number||' created'),
           'purchase_order',p.id,p.created_by_user_id,NULL::int FROM purchase_orders p WHERE p.organization_id=$1 AND p.supplier_id=$2
         UNION ALL SELECT ('delivery:'||e.id),'outbound_email',e.occurred_at,
-          ('Purchase order email — '||e.status||CASE WHEN e.error_summary IS NOT NULL THEN ': '||e.error_summary ELSE '' END),
+          (CASE WHEN e.source_type='sourcing_event' THEN 'RFQ invitation email — ' ELSE 'Purchase order email — ' END||e.status||CASE WHEN e.error_summary IS NOT NULL THEN ': '||e.error_summary ELSE '' END),
           e.source_type,e.source_id,e.actor_user_id,NULL::int FROM supplier_communication_events e
-          WHERE e.organization_id=$1 AND e.supplier_id=$2 AND e.source_type='purchase_order'
+          WHERE e.organization_id=$1 AND e.supplier_id=$2 AND e.source_type IN ('purchase_order','sourcing_event')
         UNION ALL SELECT ('confirmation:'||c.id),'po_confirmation',c.created_at,('PO confirmation — '||c.status),
           'purchase_order',c.purchase_order_id,c.actor_user_id,NULL::int FROM po_supplier_confirmations c WHERE c.organization_id=$1 AND c.supplier_id=$2
         UNION ALL SELECT ('document:'||d.id),'document',d.uploaded_at,('Document: '||d.file_name),

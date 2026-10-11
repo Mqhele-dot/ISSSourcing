@@ -33,7 +33,7 @@ export default function InventoryPutAwayPage() {
   const { toast } = useToast();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("ALL");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => new URLSearchParams(globalThis.location?.search ?? "").get("q") ?? "");
   const [selected, setSelected] = useState<PutAwayTask | null>(null);
   const [toBin, setToBin] = useState("");
   const query = useMemo(() => {

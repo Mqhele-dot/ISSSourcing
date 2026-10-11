@@ -24,7 +24,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: invtrack_e2e_gate
+          POSTGRES_DB: invtrack_e2e_test_gate
         ports:
           - 5432:5432
         options: >-
@@ -35,9 +35,9 @@ jobs:
     env:
       CI: "true"
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_gate
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_gate
-      BACKUP_RESTORE_SOURCE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_gate
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_test_gate
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_test_gate
+      BACKUP_RESTORE_SOURCE_URL: postgresql://postgres:postgres@localhost:5432/invtrack_e2e_test_gate
       BACKUP_RESTORE_TARGET_URL: postgresql://postgres:postgres@localhost:5432/invtrack_restore_rehearsal
       SESSION_SECRET: playwright-release-gate-session-secret
       BASE_URL: http://127.0.0.1:5000
@@ -74,11 +74,22 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify small-business runtime and E2E data containment
+        run: |
+          npm run test:e2e-database-guard
+          npm run test:email-transport-mock
+          npm run test:notification-runtime
+          npm run test:small-business-reorder-runtime
+          npm run test:supplier-communications-runtime
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
       - name: Run formal E2E release gate
         run: npm run verify:release:e2e
+
+      - name: Verify small-business cross-page desktop and mobile flows
+        run: npm run test:e2e:small-business
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

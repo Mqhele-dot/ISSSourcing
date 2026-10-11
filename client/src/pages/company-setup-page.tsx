@@ -94,6 +94,7 @@ export default function CompanySetupPage() {
         queryClient.invalidateQueries({ queryKey: ["/api/organization/settings"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/settings"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/user"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/onboarding/setup-progress"] }),
       ]);
       toast({ title: "Company profile saved", description: "Newly generated documents will use this company identity." });
     },

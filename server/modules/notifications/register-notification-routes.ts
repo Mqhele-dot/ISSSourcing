@@ -37,7 +37,7 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
     return [
       ...((await has("purchases")) || (await has("purchases", "approve")) ? ["requisition", "purchase_order", "contract", "receipt"] : []),
       ...((await has("invoices")) || (await has("invoices", "approve")) ? ["invoice", "capture", "payment_batch", "match_result"] : []),
-      ...(await has("inventory") ? ["inventory", "inventory_item", "stock", "shipment", "gas_asset_profile"] : []),
+      ...(await has("inventory") ? ["inventory", "inventory_item", "stock", "shipment", "gas_asset_profile", "putaway_task"] : []),
       ...(await has("suppliers") ? ["supplier"] : []),
     ];
   };
@@ -61,6 +61,7 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
           WHEN n.entity_type='requisition' AND r.id IS NOT NULL AND upper(r.status) NOT IN ('PENDING','PENDING_APPROVAL','SUBMITTED') THEN 'completed'
           WHEN n.entity_type='purchase_order' AND po.id IS NOT NULL AND upper(po.approval_status) NOT IN ('PENDING','PENDING_APPROVAL','SUBMITTED') AND lower(n.type) LIKE '%approval%' THEN 'completed'
           WHEN n.entity_type='invoice' AND inv.id IS NOT NULL AND lower(n.type) LIKE '%pending_approval%' AND upper(inv.status::text)<>'PENDING_APPROVAL' THEN 'completed'
+          WHEN n.entity_type='putaway_task' AND task.id IS NOT NULL AND task.status IN ('COMPLETED','CANCELLED') THEN 'completed'
           WHEN n.entity_type IN ('inventory','inventory_item','stock') AND item.id IS NOT NULL AND lower(n.type) LIKE '%low_stock%'
             AND item.quantity>coalesce(item.low_stock_threshold,0) THEN 'completed'
           WHEN lower(n.type) LIKE '%approved%' OR lower(n.type) LIKE '%rejected%' THEN 'information'
@@ -71,11 +72,13 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
         LEFT JOIN purchase_orders po ON n.entity_type='purchase_order' AND po.organization_id=n.organization_id AND po.id=n.entity_id
         LEFT JOIN invoices inv ON n.entity_type='invoice' AND inv.organization_id=n.organization_id AND inv.id=n.entity_id
         LEFT JOIN inventory_items item ON n.entity_type IN ('inventory','inventory_item','stock') AND item.organization_id=n.organization_id AND item.id=n.entity_id
-        WHERE n.organization_id=$1 AND n.user_id=$2 AND ($3::text[] IS NULL OR n.entity_type IS NULL OR n.entity_type=ANY($3::text[]))
+        LEFT JOIN inventory_putaway_tasks task ON n.entity_type='putaway_task' AND task.organization_id=n.organization_id AND task.id=n.entity_id
+        WHERE n.organization_id=$1 AND n.user_id=$2 AND n.type <> 'putaway_reminder'
+          AND ($3::text[] IS NULL OR n.entity_type IS NULL OR n.entity_type=ANY($3::text[]))
         UNION ALL
         SELECT ('putaway:'||t.id),('Put-away '||t.task_number),
           ('Place '||t.quantity::text||' '||i.name||' in '||w.name),'assigned_putaway',
-          'inventory',t.item_id,'/inventory/put-away',lower(t.priority),t.due_at,
+          'inventory',t.item_id,('/inventory/put-away?q='||replace(t.task_number,' ','%20')),lower(t.priority),t.due_at,
           NULL::timestamp,NULL::timestamp,t.updated_at,1,
           CASE WHEN t.status IN ('COMPLETED','CANCELLED') THEN 'completed' ELSE 'open' END
         FROM inventory_putaway_tasks t

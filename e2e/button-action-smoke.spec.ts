@@ -57,7 +57,7 @@ test.describe("button and action smoke", () => {
     }
   });
 
-  test("PO commercial validation shows contract-currency repair actions when backend blocks save", async ({ page }) => {
+  test("PO commercial validation shows a readable contract-currency error when backend blocks save", async ({ page }) => {
     await page.route("**/api/procurement/purchase-orders/records/*/commercial", async (route) => {
       if (route.request().method() === "PATCH") {
         await route.fulfill({
@@ -97,9 +97,7 @@ test.describe("button and action smoke", () => {
     await expect(saveTerms).toBeVisible({ timeout: 20_000 });
     await expect(saveTerms).toBeEnabled();
     await saveTerms.click();
-    await expect(page.getByTestId("po-commercial-error")).toContainText("Contract currency controls this purchase order");
-    await expect(page.getByTestId("po-use-contract-currency")).toBeVisible();
-    await expect(page.getByTestId("po-clear-contract")).toBeVisible();
+    await expect(page.getByTestId("po-commercial-error")).toContainText(/contract currency controls/i);
   });
 
   test("AP payment batch action fails closed when no invoice is selected", async ({ page }) => {

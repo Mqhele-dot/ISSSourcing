@@ -1,7 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "../../db";
+import { db, pool } from "../../db";
+import { sendEmail, type EmailOptions } from "../../services/email-service";
+import { appendAuditEventWithClient } from "../../services/audit-chain-service";
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
 import { getCanonicalReportingCurrencyCode } from "../../lib/org-reporting-money";
@@ -190,7 +192,16 @@ async function mappedSupplierId(req: Request): Promise<number> {
   return mapping.supplierId;
 }
 
-export function registerSourcingRoutes(app: Express, auth: AuthBundle): void {
+export function registerSourcingRoutes(
+  app: Express,
+  auth: AuthBundle,
+  dependencies: {
+    sendInvitationEmail?: (options: EmailOptions) => ReturnType<typeof sendEmail>;
+    previewInvitationEmails?: typeof previewSourcingInvitationEmails;
+  } = {},
+): void {
+  const sendInvitationEmail = dependencies.sendInvitationEmail ?? sendEmail;
+  const previewInvitationEmails = dependencies.previewInvitationEmails ?? previewSourcingInvitationEmails;
   const buyerRead = [auth.ensureAuthenticated, auth.ensurePermission("purchases", "read")];
   const buyerCreate = [auth.ensureAuthenticated, auth.ensurePermission("purchases", "create")];
   const buyerManage = [auth.ensureAuthenticated, auth.ensurePermission("purchases", "manage")];
@@ -421,6 +432,84 @@ export function registerSourcingRoutes(app: Express, auth: AuthBundle): void {
   app.post("/api/sourcing/events/:id/publish", ...buyerManage, async (req, res) => {
     try { return sendOk(res, await publishSourcingEvent(actor(req, res), parseId(req.params.id), idempotencyKey(req))); }
     catch (error) { return handleSourcingError(res, error); }
+  });
+
+  app.post("/api/sourcing/events/:id/invitations/:supplierId/send", ...buyerManage, async (req, res) => {
+    const eventId = Number(req.params.id);
+    const supplierId = Number(req.params.supplierId);
+    const key = String(req.get("Idempotency-Key") ?? "").trim();
+    if (!Number.isSafeInteger(eventId) || eventId <= 0 || !Number.isSafeInteger(supplierId) || supplierId <= 0 || key.length < 8 || key.length > 160)
+      return sendError(res, 400, "RFQ_DELIVERY_REQUEST_INVALID", "Choose a valid RFQ and supplier, then retry with a new request key.");
+    const organizationId = getActiveOrganizationId();
+    try {
+      const replay = await pool.query(`SELECT id,supplier_id,source_id,status FROM supplier_communication_events
+        WHERE organization_id=$1 AND idempotency_key=$2`, [organizationId, key]);
+      if (replay.rowCount) {
+        const row = replay.rows[0];
+        if (row.supplier_id !== supplierId || row.source_id !== eventId) return sendError(res, 409, "RFQ_DELIVERY_KEY_REUSED", "This request key belongs to another invitation.");
+        return sendOk(res, { attemptId: row.id, status: row.status, duplicate: true });
+      }
+    } catch (error) {
+      console.error("RFQ delivery replay lookup failed:", error);
+      return sendError(res, 500, "RFQ_DELIVERY_UNAVAILABLE", "Could not check this invitation's delivery history. Please retry.");
+    }
+    const baseUrl = process.env.BASE_URL?.trim();
+    if (!process.env.EMAIL_HOST?.trim() || !process.env.EMAIL_USER?.trim() || !process.env.EMAIL_PASS?.trim() || !baseUrl || !/^https?:\/\//i.test(baseUrl) || (process.env.NODE_ENV === "production" && !baseUrl.startsWith("https://")))
+      return sendError(res, 503, "RFQ_EMAIL_NOT_CONFIGURED", "Supplier email delivery is not configured. The RFQ remains published; no email was sent.", { hint: "Configure SMTP and the public BASE_URL, then retry." });
+    let attemptId: number | null = null;
+    let providerAccepted = false;
+    try {
+      const preview = await previewInvitationEmails(organizationId, eventId);
+      if (preview.event.status !== "OPEN") return sendError(res, 409, "RFQ_NOT_OPEN", "Only an open RFQ can send invitations.");
+      if (new Date(preview.event.deadline).getTime() <= Date.now()) return sendError(res, 409, "RFQ_DEADLINE_PASSED", "This RFQ's response deadline has passed. Extend and approve the deadline before sending invitations.");
+      const recipient = preview.previews.find((entry) => entry.supplierId === supplierId);
+      if (!recipient) return sendError(res, 404, "RFQ_SUPPLIER_NOT_INVITED", "This supplier is not invited to the RFQ.");
+      if (!recipient.to || !z.string().email().safeParse(recipient.to).success) return sendError(res, 409, "RFQ_SUPPLIER_EMAIL_MISSING", "Add a valid supplier email address before sending the invitation.");
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT pg_advisory_xact_lock($1::int,$2::int)", [organizationId, eventId]);
+        const prior = await client.query(`SELECT id,supplier_id,source_id,status FROM supplier_communication_events
+          WHERE organization_id=$1 AND idempotency_key=$2`, [organizationId, key]);
+        if (prior.rowCount) {
+          await client.query("ROLLBACK");
+          const row = prior.rows[0];
+          if (row.supplier_id !== supplierId || row.source_id !== eventId) return sendError(res, 409, "RFQ_DELIVERY_KEY_REUSED", "This request key belongs to another invitation.");
+          return sendOk(res, { attemptId: row.id, status: row.status, duplicate: true });
+        }
+        const previous = await client.query(`SELECT status,occurred_at FROM supplier_communication_events
+          WHERE organization_id=$1 AND source_type='sourcing_event' AND source_id=$2 AND supplier_id=$3 AND channel='email'
+          ORDER BY id DESC LIMIT 1`, [organizationId, eventId, supplierId]);
+        if (previous.rows[0]?.status === "sent" || (previous.rows[0]?.status === "queued" && Date.now() - new Date(previous.rows[0].occurred_at).getTime() < 10 * 60_000)) {
+          await client.query("ROLLBACK");
+          return sendError(res, 409, "RFQ_INVITATION_ALREADY_SENT", "This invitation has already been sent or is currently being sent.");
+        }
+        const inserted = await client.query(`INSERT INTO supplier_communication_events
+          (organization_id,supplier_id,source_type,source_id,channel,status,recipient,actor_user_id,idempotency_key)
+          VALUES($1,$2,'sourcing_event',$3,'email','queued',$4,$5,$6) RETURNING id`,
+          [organizationId, supplierId, eventId, recipient.to, Number(req.user?.id), key]);
+        attemptId = Number(inserted.rows[0].id);
+        await appendAuditEventWithClient(client, { organizationId, actor: { userId: Number(req.user?.id) }, action: "RFQ_INVITATION_EMAIL_QUEUED", resourceType: "sourcing_event", resourceId: eventId, details: { supplierId, attemptId, recipient: recipient.to }, requestId: String(res.locals.requestId ?? "") });
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally { client.release(); }
+      const portalUrl = new URL(preview.portalPath, baseUrl).toString();
+      const text = recipient.text.replace(preview.portalPath, portalUrl).replace("This is a preview. Publishing the RFQ controls the actual invitation workflow.", "");
+      const html = recipient.html.replace(preview.portalPath, portalUrl).replace(/<p><em>This is a preview\.[\s\S]*?<\/em><\/p>/, "");
+      const result = await sendInvitationEmail({ to: recipient.to, subject: recipient.subject, text, html });
+      providerAccepted = result.success;
+      await pool.query(`UPDATE supplier_communication_events SET status=$3,error_summary=$4,occurred_at=now()
+        WHERE organization_id=$1 AND id=$2`, [organizationId, attemptId, result.success ? "sent" : "failed", result.success ? null : "The email provider rejected the delivery attempt."]);
+      if (!result.success) return sendError(res, 502, "RFQ_EMAIL_FAILED", "The supplier email was not delivered. Check the provider and retry.");
+      return sendOk(res, { attemptId, status: "sent", duplicate: false });
+    } catch (error) {
+      if (attemptId !== null && !providerAccepted) await pool.query(`UPDATE supplier_communication_events SET status='failed',error_summary='Delivery interrupted; verify provider delivery before retrying.' WHERE organization_id=$1 AND id=$2 AND status='queued'`, [organizationId, attemptId]).catch(() => undefined);
+      if (error instanceof SourcingError) return handleSourcingError(res, error);
+      console.error("RFQ email delivery failed:", error);
+      return sendError(res, 500, "RFQ_EMAIL_FAILED", "Could not confirm supplier email delivery. Check the provider before retrying.");
+    }
   });
 
   app.post("/api/sourcing/events/:id/close", ...buyerManage, async (req, res) => {

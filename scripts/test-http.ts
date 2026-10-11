@@ -9,7 +9,7 @@
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import "dotenv/config";
-import { assertDisposableDatabaseUrl } from "../server/config/database-safety";
+import { assertMatchedDisposableDatabaseUrls, databaseIdentity } from "../server/config/database-safety";
 
 export const TEST_HTTP_TIMEOUT_MS = 45_000;
 const LOGIN_RETRY_DELAYS_MS = [1000, 3000, 7000, 15000, 30000] as const;
@@ -18,14 +18,14 @@ let lastSetCookie: string | undefined;
 const verifiedMutationTargets = new Set<string>();
 
 async function assertDisposableMutationTarget(baseUrl: string): Promise<void> {
-  assertDisposableDatabaseUrl(process.env.TEST_DATABASE_URL);
+  assertMatchedDisposableDatabaseUrls(process.env.DATABASE_URL, process.env.TEST_DATABASE_URL);
   if (verifiedMutationTargets.has(baseUrl)) return;
 
   const response = await fetch(`${baseUrl}/api/ready`, {
     method: "GET",
     signal: AbortSignal.timeout(TEST_HTTP_TIMEOUT_MS),
   });
-  if (!response.ok || response.headers.get("x-test-database-mode") !== "disposable") {
+  if (!response.ok || response.headers.get("x-test-database-mode") !== "disposable" || response.headers.get("x-test-database-identity") !== databaseIdentity(process.env.TEST_DATABASE_URL!)) {
     throw new Error(
       `Mutation tests refused ${baseUrl}: the running app did not confirm a disposable TEST_DATABASE_URL. Start it with the same TEST_DATABASE_URL before running mutation tests.`,
     );

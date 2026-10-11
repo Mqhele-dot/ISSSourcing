@@ -2,7 +2,7 @@ import { expect, type Page } from "@playwright/test";
 
 export async function loginAsAdmin(page: Page) {
   await page.addInitScript(() => {
-    window.localStorage.setItem("invtrack:first-run-coach:v1:1", "done");
+    window.localStorage.setItem("invtrack:first-run-coach:v2:1", "done");
   });
 
   if (process.env.PLAYWRIGHT_USE_DEV_TEST_LOGIN !== "0") {

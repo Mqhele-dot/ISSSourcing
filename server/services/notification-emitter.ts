@@ -28,7 +28,7 @@ export function requiredNotificationAccess(payload: Omit<EmitNotificationPayload
   }
   if (entity === "contract") return { resource: "purchases", permission: "read" };
   if (entity === "supplier" || type.startsWith("supplier_")) return { resource: "suppliers", permission: "read" };
-  if (["inventory", "inventory_item", "stock", "gas_asset_profile"].includes(entity) || type.includes("stock")) return { resource: "inventory", permission: "read" };
+  if (["inventory", "inventory_item", "stock", "gas_asset_profile", "putaway_task"].includes(entity) || type.includes("stock")) return { resource: "inventory", permission: "read" };
   if (["purchase_order", "requisition", "receipt"].includes(entity)) return { resource: "purchases", permission: type.includes("approval") ? "approve" : "read" };
   if (entity === "shipment" || type.includes("shipment")) return { resource: "inventory", permission: "read" };
   return null;
@@ -162,6 +162,7 @@ export async function emitNotification(payload: EmitNotificationPayload): Promis
 export async function emitNotificationToRoles(
   roles: string[],
   payload: Omit<EmitNotificationPayload, "userId">,
+  options: { excludeUserIds?: number[] } = {},
 ): Promise<void> {
   const members = await db.select({ userId: organizationMembers.userId, role: organizationMembers.applicationRole })
     .from(organizationMembers)
@@ -169,6 +170,7 @@ export async function emitNotificationToRoles(
   const allowedRoles = new Set(roles.map((role) => role.toLowerCase()));
   const access = requiredNotificationAccess(payload);
   for (const member of members) {
+    if (options.excludeUserIds?.includes(member.userId)) continue;
     const role = member.role.toLowerCase();
     let hasAccess = role === "admin";
     if (!hasAccess && access) {

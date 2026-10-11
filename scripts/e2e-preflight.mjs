@@ -4,6 +4,7 @@
  */
 import process from "node:process";
 import { probeUrl } from "./e2e-http-probe.mjs";
+import { assertDisposableE2eEnvironment, assertDisposableE2eServer } from "./e2e-database-guard.mjs";
 
 const PORT = process.env.PORT || "5000";
 const READY_URL = process.env.PLAYWRIGHT_E2E_READY_URL || `http://127.0.0.1:${PORT}/api/ready`;
@@ -15,6 +16,7 @@ function line(label, r) {
 }
 
 async function main() {
+  const expectedIdentity = assertDisposableE2eEnvironment();
   console.log("E2E preflight (expect dev server already running: npm run dev)\n");
   const ready = await probeUrl(READY_URL, { timeoutMs: 10_000 });
   const auth = await probeUrl(AUTH_URL, { timeoutMs: 15_000 });
@@ -30,6 +32,8 @@ async function main() {
     console.log("              npm run test:e2e");
     process.exit(1);
   }
+
+  await assertDisposableE2eServer(READY_URL, expectedIdentity);
 
   console.log("\nPreflight OK — you can run: npm run test:e2e\n");
 }

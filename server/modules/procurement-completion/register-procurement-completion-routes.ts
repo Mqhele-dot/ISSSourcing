@@ -9,7 +9,9 @@ import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
 import type { AuthBundle } from "../procurement/types";
 import { createSourcingEvent, SourcingError, type SourcingActor } from "../sourcing/service";
+import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
 import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
+import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { authorizeApprovalStep } from "../../services/approval-workflow-service";
 import {
   addOperationalExceptionComment,
@@ -128,6 +130,54 @@ function handleError(res: Response, error: unknown) {
   return sendError(res, known ? 409 : 500, known ? message : "PROCUREMENT_COMPLETION_FAILED", known ? message.replaceAll("_", " ").toLowerCase() : "The procurement operation failed.", {
     details: process.env.NODE_ENV === "production" ? undefined : { message },
   });
+}
+
+async function assertCurrentRequisitionMasterData(client: DbClient, organizationId: number, record: Record<string, any>) {
+  const changed = (message: string) => Object.assign(new Error(message), { status: 409, code: "REQUISITION_MASTER_DATA_CHANGED" });
+  const header = await client.query(
+    `SELECT s.name AS supplier_name,s.status AS supplier_status,s.compliance_status,s.blocked_reason,c.active AS currency_active,c.exchange_rate_to_zar,d.active AS department_active
+     FROM purchase_requisitions r
+     LEFT JOIN suppliers s ON s.id=r.supplier_id AND s.organization_id=r.organization_id
+     LEFT JOIN currencies c ON c.organization_id=r.organization_id AND upper(c.code)=upper(r.currency_code)
+     LEFT JOIN departments d ON d.id=r.department_id AND d.organization_id=r.organization_id
+     WHERE r.organization_id=$1 AND r.id=$2`, [organizationId, record.id],
+  );
+  const current = header.rows[0];
+  if (!current?.supplier_name) throw changed("The supplier is no longer available. Choose a supplier before submitting.");
+  assertSupplierTransactionAllowed({ supplierName: current.supplier_name, status: current.supplier_status,
+    complianceStatus: current.compliance_status, blockedReason: current.blocked_reason }, "submitted requisitions");
+  if (current?.currency_active !== true || !(Number(current.exchange_rate_to_zar) > 0)) {
+    throw changed("The selected currency or exchange rate is unavailable in Master Data. Refresh the draft before submitting.");
+  }
+  if (current?.department_active !== true) throw changed("The department is inactive. Choose an active department before submitting.");
+  const lines = await client.query(
+    `SELECT l.line_number,l.quantity,l.unit_price,l.item_id,l.unit_of_measure_id,l.tax_code_id,l.cost_centre_id,
+       i.status AS item_status,i.organization_id AS item_org,u.active AS uom_active,u.organization_id AS uom_org,
+       t.active AS tax_active,t.organization_id AS tax_org,cc.active AS centre_active,cc.organization_id AS centre_org
+     FROM purchase_requisition_items l
+     LEFT JOIN inventory_items i ON i.id=l.item_id
+     LEFT JOIN units_of_measure u ON u.id=l.unit_of_measure_id
+     LEFT JOIN tax_codes t ON t.id=l.tax_code_id
+     LEFT JOIN mdm_cost_centres cc ON cc.id=l.cost_centre_id
+     WHERE l.requisition_id=$1 ORDER BY l.line_number,l.id`, [record.id],
+  );
+  if (!lines.rows.length) throw changed("This requisition has no lines. Add a valid line before submitting.");
+  for (const line of lines.rows) {
+    const label = `Line ${line.line_number}`;
+    if (!(Number(line.quantity) > 0) || !(Number(line.unit_price) > 0)) throw changed(`${label} needs a positive quantity and unit price before submitting.`);
+    if (line.item_id != null && (Number(line.item_org) !== organizationId || String(line.item_status).toLowerCase() !== "active")) {
+      throw changed(`${label} uses an item that is no longer active. Replace it before submitting.`);
+    }
+    if (line.unit_of_measure_id != null && (Number(line.uom_org) !== organizationId || line.uom_active !== true)) {
+      throw changed(`${label} uses an inactive unit of measure. Select an active unit before submitting.`);
+    }
+    if (line.tax_code_id != null && (Number(line.tax_org) !== organizationId || line.tax_active !== true)) {
+      throw changed(`${label} uses an inactive tax code. Select an active tax code before submitting.`);
+    }
+    if (line.cost_centre_id != null && (Number(line.centre_org) !== organizationId || line.centre_active !== true)) {
+      throw changed(`${label} uses an inactive cost centre. Select an active cost centre before submitting.`);
+    }
+  }
 }
 
 async function reserveRequisitionBudget(client: DbClient, organizationId: number, requisition: Record<string, any>) {
@@ -392,6 +442,7 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
           if (!record) throw new Error("NOT_FOUND");
           const current = String(record.status).toUpperCase() === "PENDING" ? "PENDING_APPROVAL" : String(record.status).toUpperCase();
           if (!transition.from.includes(current)) throw new Error("STATE_TRANSITION_NOT_ALLOWED");
+          if (action === "submit") await assertCurrentRequisitionMasterData(client, org, record);
           if (action === "approve" && Number(record.requestor_id) === userId) throw new Error("FORBIDDEN_SELF_APPROVAL");
           if (action === "approve") await reserveRequisitionBudget(client, org, record);
           const result = await client.query(
@@ -405,6 +456,19 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
           await recordActivity(client, org, "purchase_requisition", id, `REQUISITION_${transition.to}`, { actorUserId: userId, reason, beforeStatus: current, afterStatus: transition.to });
           return result.rows[0];
         });
+        if (action === "submit") {
+          await emitNotificationToRoles(["manager", "planner", "admin"], {
+            type: "requisition_pending_approval",
+            title: `Requisition ${updated.requisition_number} ready for approval`,
+            body: `Requisition ${updated.requisition_number} is awaiting approval.`,
+            entityType: "requisition",
+            entityId: id,
+            targetPath: `/procurement/requisitions/${id}`,
+            priority: "normal",
+          }, { excludeUserIds: [userId] }).catch((error) => {
+            console.warn("Requisition approval inbox notification failed:", error);
+          });
+        }
         return sendOk(res, updated);
       } catch (error) { return handleError(res, error); }
     });

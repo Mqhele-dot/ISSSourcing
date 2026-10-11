@@ -46,10 +46,10 @@ export async function runActionInboxDeliveryCycle(now = new Date()): Promise<voi
     LEFT JOIN supplier_contracts c ON n.entity_type='contract' AND c.organization_id=n.organization_id AND c.id=n.entity_id
     LEFT JOIN suppliers s ON n.entity_type='supplier' AND s.organization_id=n.organization_id AND s.id=n.entity_id
     WHERE n.due_at IS NOT NULL AND n.due_at <= $1::timestamp + interval '24 hours'
-      AND (n.entity_type <> 'requisition' OR r.id IS NULL OR upper(r.status) IN ('PENDING','PENDING_APPROVAL','SUBMITTED'))
-      AND (n.entity_type <> 'purchase_order' OR po.id IS NULL OR upper(po.approval_status) IN ('PENDING','PENDING_APPROVAL','SUBMITTED'))
-      AND (n.entity_type <> 'contract' OR (c.status='active' AND c.end_date=n.due_at))
-      AND (n.entity_type <> 'supplier' OR s.insurance_expiry=n.due_at)
+      AND (n.entity_type IS DISTINCT FROM 'requisition' OR r.id IS NULL OR upper(r.status) IN ('PENDING','PENDING_APPROVAL','SUBMITTED'))
+      AND (n.entity_type IS DISTINCT FROM 'purchase_order' OR po.id IS NULL OR upper(po.approval_status) IN ('PENDING','PENDING_APPROVAL','SUBMITTED'))
+      AND (n.entity_type IS DISTINCT FROM 'contract' OR (c.status='active' AND c.end_date=n.due_at))
+      AND (n.entity_type IS DISTINCT FROM 'supplier' OR s.insurance_expiry=n.due_at)
     ORDER BY n.due_at,n.id LIMIT 500`, [now]);
   for (const item of due.rows) {
     const role = item.application_role.toLowerCase();
@@ -73,6 +73,36 @@ export async function runActionInboxDeliveryCycle(now = new Date()): Promise<voi
           type: "overdue_escalation", title: `Overdue action: ${item.title}`,
           body: `An assigned action passed its due date. Escalation provides visibility; it does not transfer approval authority.`,
           priority: "high", ...base })));
+    }
+  }
+
+  const assignedPutAway = await pool.query<{ id: number; organization_id: number; assigned_user_id: number; task_number: string; due_at: Date; priority: string; reminder_enabled: boolean | null; application_role: string }>(`
+    SELECT t.id,t.organization_id,t.assigned_user_id,t.task_number,t.due_at,t.priority,p.reminder_enabled,m.application_role
+    FROM inventory_putaway_tasks t JOIN organization_members m ON m.organization_id=t.organization_id AND m.user_id=t.assigned_user_id
+      AND m.active=true AND m.status='active'
+    LEFT JOIN notification_preferences p ON p.user_id=t.assigned_user_id
+    WHERE t.status IN ('ASSIGNED','IN_PROGRESS','EXCEPTION') AND t.due_at IS NOT NULL
+      AND t.due_at <= $1::timestamp + interval '24 hours'
+    ORDER BY t.due_at,t.id LIMIT 500`, [now]);
+  for (const task of assignedPutAway.rows) {
+    const role = task.application_role.toLowerCase();
+    const customRoleId = role === "custom" ? await storage.getUserCustomRoleId(task.assigned_user_id) : null;
+    if (role !== "admin" && !(await storage.checkPermission(role, "inventory", "read")
+      || (customRoleId && await storage.checkCustomRolePermission(customRoleId, "inventory" as never, "read" as never)))) continue;
+    const targetPath = `/inventory/put-away?q=${encodeURIComponent(task.task_number)}`;
+    const dueAt = new Date(task.due_at);
+    if (dueAt > now && task.reminder_enabled !== false) {
+      await once(task.organization_id,task.assigned_user_id,`putaway-reminder:${task.id}:${now.toISOString().slice(0,10)}`, async () =>
+        withSystemTenant(task.organization_id,"put-away due reminder", () => emitNotification({ userId: task.assigned_user_id,
+          type: "putaway_reminder", title: `Put-away due: ${task.task_number}`, body: `This task is due ${dueAt.toLocaleString()}.`,
+          entityType: "putaway_task", entityId: task.id, targetPath, dueAt, priority: "high" })));
+    }
+    if (dueAt.getTime() <= now.getTime()-24*60*60*1000) {
+      await once(task.organization_id,task.assigned_user_id,`putaway-escalation:${task.id}`, async () =>
+        withSystemTenant(task.organization_id,"overdue put-away escalation", () => emitNotificationToRoles(["manager","admin"], {
+          type: "overdue_escalation", title: `Overdue put-away: ${task.task_number}`,
+          body: "The assigned warehouse task is overdue. Escalation grants visibility, not stock-posting authority.",
+          entityType: "putaway_task", entityId: task.id, targetPath, priority: "high" })));
     }
   }
 

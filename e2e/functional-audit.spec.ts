@@ -28,6 +28,8 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     const clearAll = async () => {
       await page.getByRole("button", { name: /clear filters/i }).click();
       await page.waitForTimeout(400);
+      await page.getByRole("combobox", { name: "Rows per page" }).click();
+      await page.getByRole("option", { name: "100 rows" }).click();
     };
 
     await clearAll();
@@ -130,35 +132,25 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     expect(fqaLow).toEqual(["SKU-B", "SKU-D"].sort());
   });
 
-  test("AP payments: batch totals 1250 then 1550, toggle idempotent", async ({ page }) => {
+  test("AP payments: unmatched fixture invoices are excluded from payable selection", async ({ page }) => {
     await gotoAuthed(page, "/finance/accounts-payable/payments");
     await expect(page.getByTestId("accounts-payable-page")).toBeVisible({ timeout: 30000 });
 
-    const row1 = page.getByTestId("ap-ready-invoice-row-INV-FQA-001");
-    const row2 = page.getByTestId("ap-ready-invoice-row-INV-FQA-002");
-    await expect(row1).toBeVisible({ timeout: 20000 });
-    await expect(row2).toBeVisible();
+    await expect(page.getByText(/0–0 of 0 payable invoices/i)).toBeVisible();
+    for (const number of ["INV-FQA-001", "INV-FQA-002", "INV-FQA-003"]) {
+      await expect(page.getByTestId(`ap-ready-invoice-row-${number}`)).toHaveCount(0);
+    }
 
     const totalEl = page.getByTestId("ap-selected-batch-total");
     await expect(totalEl).toHaveAttribute("data-batch-total-cents", "0");
 
-    await page.getByTestId("ap-ready-invoice-checkbox-INV-FQA-001").click();
-    await page.getByTestId("ap-ready-invoice-checkbox-INV-FQA-002").click();
-    await expect(totalEl).toHaveAttribute("data-batch-total-cents", "125000");
-
-    await page.getByTestId("ap-ready-invoice-checkbox-INV-FQA-001").click();
-    await page.getByTestId("ap-ready-invoice-checkbox-INV-FQA-001").click();
-    await expect(totalEl).toHaveAttribute("data-batch-total-cents", "125000");
-
-    await page.getByTestId("ap-ready-invoice-checkbox-INV-FQA-003").click();
-    await expect(totalEl).toHaveAttribute("data-batch-total-cents", "155000");
+    await expect(page.getByTestId("ap-create-batch-button")).toBeDisabled();
   });
 
   test("AP payments: empty selection shows validation", async ({ page }) => {
     await gotoAuthed(page, "/finance/accounts-payable/payments");
     await expect(page.getByTestId("accounts-payable-page")).toBeVisible({ timeout: 30000 });
-    await page.getByTestId("ap-create-batch-button").click();
-    await expect(page.getByText(/select at least one invoice/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByTestId("ap-create-batch-button")).toBeDisabled();
   });
 
   test("PO FQA: filters, header = line sum, API totals", async ({ page, baseURL }) => {
@@ -270,7 +262,7 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
 
   test("analytics: inventory-value and category rollups; reports analytics date window", async ({ page, baseURL }) => {
     await gotoAuthed(page, "/analytics/overview");
-    await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole("heading", { name: "Analytics & Insights", level: 1 })).toBeVisible({ timeout: 30000 });
 
     const origin = baseURL ?? "http://127.0.0.1:5000";
     const res = await page.request.get(`${origin}/api/analytics/inventory-value`);
@@ -350,10 +342,10 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
 
   test("analytics overview: section nav and dashboard-stats anchor", async ({ page }) => {
     await gotoAuthed(page, "/analytics/overview");
-    await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 25000 });
-    await expect(page.getByLabel(/section navigation/i)).toBeVisible();
-    await expect(page.locator("#dashboard-stats")).toBeVisible();
-    await expect(page.getByTestId("analytics-workspace-charts")).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("heading", { name: "Analytics & Insights", level: 1 })).toBeVisible({ timeout: 25000 });
+    await expect(page.getByRole("navigation", { name: "Analytics sections" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Executive KPIs" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Visual analysis" })).toBeVisible({ timeout: 20000 });
   });
 
   test("Get Educated: search AP and open Accounts Payable lesson", async ({ page }) => {

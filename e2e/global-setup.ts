@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertDisposableDatabaseUrl } from "../server/config/database-safety";
+import { assertMatchedDisposableDatabaseUrls, databaseIdentity } from "../server/config/database-safety";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -10,14 +10,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * Skip onboarding prep with SKIP_E2E_PRODUCT_ONBOARDING_PREP=1.
  * Skip functional QA seed with SKIP_E2E_FUNCTIONAL_QA_SEED=1 (not recommended — deep E2E expects FQA rows).
  */
-export default function globalSetup() {
+export default async function globalSetup() {
   const repoRoot = path.resolve(__dirname, "..");
   const env = { ...process.env };
 
   const skipOnboardingPrep = env.SKIP_E2E_PRODUCT_ONBOARDING_PREP === "1";
   const skipFunctionalSeed = env.SKIP_E2E_FUNCTIONAL_QA_SEED === "1";
-  if (!skipOnboardingPrep || !skipFunctionalSeed) {
-    assertDisposableDatabaseUrl(env.TEST_DATABASE_URL);
+  assertMatchedDisposableDatabaseUrls(env.DATABASE_URL, env.TEST_DATABASE_URL);
+  const readyUrl = `${(env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000").replace(/\/$/, "")}/api/ready`;
+  const ready = await fetch(readyUrl, { signal: AbortSignal.timeout(10_000) });
+  if (!ready.ok || ready.headers.get("x-test-database-mode") !== "disposable" || ready.headers.get("x-test-database-identity") !== databaseIdentity(env.TEST_DATABASE_URL!)) {
+    throw new Error("Playwright refused the running server: it is not connected to the configured disposable database.");
   }
 
   if (!skipOnboardingPrep) {

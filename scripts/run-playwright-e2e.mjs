@@ -13,6 +13,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { probeUrl } from "./e2e-http-probe.mjs";
+import { assertDisposableE2eEnvironment, assertDisposableE2eServer } from "./e2e-database-guard.mjs";
 
 const PORT = process.env.PORT || "5000";
 const READY_URL = process.env.PLAYWRIGHT_E2E_READY_URL || `http://127.0.0.1:${PORT}/api/ready`;
@@ -59,7 +60,7 @@ async function waitForApiAndAuthReachable() {
       console.error("\n[E2E] Dev server process exited before /api/ready and /auth became reachable.");
       console.error(`[E2E] exitCode=${devExitInfo.status} signal=${devExitInfo.signal ?? "none"}`);
       console.error("[E2E] Fix startup errors above (DATABASE_URL, migrations, port in use), then retry.\n");
-      process.exit(1);
+      throw new Error("Test server exited before readiness.");
     }
 
     lastResults.ready = await probeUrl(READY_URL, { timeoutMs: 5_000 });
@@ -89,7 +90,7 @@ async function waitForApiAndAuthReachable() {
   console.error(
     "[E2E] Note: a working https://<codespace>-5000.app.github.dev URL does not prove 127.0.0.1:5000 is up inside the container.\n",
   );
-  process.exit(1);
+  throw new Error("Test server readiness timed out.");
 }
 
 let devProc = null;
@@ -101,6 +102,7 @@ const lastResults = {
 };
 
 try {
+  const expectedDatabaseIdentity = assertDisposableE2eEnvironment();
   logBanner([
     `PORT=${PORT}`,
     `READY_URL=${READY_URL}`,
@@ -111,6 +113,7 @@ try {
 
   const quickReady = await probeUrl(READY_URL, { timeoutMs: 3_000 });
   const quickAuth = await probeUrl(AUTH_URL, { timeoutMs: 3_000 });
+  if (quickReady.ok) await assertDisposableE2eServer(READY_URL, expectedDatabaseIdentity);
   const existingServer = quickReady.ok && quickAuth.ok;
 
   if (existingServer) {
@@ -127,7 +130,7 @@ try {
     console.log(`[E2E] Command: ${DEV_COMMAND}`);
     console.log("[E2E] (stdio from dev server follows)\n");
 
-    devProc = spawn(process.execPath, [tsxCli, "server/index.ts"], {
+    devProc = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
       cwd: repoRoot,
       stdio: "inherit",
       shell: false,
@@ -136,7 +139,7 @@ try {
 
     devProc.on("error", (err) => {
       console.error("[E2E] Failed to spawn dev server:", err);
-      process.exit(1);
+      devExitInfo = { status: 1, signal: null };
     });
 
     devProc.on("exit", (code, signal) => {
@@ -144,6 +147,7 @@ try {
     });
 
     await waitForApiAndAuthReachable();
+    await assertDisposableE2eServer(READY_URL, expectedDatabaseIdentity);
     console.log(`[E2E] Ready: ${formatProbe("ready", lastResults.ready)}`);
     console.log(`[E2E] Ready: ${formatProbe("auth", lastResults.auth)}\n`);
   }
@@ -154,19 +158,20 @@ try {
     console.error("[E2E] Aborted: server not reachable immediately before Playwright.");
     console.error(`[E2E]   ${formatProbe("ready", prePlayReady)}`);
     console.error(`[E2E]   ${formatProbe("auth", prePlayAuth)}`);
-    process.exit(1);
+    throw new Error("Test server became unavailable before browser execution.");
   }
+  await assertDisposableE2eServer(READY_URL, expectedDatabaseIdentity);
 
   console.log("[E2E] Running npm run test:purchase-order-endpoints (server is up)...\n");
   const poEndpoints = runTsx("scripts/test-purchase-order-endpoints.ts");
   if (poEndpoints.status !== 0) {
-    process.exit(poEndpoints.status ?? 1);
+    throw new Error(`Purchase-order endpoint gate failed (${poEndpoints.status ?? "unknown"}).`);
   }
 
   console.log("[E2E] Running npm run test:dashboard-data (server is up)...\n");
   const dashData = runTsx("scripts/test-dashboard-data.ts");
   if (dashData.status !== 0) {
-    process.exit(dashData.status ?? 1);
+    throw new Error(`Dashboard data gate failed (${dashData.status ?? "unknown"}).`);
   }
 
   for (const scriptPath of [
@@ -178,7 +183,7 @@ try {
     console.log(`[E2E] Running npm run ${label} (server is up)...\n`);
     const sub = runTsx(scriptPath);
     if (sub.status !== 0) {
-      process.exit(sub.status ?? 1);
+      throw new Error(`${label} gate failed (${sub.status ?? "unknown"}).`);
     }
   }
 

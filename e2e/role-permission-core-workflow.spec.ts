@@ -57,7 +57,7 @@ async function ensureTestUser(username: string, role: string, workPersona: strin
 
 async function loginAs(page: Page, username: string, userId: number) {
   await page.addInitScript((id) => {
-    window.localStorage.setItem(`invtrack:first-run-coach:v1:${id}`, "done");
+    window.localStorage.setItem(`invtrack:first-run-coach:v2:${id}`, "done");
   }, userId);
   await page.context().clearCookies();
   await page.goto("about:blank");

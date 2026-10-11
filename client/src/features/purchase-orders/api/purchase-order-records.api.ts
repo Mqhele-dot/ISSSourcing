@@ -10,6 +10,7 @@ export type PurchaseOrderRecordSummary = {
   incotermId?: number | null;
   currencyCode?: string | null;
   taxCodeId?: number | null;
+  approvalStatus?: string | null;
 };
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -43,6 +44,7 @@ function normalizeRecordSummary(raw: unknown): PurchaseOrderRecordSummary | null
     incotermId: pickNullableNum(d.incotermId ?? d.incoterm_id),
     currencyCode: pickNullableStr(d.currencyCode ?? d.currency_code),
     taxCodeId: pickNullableNum(d.taxCodeId ?? d.tax_code_id),
+    approvalStatus: pickNullableStr(d.approvalStatus ?? d.approval_status),
   };
 }
 

@@ -33,3 +33,18 @@ export function assertDisposableDatabaseUrl(databaseUrl: string | undefined): st
   }
   return databaseName;
 }
+
+export function databaseIdentity(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  const identity = [url.hostname.toLowerCase(), url.port || "5432", getDatabaseName(databaseUrl), url.username].join("|");
+  return createHash("sha256").update(identity).digest("hex");
+}
+
+export function assertMatchedDisposableDatabaseUrls(databaseUrl: string | undefined, testDatabaseUrl: string | undefined): string {
+  const name = assertDisposableDatabaseUrl(testDatabaseUrl);
+  if (!databaseUrl || databaseIdentity(databaseUrl) !== databaseIdentity(testDatabaseUrl!)) {
+    throw new Error("Mutation tests require DATABASE_URL and TEST_DATABASE_URL to identify the same disposable database.");
+  }
+  return name;
+}
+import { createHash } from "node:crypto";

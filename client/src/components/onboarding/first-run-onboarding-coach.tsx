@@ -107,9 +107,10 @@ function markDismissed(key: string) {
 export function FirstRunOnboardingCoach() {
   const { user } = useAuth();
   const [path] = useLocation();
+  const pathBase = pathWithoutQuery(path);
   const { phase, setup } = useAppReadinessState();
   const progressQuery = useQuery({
-    queryKey: ["/api/onboarding/setup-progress"],
+    queryKey: ["/api/onboarding/setup-progress", pathBase],
     queryFn: () => requestJson<{ steps: Array<{ id: string; complete: boolean; required: boolean }> }>("GET", "/api/onboarding/setup-progress"),
     enabled: Boolean(user),
     refetchOnWindowFocus: true,
@@ -119,7 +120,6 @@ export function FirstRunOnboardingCoach() {
   const [activeIndex, setActiveIndex] = useState(0);
 
   const key = storageKey(user?.id);
-  const pathBase = pathWithoutQuery(path);
   const availableSteps = SETUP_STEPS;
   const activeStep = availableSteps[Math.min(activeIndex, availableSteps.length - 1)];
   const completed = progressQuery.data?.steps.filter((step) => step.complete).length ?? 0;

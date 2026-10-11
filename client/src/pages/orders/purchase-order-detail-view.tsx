@@ -364,7 +364,8 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     },
     onError: (e) => {
       const description = e instanceof Error ? e.message : String(e);
-      setCommercialSaveError(description);
+      const code = e && typeof e === "object" && "code" in e ? String((e as { code?: unknown }).code ?? "") : "";
+      setCommercialSaveError(code === "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED" ? code : description);
       toast({
         title: "Failed to update PO terms",
         description,
@@ -418,11 +419,12 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
   const updateStatus = (action: "approve" | "send") => {
     if (!poNumber || !data) return;
-    const normalizedStatus = String(data.status).trim().toLowerCase();
+    const approvalStatus = String(purchaseOrderRecord?.approvalStatus ?? workflowQuery.data?.approvalStatus ?? "").trim().toUpperCase();
+    if (action === "approve" && !["DRAFT", "PENDING"].includes(approvalStatus)) return;
     const onErr = (statusError: Error) => {
       const err = statusError as Error & { status?: number };
       const actionLabel = action === "approve"
-        ? normalizedStatus === "draft" ? "Submit PO" : "Approve PO"
+        ? approvalStatus === "DRAFT" ? "Submit PO" : "Approve PO"
         : "Dispatch PO";
       toast({
         title: "Update failed",
@@ -430,7 +432,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
           actionLabel,
           "POST",
           action === "approve"
-            ? `/api/purchase-orders/${data.id}/${normalizedStatus === "draft" ? "submit" : "approve"}`
+            ? `/api/purchase-orders/${data.id}/${approvalStatus === "DRAFT" ? "submit" : "approve"}`
             : `/api/purchase-orders/${data.id}/send-email`,
           err,
         ),
@@ -445,12 +447,13 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
 
     if (action === "approve") {
       if (approvePurchaseOrderMutation.isPending) return;
-      const workflowAction = normalizedStatus === "draft" ? "submit" : "approve";
+      const workflowAction = approvalStatus === "DRAFT" ? "submit" : "approve";
       approvePurchaseOrderMutation.mutate(
         { purchaseOrderId: data.id, action: workflowAction, reason: approvalReason },
         {
           onError: onErr,
           onSuccess: () => {
+            void workflowQuery.refetch();
             setApprovalReason("");
             toast({ title: workflowAction === "submit" ? "PO submitted" : "PO approved" });
           },
@@ -684,11 +687,13 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             }
             setCurrencyCode(fromContract);
             setCommercialSaveError(null);
+            saveCommercialTerms.reset();
             setCommercialApplyHint(`Using contract currency ${fromContract}. Save terms to persist.`);
           };
           const clearSelectedContract = () => {
             setContractId("none");
             setCommercialSaveError(null);
+            saveCommercialTerms.reset();
             setCommercialApplyHint("Contract cleared. Review the currency and save terms to persist.");
           };
           const downloadSignedPdf = async () => {
@@ -728,8 +733,12 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
             role: user?.role ?? undefined,
             mutationPending: statusMutationPending,
           });
+          const approvalStatus = String(purchaseOrderRecord?.approvalStatus ?? workflowQuery.data?.approvalStatus ?? "").toUpperCase();
           const approveDisabledMsg = baseApproveDisabledMsg
-            ?? (String(detail.status).toLowerCase() === "open" && approvalReason.trim().length < 5
+            ?? (!approvalStatus || !["DRAFT", "PENDING"].includes(approvalStatus)
+              ? "Approval state is unavailable. Refresh the purchase order before continuing."
+              : null)
+            ?? (approvalStatus === "PENDING" && approvalReason.trim().length < 5
               ? "An independent approval reason of at least 5 characters is required."
               : null);
           const baseSendDisabledMsg = sendActionDisabledReason({
@@ -813,10 +822,10 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                         onClick={() => updateStatus("approve")}
                       >
                         <CheckCircle2 className="h-4 w-4" aria-hidden />
-                        {String(detail.status).toLowerCase() === "draft" ? "Submit for approval" : "Approve"}
+                        {approvalStatus === "DRAFT" ? "Submit for approval" : "Approve"}
                       </Button>
                     </Can>
-                    {String(detail.status).toLowerCase() === "open" ? (
+                    {approvalStatus === "PENDING" ? (
                       <Input
                         id="po-approval-reason"
                         className="h-9 min-w-[240px]"

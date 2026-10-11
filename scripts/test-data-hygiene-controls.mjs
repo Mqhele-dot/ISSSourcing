@@ -16,13 +16,14 @@ assert.match(fixtureTool, /ROLLBACK/);
 assert.match(fixtureTool, /fixture-data-\$\{Date\.now\(\)\}/);
 
 assert.match(httpHelper, /assertDisposableMutationTarget/);
+assert.match(httpHelper, /x-test-database-identity/);
 assert.match(httpHelper, /x-test-database-mode/);
 assert.match(readyRoute, /X-Test-Database-Mode/);
 assert.match(testRunner, /TEST_DATABASE_URL/);
 assert.match(testRunner, /assertDisposableTestDatabase/);
-assert.match(e2eGlobalSetup, /assertDisposableDatabaseUrl\(env\.TEST_DATABASE_URL\)/);
+assert.match(e2eGlobalSetup, /assertMatchedDisposableDatabaseUrls\(env\.DATABASE_URL, env\.TEST_DATABASE_URL\)/);
 assert.match(e2eGlobalSetup, /SKIP_E2E_PRODUCT_ONBOARDING_PREP/);
 assert.match(e2eGlobalSetup, /SKIP_E2E_FUNCTIONAL_QA_SEED/);
-assert.match(playwrightWorkflow, /TEST_DATABASE_URL:.*invtrack_e2e_gate/);
+assert.match(playwrightWorkflow, /TEST_DATABASE_URL:.*invtrack_e2e_test_gate/);
 
 console.log("Data hygiene and disposable test database controls passed.");

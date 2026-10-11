@@ -318,6 +318,10 @@ function EventDetail({ eventId }: { eventId: number }) {
       toast({ title: action === "publish" ? "RFQ published" : "RFQ closed for evaluation" });
     },
   });
+  const sendInvitation = useMutation({
+    mutationFn: (supplierId: number) => requestJson<{ status: string; duplicate: boolean }>("POST", `/api/sourcing/events/${eventId}/invitations/${supplierId}/send`, {}, { headers: { "Idempotency-Key": mutationKey() } }),
+    onSuccess: async (result) => { await invalidateSourcingDomain(queryClient, eventId); toast({ title: result.duplicate ? "Invitation already processed" : "Supplier email sent" }); },
+  });
   return <PageDataState isLoading={detailsQuery.isLoading} error={detailsQuery.error} isEmpty={!detailsQuery.data} onRetry={() => void detailsQuery.refetch()} emptyView={<div>RFQ not found.</div>}>
     {detailsQuery.data ? <div className="space-y-5" data-testid="sourcing-event-detail">
       <PageHeader title={detailsQuery.data.event.title} subtitle={`${detailsQuery.data.event.eventNumber} / closes ${new Date(detailsQuery.data.event.deadline).toLocaleString()}`} breadcrumb={<Link href={APP_ROUTES.procurement.sourcing}>Sourcing / RFQs</Link>} actions={<div className="flex flex-wrap gap-2"><Badge variant={statusVariant(detailsQuery.data.event.status)} className="self-center">{detailsQuery.data.event.status}</Badge><Button type="button" variant="outline" onClick={() => setEmailPreviewOpen(true)}><Mail className="mr-2 h-4 w-4" />Preview supplier emails</Button>{detailsQuery.data.event.status === "OPEN" ? <Button asChild variant="outline"><Link href={`${APP_ROUTES.procurement.quotationNew}?eventId=${detailsQuery.data.event.id}`}><Plus className="mr-2 h-4 w-4" />Capture quotation</Link></Button> : null}{detailsQuery.data.event.status === "DRAFT" ? <Can resource="purchases" permissionType="manage" reason="Publishing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("publish")} disabled={workflowMutation.isPending}><Send className="mr-2 h-4 w-4" />Publish RFQ</Button></Can> : null}{detailsQuery.data.event.status === "OPEN" ? <Can resource="purchases" permissionType="manage" reason="Closing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("close")} disabled={workflowMutation.isPending || (new Date(detailsQuery.data.event.deadline).getTime() > Date.now() && earlyCloseReason.trim().length < 10)}><ClipboardCheck className="mr-2 h-4 w-4" />Close for evaluation</Button></Can> : null}</div>} />
@@ -330,7 +334,7 @@ function EventDetail({ eventId }: { eventId: number }) {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl" data-testid="rfq-email-preview-dialog">
           <DialogHeader>
             <DialogTitle>Supplier email preview</DialogTitle>
-            <DialogDescription>Review the exact recipient, subject, RFQ lines, deadline, and secure supplier-workspace link before publishing. This preview does not send email.</DialogDescription>
+            <DialogDescription>Review each recipient, subject, RFQ line and deadline. Publishing the RFQ does not send email; use Send invitation after publishing. Delivery needs configured SMTP and a public app URL.</DialogDescription>
           </DialogHeader>
           <PageDataState
             isLoading={emailPreviewQuery.isLoading}
@@ -354,9 +358,12 @@ function EventDetail({ eventId }: { eventId: number }) {
                   </CardHeader>
                   <CardContent>
                     <pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-4 font-sans text-sm leading-6">{preview.text}</pre>
+                    {detailsQuery.data.event.status === "OPEN" && <Can resource="purchases" permissionType="manage" reason="Supplier delivery requires sourcing management permission"><Button className="mt-3" type="button" disabled={preview.recipientState !== "ready" || sendInvitation.isPending || new Date(detailsQuery.data.event.deadline).getTime() <= Date.now()} onClick={() => sendInvitation.mutate(preview.supplierId)}>Send invitation to {preview.supplierName}</Button></Can>}
+                    {detailsQuery.data.event.status === "OPEN" && new Date(detailsQuery.data.event.deadline).getTime() <= Date.now() && <p className="mt-2 text-sm text-destructive">The response deadline has passed; sending is disabled.</p>}
                   </CardContent>
                 </Card>
               ))}
+              {sendInvitation.error && <PanelInlineError title="Invitation not sent" description={sendInvitation.error.message} />}
             </div>
           </PageDataState>
           <DialogFooter><Button type="button" variant="outline" onClick={() => setEmailPreviewOpen(false)}>Close preview</Button></DialogFooter>

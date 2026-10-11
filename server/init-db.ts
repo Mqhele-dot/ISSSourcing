@@ -1282,6 +1282,9 @@ export async function ensureProfessionalSupplyChainTables(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS supplier_communication_events_supplier_recent
         ON supplier_communication_events (organization_id,supplier_id,occurred_at DESC,id DESC);
+      ALTER TABLE supplier_communication_events ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS supplier_communication_events_idempotency
+        ON supplier_communication_events (organization_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
       CREATE TABLE IF NOT EXISTS stock_count_targets (
         id SERIAL PRIMARY KEY,
         organization_id INTEGER DEFAULT 1 NOT NULL,

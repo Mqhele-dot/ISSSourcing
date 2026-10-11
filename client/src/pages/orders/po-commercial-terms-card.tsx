@@ -40,7 +40,7 @@ export type PoCommercialTermsCardProps = {
   contractsForSupplier: ContractOpt[];
   paymentTerms: TermOpt[];
   incoterms: IncotermOpt[];
-  saveCommercialTerms: { mutate: () => void; isPending: boolean };
+  saveCommercialTerms: { mutate: () => void; isPending: boolean; error?: unknown };
   /** When false, terms are read-only (PO sent or later). */
   canSaveCommercial: boolean;
   commercialLockedReason?: string;
@@ -80,9 +80,15 @@ export function PoCommercialTermsCard({
   applyDefaultsHint,
 }: PoCommercialTermsCardProps) {
   const disableFields = !canSaveCommercial || saveCommercialTerms.isPending;
+  const mutationError = saveCommercialTerms.error;
+  const effectiveError = commercialSaveError ?? (mutationError instanceof Error ? mutationError.message : null);
+  const errorCode = mutationError && typeof mutationError === "object" && "code" in mutationError
+    ? String((mutationError as { code?: unknown }).code ?? "") : "";
   const isContractCurrencyValidation =
-    typeof commercialSaveError === "string" &&
-    commercialSaveError.includes("SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED");
+    errorCode === "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED" ||
+    (typeof effectiveError === "string" &&
+      (effectiveError.includes("SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED") ||
+        effectiveError.toLowerCase().includes("contract currency")));
   return (
     <Card id="po-commercial" className="scroll-mt-36" data-testid="po-commercial-card">
       <CardHeader>
@@ -97,7 +103,7 @@ export function PoCommercialTermsCard({
             {commercialLockedReason}
           </div>
         ) : null}
-        {commercialSaveError ? (
+        {effectiveError ? (
           <div
             className="md:col-span-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
             data-testid="po-commercial-error"
@@ -137,7 +143,7 @@ export function PoCommercialTermsCard({
                 </div>
               </div>
             ) : (
-              commercialSaveError
+              effectiveError
             )}
           </div>
         ) : null}
