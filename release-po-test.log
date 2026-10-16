@@ -1,0 +1,116 @@
+
+> rest-express@1.0.0 test:e2e:disposable
+> node scripts/run-disposable-small-business-e2e.mjs --full e2e/purchase-order-actions.spec.ts
+
+Created test-owned database iss_e2e_test_8db111d253b54e9db52b2b38bf957411. Current application database was not changed.
+
+> rest-express@1.0.0 db:push:force
+> node scripts/db-migration-preflight.mjs && drizzle-kit push --force
+
+DB migration preflight passed; no legacy enum columns required normalization.
+No config path provided, using default 'drizzle.config.ts'
+Reading config file 'C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\drizzle.config.ts'
+Using 'pg' driver for database querying
+[⣷] Pulling schema from database...
+[2K[1G[⣯] Pulling schema from database...
+[2K[1G[⣟] Pulling schema from database...
+[2K[1G[⡿] Pulling schema from database...
+[2K[1G[✓] Pulling schema from database...
+[✓] Changes applied
+
+> rest-express@1.0.0 db:init:commercial-test
+> tsx scripts/initialize-commercial-test-database.ts
+
+{"timestamp":"2026-10-10T20:56:25.608Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+{"timestamp":"2026-10-10T20:56:31.692Z","level":"info","message":"Database connection successful","meta":{"build":{"version":"1.0.0","commitSha":null,"buildId":null,"builtAt":null,"runtimeProfile":"test","deploymentMode":"test"}}}
+Session table (connect-pg-simple) ready
+Initializing database schema...
+Database already initialized with tables existing
+Session table (connect-pg-simple) ready
+Contract date constraint (end_date >= start_date) applied
+Tenant security and audit chain columns ready
+categories.organization_id column and index ready
+departments.organization_id column and index ready
+carriers.organization_id column and index ready
+warehouses.organization_id column and index ready
+inventory_items.organization_id column and index ready
+suppliers.organization_id column and index ready
+app_settings.organization_id column and index ready
+reorder_requests.organization_id column and index ready
+purchase_requisitions.organization_id column and index ready
+purchase_orders.organization_id column and index ready
+inventory_serials.organization_id column and index ready
+custom_roles.organization_id column and index ready
+barcodes.organization_id ownership and index ready
+Purchase requisitions tables ready
+Professional supply chain tables and columns ready
+Strategic sourcing tables ready
+Commercial quotation tables ready
+categories.organization_id column and index ready
+departments.organization_id column and index ready
+carriers.organization_id column and index ready
+warehouses.organization_id column and index ready
+inventory_items.organization_id column and index ready
+suppliers.organization_id column and index ready
+app_settings.organization_id column and index ready
+reorder_requests.organization_id column and index ready
+purchase_requisitions.organization_id column and index ready
+purchase_orders.organization_id column and index ready
+inventory_serials.organization_id column and index ready
+custom_roles.organization_id column and index ready
+barcodes.organization_id ownership and index ready
+Professional supply chain tables and columns ready
+Professional supply chain tables and columns ready
+{"timestamp":"2026-10-10T20:56:34.670Z","level":"info","message":"Database seed check completed","meta":{"seeded":true}}
+{"timestamp":"2026-10-10T20:56:38.043Z","level":"info","message":"Development bootstrap completed","meta":{"opSeed":{"purchaseOrders":1,"shipments":2,"exceptions":4,"integrationRuns":4,"activity":30}}}
+Commercial release test database initialized.
+
+> rest-express@1.0.0 test:e2e
+> node scripts/run-playwright-e2e.mjs e2e/purchase-order-actions.spec.ts
+
+
+--- E2E dev server wrapper ---
+PORT=5000
+READY_URL=http://127.0.0.1:5000/api/ready
+AUTH_URL=http://127.0.0.1:5000/auth
+DEV_COMMAND=npm run dev
+START_TIMEOUT_MS=120000
+---
+
+[E2E] No healthy server on both URLs yet; spawning dev server.
+[E2E]   initial ready: FAIL error=fetch failed (148ms)
+[E2E]   initial auth: FAIL error=fetch failed (8ms)
+[E2E] Command: npm run dev
+[E2E] (stdio from dev server follows)
+
+{"timestamp":"2026-10-10T20:57:55.458Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+No email credentials found; using local JSON email transport.
+
+[E2E] Timed out after 120000ms waiting for BOTH:
+[E2E]   http://127.0.0.1:5000/api/ready
+[E2E]   http://127.0.0.1:5000/auth
+[E2E] Last /api/ready probe: ready: FAIL error=fetch failed (3ms)
+[E2E] Last /auth probe:     auth: FAIL error=not probed yet (0ms)
+
+[E2E] Manual checks:
+[E2E]   npm run dev
+[E2E]   curl -i http://127.0.0.1:5000/api/ready
+[E2E]   curl -i http://127.0.0.1:5000/auth
+[E2E] Note: a working https://<codespace>-5000.app.github.dev URL does not prove 127.0.0.1:5000 is up inside the container.
+
+Removed exact test-owned database iss_e2e_test_8db111d253b54e9db52b2b38bf957411; Playwright reports remain available.
+file:///C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/scripts/run-disposable-small-business-e2e.mjs:41
+  if (child.status !== 0) throw new Error(`${script} failed with exit code ${child.status ?? "unknown"}.`);
+                                ^
+
+Error: test:e2e failed with exit code 1.
+    at run (file:///C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/scripts/run-disposable-small-business-e2e.mjs:41:33)
+    at file:///C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/scripts/run-disposable-small-business-e2e.mjs:50:3
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v24.12.0
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.21.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.0
+npm notice To update run: npm install -g npm@11.21.0
+npm notice

@@ -1,0 +1,5 @@
+[    1168ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=893a5709:17232
+[    1406ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:5000/api/user:0
+[    1576ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "username"): (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5000/auth:0
+[ 2311375ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5000/@vite/client:992
+[ 2311383ms] [ERROR] Creating a worker from 'blob:http://127.0.0.1:5000/4bfdbfb8-cdd6-4989-9e43-74b19747dd2c' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked. @ http://127.0.0.1:5000/@vite/client:1062

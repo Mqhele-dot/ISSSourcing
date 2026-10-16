@@ -1,0 +1,449 @@
+- generic:
+  - generic:
+    - generic:
+      - generic:
+        - link:
+          - /url: "#main-content"
+          - text: Skip to main content
+        - generic:
+          - complementary:
+            - generic:
+              - generic:
+                - generic:
+                  - heading [level=1]: ISSSourcing
+                - generic:
+                  - button
+            - navigation:
+              - generic:
+                - generic:
+                  - paragraph: Operations
+                  - link:
+                    - /url: /operations
+                    - generic: Overview (Preview)
+                  - link:
+                    - /url: /operations/control-tower
+                    - generic: Control tower (Preview)
+                  - link:
+                    - /url: /operations/logistics
+                    - generic: Logistics (Preview)
+                  - link:
+                    - /url: /operations/exceptions
+                    - generic: Exceptions (Preview)
+                - generic:
+                  - paragraph: Inventory
+                  - link:
+                    - /url: /inventory
+                    - generic: Inventory (Preview)
+                  - link:
+                    - /url: /inventory/warehouse-operations
+                    - generic: Warehouse ops (Preview)
+                  - link:
+                    - /url: /inventory/cycle-counts
+                    - generic: Cycle counts (Preview)
+                  - link:
+                    - /url: /inventory/reorder
+                    - generic: Reorder requests (Preview)
+                  - link:
+                    - /url: /inventory/barcodes
+                    - generic: Barcode scanner (Preview)
+                - generic:
+                  - paragraph: Procurement
+                  - link:
+                    - /url: /procurement/sourcing
+                    - generic: Sourcing & RFQs
+                  - link:
+                    - /url: /procurement/orders
+                    - generic: Purchase orders
+                  - link:
+                    - /url: /procurement/requisitions
+                    - generic: Requisitions
+                  - link:
+                    - /url: /procurement/suppliers
+                    - generic: Suppliers
+                  - link:
+                    - /url: /procurement/contracts
+                    - generic: Contracts
+                  - link:
+                    - /url: /procurement/supplier-portal
+                    - generic: Supplier portal
+                - generic:
+                  - paragraph: Finance
+                  - link:
+                    - /url: /finance/accounts-payable
+                    - generic: Accounts payable (Preview)
+                  - link:
+                    - /url: /finance/invoices
+                    - generic: Invoices (Preview)
+                - generic:
+                  - paragraph: Analytics
+                  - link:
+                    - /url: /analytics/overview
+                    - generic: Overview
+                  - link:
+                    - /url: /analytics/reports
+                    - generic: Reports
+                  - link:
+                    - /url: /analytics/saved-reports
+                    - generic: Saved reports
+                  - link:
+                    - /url: /analytics/export-center
+                    - generic: Export center
+                - generic:
+                  - paragraph: Admin
+                  - link:
+                    - /url: /admin/settings
+                    - generic: Settings
+                  - link:
+                    - /url: /admin/document-extractor
+                    - generic: Document extractor
+                  - link:
+                    - /url: /admin/integrations
+                    - generic: Integrations
+                  - link:
+                    - /url: /admin/audit-logs
+                    - generic: Audit logs
+                  - link:
+                    - /url: /admin/subscription
+                    - generic: Subscription
+                  - generic:
+                    - paragraph: Files & recognition
+                    - link:
+                      - /url: /admin/documents
+                      - generic: Documents
+                    - link:
+                      - /url: /admin/downloads
+                      - generic: Downloads
+                    - link:
+                      - /url: /admin/image-recognition
+                      - generic: Image recognition
+                  - generic:
+                    - paragraph: People & access
+                  - generic:
+                    - paragraph: System & profile
+                    - link:
+                      - /url: /admin/system-diagnostics
+                      - generic: System diagnostics
+                    - link:
+                      - /url: /admin/profile
+                      - generic: Profile
+                - generic:
+                  - paragraph: Learning
+                  - link:
+                    - /url: /get-educated
+                    - generic: Get Educated
+            - generic:
+              - button:
+                - generic: Dark Mode
+          - generic:
+            - banner:
+              - generic:
+                - paragraph: Overview
+                - search:
+                  - combobox
+              - generic:
+                - button:
+                  - generic: Jump to...
+                - generic: LIVE
+                - generic: DEV
+                - generic: ADMIN
+                - button:
+                  - generic: Toggle theme
+                - button:
+                  - generic: Cycle accent palette
+                - button:
+                  - generic: 99+
+                  - generic: Notifications
+                - button:
+                  - generic: SA
+                  - generic: Open user menu
+            - main:
+              - generic:
+                - generic:
+                  - generic:
+                    - text: New here?
+                    - strong: Overview
+                    - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+                - generic:
+                  - button: Open lesson
+                  - button: Spotlight tour
+                  - button
+              - generic:
+                - generic:
+                  - generic: Overview / Control Tower
+                  - generic:
+                    - generic:
+                      - generic:
+                        - heading [level=1]: Control Tower
+                        - paragraph: Operational command center
+                    - generic:
+                      - generic:
+                        - button: Open learning panel
+                        - button: Run Demo Walkthrough
+                        - button: "Auto-refresh: Off"
+                        - button: Refresh
+                        - generic: "Last refreshed: 19:49:43"
+                        - generic: "System: DB ✓ Schema ✓"
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: "Learning: Control Tower"
+                          - paragraph: "The Control Tower is your operational dashboard: it pulls together KPIs and signals from procurement, inventory, logistics, and exceptions so you can see what needs attention befor…"
+                      - generic:
+                        - button "Learn this tab"
+                        - button "Dismiss training panel for this visit"
+                - generic:
+                  - generic:
+                    - heading [level=3]: First procurement cycle
+                  - generic:
+                    - paragraph: Run the core business path from sourcing to payment — each link opens the right workspace in order.
+                    - list:
+                      - listitem:
+                        - link:
+                          - /url: /procurement/suppliers
+                          - text: Suppliers
+                        - text: — add or verify vendors
+                      - listitem:
+                        - link:
+                          - /url: /procurement/requisitions/new
+                          - text: New requisition
+                        - text: — request what you need
+                      - listitem:
+                        - link:
+                          - /url: /procurement/requisitions?status=PENDING
+                          - text: Approve requisition
+                        - text: — manager or admin approval before PO
+                      - listitem:
+                        - link:
+                          - /url: /procurement/orders
+                          - text: Purchase orders
+                        - text: — approve and issue the PO
+                      - listitem:
+                        - link:
+                          - /url: /inventory/warehouse-operations
+                          - text: Warehouse operations
+                        - text: — receive into stock
+                      - listitem:
+                        - link:
+                          - /url: /finance/accounts-payable
+                          - text: Accounts payable
+                        - text: — vendor bills and matching
+                      - listitem:
+                        - link:
+                          - /url: /finance/accounts-payable/payments
+                          - text: AP payments
+                        - text: — schedule and record payment
+                      - listitem:
+                        - link:
+                          - /url: /analytics/export-center
+                          - text: Export center
+                        - text: — download CSV/Excel for finance
+                - generic:
+                  - link:
+                    - /url: /operations/exceptions?status=open&severity=high
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: Open exceptions
+                          - paragraph: "108"
+                  - link:
+                    - /url: /operations/logistics?status=in_transit&risk=late
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: Late shipments
+                          - paragraph: "5"
+                  - link:
+                    - /url: /procurement/orders?status=approved
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: POs awaiting action
+                          - paragraph: "3"
+                  - link:
+                    - /url: /inventory?low=1
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: Low stock SKUs
+                          - paragraph: "134"
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Recent activity
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:29:23
+                      - generic:
+                        - generic:
+                          - paragraph: inventory adjust
+                          - generic: adjust
+                        - paragraph: 15/07/2026, 04:29:23
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:29:22
+                      - generic:
+                        - generic:
+                          - paragraph: inventory adjust
+                          - generic: adjust
+                        - paragraph: 15/07/2026, 04:29:22
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:29:17
+                      - generic:
+                        - generic:
+                          - paragraph: inventory adjust
+                          - generic: adjust
+                        - paragraph: 15/07/2026, 04:29:17
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:26:42
+                      - generic:
+                        - generic:
+                          - paragraph: inventory adjust
+                          - generic: adjust
+                        - paragraph: 15/07/2026, 04:26:42
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:26:42
+                      - generic:
+                        - generic:
+                          - paragraph: inventory adjust
+                          - generic: adjust
+                        - paragraph: 15/07/2026, 04:26:42
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:26:37
+                      - generic:
+                        - generic:
+                          - paragraph: inventory adjust
+                          - generic: adjust
+                        - paragraph: 15/07/2026, 04:26:37
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order approve
+                          - generic: approve
+                        - paragraph: 15/07/2026, 04:26:14
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order send
+                          - generic: send
+                        - paragraph: 15/07/2026, 04:26:14
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order approve
+                          - generic: approve
+                        - paragraph: 15/07/2026, 04:26:14
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:26:05
+                      - generic:
+                        - generic:
+                          - paragraph: inventory adjust
+                          - generic: adjust
+                        - paragraph: 15/07/2026, 04:26:05
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order send
+                          - generic: send
+                        - paragraph: 15/07/2026, 04:26:05
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order approve
+                          - generic: approve
+                        - paragraph: 15/07/2026, 04:26:05
+                      - generic:
+                        - generic:
+                          - paragraph: purchase_order receive
+                          - generic: receive
+                        - paragraph: 15/07/2026, 04:26:01
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Exception severity mix
+                    - generic:
+                      - link:
+                        - /url: /operations/exceptions?severity=medium&status=open
+                        - generic:
+                          - generic: medium
+                          - generic: "7"
+                      - link:
+                        - /url: /operations/exceptions?severity=high&status=open
+                        - generic:
+                          - generic: high
+                          - generic: "101"
+            - generic:
+              - button:
+                - generic: Help & Tutorials
+    - generic:
+      - button: Diagnostics 2
+    - region "Notifications (F8)":
+      - list:
+        - status:
+          - generic:
+            - generic: Some data could not be refreshed
+            - generic: "[DB_UNAVAILABLE] Inventory data is temporarily unavailable db-error"
+          - button
+  - status: Notification Some data could not be refreshed[DB_UNAVAILABLE] Inventory data is temporarily unavailable db-error
+  - dialog [ref=e64]:
+    - generic [ref=e65]:
+      - complementary [ref=e66]:
+        - generic [ref=e67]:
+          - generic [ref=e68]: First setup guide
+          - heading "Get ISSSourcing ready" [level=2] [ref=e69]
+          - paragraph [ref=e70]: Follow this path to connect setup, suppliers, buying, inventory, logistics, AP, and reporting.
+        - generic [ref=e71]:
+          - button "Finish company setup" [active] [ref=e72] [cursor=pointer]
+          - button "Load master data" [ref=e78] [cursor=pointer]
+          - button "Add suppliers" [ref=e84] [cursor=pointer]
+          - button "Create the first buying flow" [ref=e91] [cursor=pointer]
+          - button "Connect receiving and logistics" [ref=e98] [cursor=pointer]
+          - button "Try mobile workflows" [ref=e105] [cursor=pointer]
+          - button "Review dashboards" [ref=e109] [cursor=pointer]
+      - generic [ref=e113]:
+        - generic [ref=e114]:
+          - generic [ref=e115]:
+            - generic [ref=e122]:
+              - heading "Finish company setup" [level=2] [ref=e123]
+              - paragraph [ref=e124]: Set company name, currency, tax mode, warehouse, departments, and starter payment terms.
+            - button "Close guide" [ref=e125] [cursor=pointer]
+          - generic [ref=e130]:
+            - generic [ref=e131]:
+              - generic [ref=e132]: Step 1 of 7
+              - generic [ref=e133]: 14%
+            - progressbar [ref=e134]
+        - generic [ref=e136]:
+          - generic [ref=e137]:
+            - paragraph [ref=e138]: What to do
+            - paragraph [ref=e139]: Open the linked workspace and complete the basics before moving on.
+          - generic [ref=e140]:
+            - paragraph [ref=e141]: Why it matters
+            - paragraph [ref=e142]: This keeps supplier, stock, AP, logistics, and reports in sync.
+          - generic [ref=e143]:
+            - paragraph [ref=e144]: When to return
+            - paragraph [ref=e145]: Use the side navigation to revisit each setup area whenever the business changes.
+        - generic [ref=e146]:
+          - paragraph [ref=e147]: Recommended order
+          - paragraph [ref=e148]: Setup first, then master data, suppliers, procurement, logistics, mobile workflows, and analytics. That order prevents duplicate setup and gives every module clean reference data.
+        - generic [ref=e149]:
+          - generic [ref=e150]:
+            - button "Back" [disabled]
+            - button "Next" [ref=e151] [cursor=pointer]
+          - link "Open setup wizard" [ref=e152] [cursor=pointer]:
+            - /url: /setup
+    - button "Close" [ref=e155] [cursor=pointer]

@@ -1,0 +1,220 @@
+import { useState, useCallback, type ReactNode } from 'react';
+import { useWebSocket } from '@/hooks/use-websocket';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useQuery } from '@tanstack/react-query';
+import { AlertCircle, CheckCircle2, AlertTriangle, ArrowUpDown, RotateCw, Wifi, Info } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { isElectronEnvironment } from '@/lib/electron-bridge';
+import { setFeatureFlag } from '@/lib/config';
+
+type InventoryUpdateEntry = { item: { name: string }; currentQuantity: number; warehouseName: string; previousQuantity?: number };
+
+export function RealTimeInventory() {
+  // Fetch warehouses to allow user to choose which ones to monitor
+  const { data: warehouses, isLoading: warehousesLoading } = useQuery({
+    queryKey: ['/api/warehouses'],
+    enabled: true,
+  });
+
+  // State for selected warehouses
+  const [selectedWarehouses, setSelectedWarehouses] = useState<number[]>([]);
+  const [recentUpdates, setRecentUpdates] = useState<InventoryUpdateEntry[]>([]);
+  const [lastUpdateTime, setLastUpdateTime] = useState<string | null>(null);
+  /** Mirrors server / hook connection (not inferrable from lastMessage — disabled WS never receives messages). */
+  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const { toast } = useToast();
+
+  // Handle inventory updates from WebSocket
+  const handleInventoryUpdate = (payload: unknown) => {
+    const p = payload as InventoryUpdateEntry;
+    setRecentUpdates(prev => [p, ...prev].slice(0, 10));
+    setLastUpdateTime(new Date().toLocaleTimeString());
+  };
+
+  // Handle stock alerts from WebSocket
+  const handleStockAlert = (payload: { item: { name: string }; warehouse: { name?: string; warehouseId?: number }; currentLevel: number; reorderThreshold: number }) => {
+    const { item, warehouse, currentLevel, reorderThreshold } = payload;
+    toast({
+      title: `Low Stock Alert: ${item.name}`,
+      description: `Current level: ${currentLevel}, Threshold: ${reorderThreshold} in ${warehouse.name || 'warehouse #' + warehouse.warehouseId}`,
+      variant: 'destructive'
+    });
+  };
+
+  // Function to enable WebSockets
+  const enableWebSockets = () => {
+    setFeatureFlag('enableWebSockets', true);
+    // Force page refresh to apply feature flag change
+    window.location.reload();
+  };
+
+  const handleConnectionStatus = useCallback(
+    (connected: boolean) => {
+      setConnectionState(connected ? 'connected' : 'disconnected');
+      if (connected) {
+        toast({
+          title: 'Connected',
+          description: 'Real-time inventory synchronization is active',
+          variant: 'default',
+        });
+      }
+    },
+    [toast],
+  );
+
+  // Connect to WebSocket for real-time updates
+  const { isConnected, webSocketsEnabled } = useWebSocket({
+    warehouses: selectedWarehouses,
+    onInventoryUpdate: handleInventoryUpdate,
+    onStockAlert: handleStockAlert,
+    onConnectionStatus: handleConnectionStatus,
+  });
+
+  // Handle warehouse selection change
+  const handleWarehouseChange = (value: string) => {
+    if (value === 'all') {
+      // Monitor all warehouses
+      setSelectedWarehouses([]);
+    } else {
+      setSelectedWarehouses([parseInt(value)]);
+    }
+  };
+
+  // Status: when WS is off in dev, hook never connects — show "Off", not endless "Connecting..."
+  let connectionStatus: ReactNode;
+  if (!webSocketsEnabled && !isElectronEnvironment()) {
+    connectionStatus = (
+      <Badge variant="outline" className="bg-muted text-muted-foreground">
+        <Wifi className="w-3 h-3 mr-1" />
+        Off (dev)
+      </Badge>
+    );
+  } else if (isConnected || connectionState === 'connected') {
+    connectionStatus = (
+      <Badge variant="outline" className="bg-green-50 text-green-700">
+        <CheckCircle2 className="w-3 h-3 mr-1" />
+        Connected
+      </Badge>
+    );
+  } else if (connectionState === 'disconnected') {
+    connectionStatus = (
+      <Badge variant="outline" className="bg-red-50 text-red-700">
+        <AlertCircle className="w-3 h-3 mr-1" />
+        Disconnected
+      </Badge>
+    );
+  } else {
+    connectionStatus = (
+      <Badge variant="outline" className="bg-gray-100 text-gray-500">
+        <RotateCw className="w-3 h-3 mr-1 animate-spin" />
+        Connecting...
+      </Badge>
+    );
+  }
+
+  return (
+    <Card className="w-full">
+      {!webSocketsEnabled && !isElectronEnvironment() && (
+        <Alert variant="warning" className="mb-4 mx-6 mt-6">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="flex flex-col space-y-2">
+            <span>Real-time inventory updates are currently disabled in development mode.</span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={enableWebSockets}
+              className="self-start"
+            >
+              <Wifi className="mr-2 h-4 w-4" />
+              Enable Real-Time Updates
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle>Real-Time Inventory Updates</CardTitle>
+            <CardDescription>Live inventory changes across warehouses</CardDescription>
+          </div>
+          {connectionStatus}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <span className="text-sm font-medium">Monitor:</span>
+            {warehousesLoading ? (
+              <Skeleton className="h-9 w-40" />
+            ) : (
+              <Select 
+                defaultValue="all" 
+                onValueChange={handleWarehouseChange}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Select warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Warehouses</SelectItem>
+                  {warehouses && Array.isArray(warehouses) ? warehouses.map((warehouse: { id: number; name: string }) => (
+                    <SelectItem key={warehouse.id} value={warehouse.id.toString()}>
+                      {warehouse.name}
+                    </SelectItem>
+                  )) : null}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+        
+        {recentUpdates.length === 0 ? (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>No recent updates</AlertTitle>
+            <AlertDescription>
+              Inventory changes will appear here in real-time
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <div className="space-y-2">
+            {recentUpdates.map((update, index) => (
+              <div 
+                key={index} 
+                className="border rounded-md p-3 bg-slate-50 text-sm flex justify-between items-start"
+              >
+                <div>
+                  <div className="font-medium">{update.item.name}</div>
+                  <div className="text-muted-foreground">
+                    Quantity: {update.currentQuantity} in {update.warehouseName}
+                  </div>
+                </div>
+                <div className="flex items-center">
+                  {update.previousQuantity !== undefined && (
+                    <Badge variant={update.currentQuantity > update.previousQuantity ? "default" : "destructive"} 
+                      className={update.currentQuantity > update.previousQuantity ? "bg-green-100 text-green-800 hover:bg-green-200" : ""}>
+                      <ArrowUpDown className="w-3 h-3 mr-1" />
+                      {update.currentQuantity > update.previousQuantity 
+                        ? `+${update.currentQuantity - update.previousQuantity}`
+                        : `${update.currentQuantity - update.previousQuantity}`
+                      }
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+      {lastUpdateTime && (
+        <CardFooter className="text-xs text-muted-foreground">
+          Last updated: {lastUpdateTime}
+        </CardFooter>
+      )}
+    </Card>
+  );
+}

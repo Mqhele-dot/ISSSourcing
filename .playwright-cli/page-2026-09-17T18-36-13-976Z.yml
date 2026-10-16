@@ -1,0 +1,50 @@
+- main [ref=f3e3]:
+  - paragraph [ref=f3e4]: Disposable integration fixture — not your live database
+  - generic [ref=f3e5]:
+    - generic [ref=f3e9]:
+      - heading "Stock positions" [level=1] [ref=f3e10]
+      - paragraph [ref=f3e11]: Verify existing warehouse balances against normalized sites, zones and bins.
+    - note [ref=f3e12]:
+      - paragraph [ref=f3e13]: This release verifies location evidence only. It does not split balances, change quantities, or perform inspection. Item-wide safety holds are available separately after applying the safety migration.
+      - paragraph [ref=f3e14]: Per-bin/lot quality eligibility and projected supply are not enabled. Item-wide safety holds override available stock to zero. Existing reservations are shown at warehouse/item level, not as bin reservations. Any stock change invalidates the reconciliation snapshot.
+      - link "Manage canonical sites in Master Data" [ref=f3e15] [cursor=pointer]:
+        - /url: /admin/master-data/sites
+    - group [ref=f3e16]:
+      - generic "Location setup — warehouse permissions required" [ref=f3e17] [cursor=pointer]
+      - option "Select setup warehouse" [selected]
+      - option "Select master data site" [selected]
+    - generic [ref=f3e18]:
+      - heading "Warehouse balance reconciliation" [level=3] [ref=f3e20]
+      - generic [ref=f3e21]:
+        - generic [ref=f3e22]:
+          - textbox "Search stock positions" [ref=f3e23]:
+            - /placeholder: Search SKU, item or warehouse
+          - generic [ref=f3e24]: Location state
+          - combobox "Location state" [ref=f3e25]:
+            - option "All" [selected]
+            - option "Unresolved"
+            - option "Reconciled"
+          - generic [ref=f3e26]: Rows
+          - combobox "Rows" [ref=f3e27]:
+            - option "25" [selected]
+            - option "50"
+            - option "100"
+        - status [ref=f3e28]: Loading stock positions…
+        - paragraph [ref=f3e29]: Scroll the table horizontally to view quality and actions.
+        - region "Stock positions table — horizontally scrollable" [ref=f3e30]:
+          - table [ref=f3e31]:
+            - rowgroup [ref=f3e32]:
+              - row [ref=f3e33]:
+                - columnheader "Item" [ref=f3e34]
+                - columnheader "Warehouse" [ref=f3e35]
+                - columnheader "On hand" [ref=f3e36]
+                - columnheader "Location evidence" [ref=f3e37]
+                - columnheader "Quality" [ref=f3e38]
+                - columnheader "Actions" [ref=f3e39]
+            - rowgroup
+        - generic [ref=f3e40]:
+          - generic [ref=f3e41]: No records
+          - button "First" [disabled]
+          - button "Previous" [disabled]
+          - button "Next" [disabled]
+          - button "Last" [disabled]

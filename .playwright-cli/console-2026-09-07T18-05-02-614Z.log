@@ -1,0 +1,211 @@
+[     691ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:17232
+[    2158ms] [ERROR] Warning: Cannot update a component (`%s`) while rendering a different component (`%s`). To locate the bad setState() call inside `%s`, follow the stack trace as described in https://reactjs.org/link/setstate-in-render%s DiagnosticsStatusIndicator BlanketAgreementsPage BlanketAgreementsPage 
+    at BlanketAgreementsPage (http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:31:20)
+    at Route (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:181:16)
+    at ProtectedRoute (http://127.0.0.1:5000/src/lib/protected-route.tsx:12:34)
+    at Switch (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:222:17)
+    at Suspense
+    at RouteChunkErrorBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:192:3)
+    at RouteLoadingBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:300:40)
+    at AppRouter
+    at WithNonAdminSetupBanner (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:92:36)
+    at ProductOnboardingGateAfterAuth (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:148:43)
+    at ProductOnboardingGate (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:438:41)
+    at main
+    at div
+    at div
+    at div
+    at DesktopLayout (http://127.0.0.1:5000/src/components/layout/desktop-layout.tsx?t=1788803894904:16:33)
+    at AppShellLayout (http://127.0.0.1:5000/src/app/app-shell-layout.tsx?t=1788803894904:13:34)
+    at div
+    at ElectronProvider (http://127.0.0.1:5000/src/contexts/electron-provider.tsx:12:36)
+    at HelpExplainProvider (http://127.0.0.1:5000/src/contexts/help-explain-context.tsx:24:39)
+    at TrainingPanelProvider (http://127.0.0.1:5000/src/contexts/training-panel-context.tsx:7:41)
+    at TutorialProvider (http://127.0.0.1:5000/src/contexts/tutorial-context.tsx:26:36)
+    at AuthProvider (http://127.0.0.1:5000/src/hooks/use-auth.tsx:12:32)
+    at QueryClientProvider (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/@tanstack_react-query.js?v=adda0981:2284:30)
+    at AccentProvider (http://127.0.0.1:5000/src/components/accent-provider.tsx:87:34)
+    at DensityProvider (http://127.0.0.1:5000/src/components/density-provider.tsx:7:35)
+    at ThemeProvider (http://127.0.0.1:5000/src/components/theme-provider.tsx:13:33)
+    at AppProviders (http://127.0.0.1:5000/src/app/app-providers.tsx:14:32)
+    at AppErrorBoundary (http://127.0.0.1:5000/src/app/app-error-boundary.tsx:11:3)
+    at App (http://127.0.0.1:5000/src/App.tsx?t=1788803894904:27:2) @ http://127.0.0.1:5000/src/components/diagnostics/diagnostics-global-listeners.tsx:64
+[    2167ms] TypeError: Currency code is required with currency style.
+    at new NumberFormat (<anonymous>)
+    at money (http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:25:63)
+    at http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:526:11
+    at Array.map (<anonymous>)
+    at BlanketAgreementsPage (http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:468:82)
+    at renderWithHooks (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:9632:19)
+    at updateFunctionComponent (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:12122:19)
+    at beginWork (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:13096:13)
+    at HTMLUnknownElement.callCallback (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:3142:11)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:3162:14)
+[    2170ms] TypeError: Currency code is required with currency style.
+    at new NumberFormat (<anonymous>)
+    at money (http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:25:63)
+    at http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:526:11
+    at Array.map (<anonymous>)
+    at BlanketAgreementsPage (http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:468:82)
+    at renderWithHooks (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:9632:19)
+    at updateFunctionComponent (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:12122:19)
+    at beginWork (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:13096:13)
+    at HTMLUnknownElement.callCallback (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:3142:11)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:3162:14)
+[    2173ms] [ERROR] The above error occurred in the <BlanketAgreementsPage> component:
+
+    at BlanketAgreementsPage (http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:31:20)
+    at Route (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:181:16)
+    at ProtectedRoute (http://127.0.0.1:5000/src/lib/protected-route.tsx:12:34)
+    at Switch (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:222:17)
+    at Suspense
+    at RouteChunkErrorBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:192:3)
+    at RouteLoadingBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:300:40)
+    at AppRouter
+    at WithNonAdminSetupBanner (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:92:36)
+    at ProductOnboardingGateAfterAuth (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:148:43)
+    at ProductOnboardingGate (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:438:41)
+    at main
+    at div
+    at div
+    at div
+    at DesktopLayout (http://127.0.0.1:5000/src/components/layout/desktop-layout.tsx?t=1788803894904:16:33)
+    at AppShellLayout (http://127.0.0.1:5000/src/app/app-shell-layout.tsx?t=1788803894904:13:34)
+    at div
+    at ElectronProvider (http://127.0.0.1:5000/src/contexts/electron-provider.tsx:12:36)
+    at HelpExplainProvider (http://127.0.0.1:5000/src/contexts/help-explain-context.tsx:24:39)
+    at TrainingPanelProvider (http://127.0.0.1:5000/src/contexts/training-panel-context.tsx:7:41)
+    at TutorialProvider (http://127.0.0.1:5000/src/contexts/tutorial-context.tsx:26:36)
+    at AuthProvider (http://127.0.0.1:5000/src/hooks/use-auth.tsx:12:32)
+    at QueryClientProvider (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/@tanstack_react-query.js?v=adda0981:2284:30)
+    at AccentProvider (http://127.0.0.1:5000/src/components/accent-provider.tsx:87:34)
+    at DensityProvider (http://127.0.0.1:5000/src/components/density-provider.tsx:7:35)
+    at ThemeProvider (http://127.0.0.1:5000/src/components/theme-provider.tsx:13:33)
+    at AppProviders (http://127.0.0.1:5000/src/app/app-providers.tsx:14:32)
+    at AppErrorBoundary (http://127.0.0.1:5000/src/app/app-error-boundary.tsx:11:3)
+    at App (http://127.0.0.1:5000/src/App.tsx?t=1788803894904:27:2)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, RouteChunkErrorBoundary. @ http://127.0.0.1:5000/src/components/diagnostics/diagnostics-global-listeners.tsx:64
+[    2174ms] [ERROR] [RouteChunkErrorBoundary] Lazy route failed to load or run. This is a localized error (not necessarily a full app reload). Use Try again or Reload app; check the Network tab for failed chunk requests (often 401/502 on forwarded dev ports). Currency code is required with currency style. 
+    at BlanketAgreementsPage (http://127.0.0.1:5000/src/pages/blanket-agreements.tsx?t=1788803693015:31:20)
+    at Route (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:181:16)
+    at ProtectedRoute (http://127.0.0.1:5000/src/lib/protected-route.tsx:12:34)
+    at Switch (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:222:17)
+    at Suspense
+    at RouteChunkErrorBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:192:3)
+    at RouteLoadingBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:300:40)
+    at AppRouter
+    at WithNonAdminSetupBanner (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:92:36)
+    at ProductOnboardingGateAfterAuth (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:148:43)
+    at ProductOnboardingGate (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:438:41)
+    at main
+    at div
+    at div
+    at div
+    at DesktopLayout (http://127.0.0.1:5000/src/components/layout/desktop-layout.tsx?t=1788803894904:16:33)
+    at AppShellLayout (http://127.0.0.1:5000/src/app/app-shell-layout.tsx?t=1788803894904:13:34)
+    at div
+    at ElectronProvider (http://127.0.0.1:5000/src/contexts/electron-provider.tsx:12:36)
+    at HelpExplainProvider (http://127.0.0.1:5000/src/contexts/help-explain-context.tsx:24:39)
+    at TrainingPanelProvider (http://127.0.0.1:5000/src/contexts/training-panel-context.tsx:7:41)
+    at TutorialProvider (http://127.0.0.1:5000/src/contexts/tutorial-context.tsx:26:36)
+    at AuthProvider (http://127.0.0.1:5000/src/hooks/use-auth.tsx:12:32)
+    at QueryClientProvider (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/@tanstack_react-query.js?v=adda0981:2284:30)
+    at AccentProvider (http://127.0.0.1:5000/src/components/accent-provider.tsx:87:34)
+    at DensityProvider (http://127.0.0.1:5000/src/components/density-provider.tsx:7:35)
+    at ThemeProvider (http://127.0.0.1:5000/src/components/theme-provider.tsx:13:33)
+    at AppProviders (http://127.0.0.1:5000/src/app/app-providers.tsx:14:32)
+    at AppErrorBoundary (http://127.0.0.1:5000/src/app/app-error-boundary.tsx:11:3)
+    at App (http://127.0.0.1:5000/src/App.tsx?t=1788803894904:27:2) @ http://127.0.0.1:5000/src/components/diagnostics/diagnostics-global-listeners.tsx:64
+[   63072ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=caa507e5:17232
+[  983857ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5000/@vite/client:992
+[  983863ms] [ERROR] Creating a worker from 'blob:http://127.0.0.1:5000/a96acbfa-1570-4c46-bae0-6dbae2ae25ed' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked. @ http://127.0.0.1:5000/@vite/client:1062
+[  995902ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[  996090ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1027960ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1028133ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1060008ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1060179ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1092069ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1092211ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1124132ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1124264ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1156180ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1156305ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1188226ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1188351ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1220289ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1220404ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1252328ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1252460ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0
+[ 1282568ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/src/pages/procurement-receiving.tsx:0
+[ 1282835ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/src/pages/orders.tsx:0
+[ 1283571ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/src/pages/purchase-page.tsx:0
+[ 1283573ms] Failed to fetch dynamically imported module: http://127.0.0.1:5000/src/pages/purchase-page.tsx
+[ 1283587ms] Failed to fetch dynamically imported module: http://127.0.0.1:5000/src/pages/purchase-page.tsx
+[ 1283590ms] [ERROR] The above error occurred in the <Context.Provider> component:
+
+    at Route (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:181:16)
+    at ProtectedRoute (http://127.0.0.1:5000/src/lib/protected-route.tsx:12:34)
+    at Switch (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:222:17)
+    at Suspense
+    at RouteChunkErrorBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:192:3)
+    at RouteLoadingBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:300:40)
+    at AppRouter
+    at WithNonAdminSetupBanner (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:92:36)
+    at ProductOnboardingGateAfterAuth (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:148:43)
+    at ProductOnboardingGate (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:438:41)
+    at main
+    at div
+    at div
+    at div
+    at DesktopLayout (http://127.0.0.1:5000/src/components/layout/desktop-layout.tsx?t=1788803894904:16:33)
+    at AppShellLayout (http://127.0.0.1:5000/src/app/app-shell-layout.tsx?t=1788803894904:13:34)
+    at div
+    at ElectronProvider (http://127.0.0.1:5000/src/contexts/electron-provider.tsx:12:36)
+    at HelpExplainProvider (http://127.0.0.1:5000/src/contexts/help-explain-context.tsx:24:39)
+    at TrainingPanelProvider (http://127.0.0.1:5000/src/contexts/training-panel-context.tsx:7:41)
+    at TutorialProvider (http://127.0.0.1:5000/src/contexts/tutorial-context.tsx:26:36)
+    at AuthProvider (http://127.0.0.1:5000/src/hooks/use-auth.tsx:12:32)
+    at QueryClientProvider (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/@tanstack_react-query.js?v=adda0981:2284:30)
+    at AccentProvider (http://127.0.0.1:5000/src/components/accent-provider.tsx:87:34)
+    at DensityProvider (http://127.0.0.1:5000/src/components/density-provider.tsx:7:35)
+    at ThemeProvider (http://127.0.0.1:5000/src/components/theme-provider.tsx:13:33)
+    at AppProviders (http://127.0.0.1:5000/src/app/app-providers.tsx:14:32)
+    at AppErrorBoundary (http://127.0.0.1:5000/src/app/app-error-boundary.tsx:11:3)
+    at App (http://127.0.0.1:5000/src/App.tsx?t=1788804346637:27:2)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, RouteChunkErrorBoundary. @ http://127.0.0.1:5000/src/components/diagnostics/diagnostics-global-listeners.tsx:64
+[ 1283591ms] [ERROR] [RouteChunkErrorBoundary] Lazy route failed to load or run. This is a localized error (not necessarily a full app reload). Use Try again or Reload app; check the Network tab for failed chunk requests (often 401/502 on forwarded dev ports). Failed to fetch dynamically imported module: http://127.0.0.1:5000/src/pages/purchase-page.tsx 
+    at Route (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:181:16)
+    at ProtectedRoute (http://127.0.0.1:5000/src/lib/protected-route.tsx:12:34)
+    at Switch (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/wouter.js?v=56a5b418:222:17)
+    at Suspense
+    at RouteChunkErrorBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:192:3)
+    at RouteLoadingBoundary (http://127.0.0.1:5000/src/app/route-loading-boundary.tsx:300:40)
+    at AppRouter
+    at WithNonAdminSetupBanner (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:92:36)
+    at ProductOnboardingGateAfterAuth (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:148:43)
+    at ProductOnboardingGate (http://127.0.0.1:5000/src/components/setup/product-onboarding-gate.tsx:438:41)
+    at main
+    at div
+    at div
+    at div
+    at DesktopLayout (http://127.0.0.1:5000/src/components/layout/desktop-layout.tsx?t=1788803894904:16:33)
+    at AppShellLayout (http://127.0.0.1:5000/src/app/app-shell-layout.tsx?t=1788803894904:13:34)
+    at div
+    at ElectronProvider (http://127.0.0.1:5000/src/contexts/electron-provider.tsx:12:36)
+    at HelpExplainProvider (http://127.0.0.1:5000/src/contexts/help-explain-context.tsx:24:39)
+    at TrainingPanelProvider (http://127.0.0.1:5000/src/contexts/training-panel-context.tsx:7:41)
+    at TutorialProvider (http://127.0.0.1:5000/src/contexts/tutorial-context.tsx:26:36)
+    at AuthProvider (http://127.0.0.1:5000/src/hooks/use-auth.tsx:12:32)
+    at QueryClientProvider (http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/@tanstack_react-query.js?v=adda0981:2284:30)
+    at AccentProvider (http://127.0.0.1:5000/src/components/accent-provider.tsx:87:34)
+    at DensityProvider (http://127.0.0.1:5000/src/components/density-provider.tsx:7:35)
+    at ThemeProvider (http://127.0.0.1:5000/src/components/theme-provider.tsx:13:33)
+    at AppProviders (http://127.0.0.1:5000/src/app/app-providers.tsx:14:32)
+    at AppErrorBoundary (http://127.0.0.1:5000/src/app/app-error-boundary.tsx:11:3)
+    at App (http://127.0.0.1:5000/src/App.tsx?t=1788804346637:27:2) @ http://127.0.0.1:5000/src/components/diagnostics/diagnostics-global-listeners.tsx:64
+[ 1283810ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/favicon.ico:0
+[ 1283850ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/notifications?page=1&pageSize=8:0
+[ 1284368ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0

@@ -1,0 +1,859 @@
+﻿
+> rest-express@1.0.0 lint
+> eslint "client/src/**/*.{ts,tsx}" "server/**/*.ts" "shared/**/*.ts"
+
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\App.tsx
+  38:10  warning  'useState' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  46:10  warning  'TitleBar' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\activity\entity-activity-panel.tsx
+  5:38  warning  'ActivityRecord' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\analytics\demand-forecast.tsx
+    7:10  warning  'CalendarIcon' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+    7:24  warning  'ChevronLeft' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+    7:37  warning  'ChevronRight' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   28:39  warning  'range' is assigned a value but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+   28:46  warning  'updateRange' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  185:40  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\analytics\inventory-value.tsx
+   59:47  warning  Unexpected any. Specify a different type                                 @typescript-eslint/no-explicit-any
+  146:42  warning  'entry' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\analytics\top-items.tsx
+  12:10  warning  'formatCurrency' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+  18:39  warning  'range' is assigned a value but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+  18:46  warning  'updateRange' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\analytics\value-by-category-chart.tsx
+  24:9  warning  The 'items' conditional could make the dependencies of useMemo Hook (at line 52) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'items' in its own useMemo() Hook            react-hooks/exhaustive-deps
+  30:9  warning  The 'categories' conditional could make the dependencies of useMemo Hook (at line 52) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'categories' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\barcode\barcode-generator.tsx
+   6:16  warning  'TabsContent' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  22:55  warning  'onClose' is defined but never used. Allowed unused args must match /^_/u      @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\billing\invoice-dialog.tsx
+   18:3   warning  'FormDescription' is defined but never used. Allowed unused vars must match /^_/u                                 @typescript-eslint/no-unused-vars
+  224:6   warning  React Hook useEffect has a missing dependency: 'defaultValues'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  412:39  warning  Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\billing\invoices-list.tsx
+   46:13  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+   48:27  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+   49:28  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+   63:58  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  142:39  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  155:17  warning  'id' is defined but never used. Allowed unused args must match /^_/u       @typescript-eslint/no-unused-vars
+  199:39  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  204:37  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  209:29  warning  'invoice' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  209:38  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  216:32  warning  'invoice' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  216:41  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\billing\payment-dialog.tsx
+   87:10  warning  'selectedInvoice' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  160:39  warning  Unexpected any. Specify a different type                                                    @typescript-eslint/no-explicit-any
+  211:11  warning  'invoice' is assigned a value but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\billing\payments-list.tsx
+   45:13  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+   58:58  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  134:39  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  147:17  warning  'id' is defined but never used. Allowed unused args must match /^_/u       @typescript-eslint/no-unused-vars
+  171:39  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  177:29  warning  'payment' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  177:38  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  184:32  warning  'payment' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  184:41  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+  191:35  warning  'payment' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  191:44  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\dashboard\custom-graph-builder.tsx
+   68:9   warning  The 'inventory' conditional could make the dependencies of useMemo Hook (at line 159) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'inventory' in its own useMemo() Hook    react-hooks/exhaustive-deps
+   74:9   warning  The 'categories' conditional could make the dependencies of useMemo Hook (at line 159) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'categories' in its own useMemo() Hook  react-hooks/exhaustive-deps
+   88:9   warning  The 'stockUsage' conditional could make the dependencies of useMemo Hook (at line 159) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'stockUsage' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  181:11  warning  'isPie' is assigned a value but never used. Allowed unused vars must match /^_/u                                                                                                                                                      @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\dashboard\recent-orders.tsx
+  19:10  warning  'formatDate' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\electron\index.tsx
+  1:8  warning  'React' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\electron\local-database-info.tsx
+  3:46  warning  'FileText' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\electron\offline-mode-indicator.tsx
+  12:10  warning  'connectionStatus' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\electron\update-notification.tsx
+  22:67  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\inventory\image-recognition-status.tsx
+  107:51  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\inventory\image-recognition-upload.tsx
+   22:78  warning  'FormMessage' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+   28:29  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+   45:56  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  122:34  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\inventory\item-form.tsx
+  55:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:53  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\inventory\real-time-inventory.tsx
+    1:20  warning  'useEffect' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+   24:54  warning  Unexpected any. Specify a different type                                     @typescript-eslint/no-explicit-any
+   29:43  warning  Unexpected any. Specify a different type                                     @typescript-eslint/no-explicit-any
+   39:38  warning  Unexpected any. Specify a different type                                     @typescript-eslint/no-explicit-any
+  149:89  warning  Unexpected any. Specify a different type                                     @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\inventory\stock-movements-list.tsx
+   4:41  warning  'Download' is defined but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+  61:6   warning  'Warehouse' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\real-time-updates.tsx
+    1:27  warning  'useEffect' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+    2:24  warning  'WebSocketMessage' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+   10:35  warning  'BarChart2' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+   20:13  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+   32:43  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+   46:38  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+   66:41  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+  100:24  warning  'sendMessage' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  100:46  warning  'disconnect' is assigned a value but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\reports\report-filters.tsx
+  47:6  warning  React Hook useEffect has missing dependencies: 'filter' and 'setFilter'. Either include them or remove the dependency array. If 'setFilter' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\settings\billing-settings-form.tsx
+   21:3   warning  'CardFooter' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+   45:3   warning  'DollarSign' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+   46:3   warning  'Receipt' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+  110:16  warning  'isLoadingSettings' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\settings\database-settings-form.tsx
+  18:71  warning  'Download' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+  18:81  warning  'Upload' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+  22:49  warning  'DatabaseInfo' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+  22:63  warning  'BackupResult' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+  24:3   warning  'Select' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+  25:3   warning  'SelectContent' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+  26:3   warning  'SelectItem' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+  27:3   warning  'SelectTrigger' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+  28:3   warning  'SelectValue' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  63:22  warning  'setIsElectron' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\settings\general-settings-form.tsx
+  5:28  warning  'AppSettings' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  8:10  warning  'Label' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\settings\security-settings-form.tsx
+  22:3   warning  'Select' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  23:3   warning  'SelectContent' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  24:3   warning  'SelectItem' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+  25:3   warning  'SelectTrigger' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  26:3   warning  'SelectValue' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+  45:11  warning  'settings' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\settings\tax-settings-form.tsx
+  15:10  warning  'Input' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\sync\real-time-sync-status.tsx
+   2:27  warning  'SyncMessageType' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+   2:44  warning  'SyncMessage' is defined but never used. Allowed unused vars must match /^_/u                 @typescript-eslint/no-unused-vars
+   6:64  warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+  16:10  warning  'isFeatureEnabled' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+  28:26  warning  'setPendingChanges' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\sync\real-time-sync-tester.tsx
+   6:10  warning  'Input' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  10:10  warning  'Loader2' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  10:25  warning  'RefreshCw' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+  14:46  warning  'CardFooter' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+  18:10  warning  'isFeatureEnabled' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  68:10  warning  'latencies' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\tutorial\tutorial-button.tsx
+  40:3  warning  'CardFooter' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\tutorial\tutorial-steps.tsx
+  454:6  warning  React Hook useEffect has a missing dependency: 'registerTutorial'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\ui\calendar.tsx
+  55:25  warning  'props' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  56:26  warning  'props' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\ui\data-table.tsx
+  41:3  warning  'searchColumn' is assigned a value but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\components\user\role-manager.tsx
+   3:26  warning  'Trash2' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+   3:34  warning  'Save' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+   3:40  warning  'Edit' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+  19:3   warning  'CardFooter' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  50:10  warning  'Checkbox' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  53:10  warning  'Separator' is defined but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\contexts\TutorialContext.tsx
+   23:28  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   24:37  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   25:18  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   38:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   51:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   57:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   70:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   76:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+   91:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  104:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  110:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  123:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  129:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  144:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  157:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  163:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  176:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  182:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  195:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  201:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  216:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  229:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  235:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  248:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  254:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  267:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  273:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  288:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  301:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  307:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  320:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  326:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  339:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  345:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  360:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  373:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  379:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  392:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  398:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  411:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  417:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  430:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  436:31  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  446:7   warning  'tourConfig' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  461:37  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  464:26  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  469:18  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+  485:18  warning  'e' is defined but never used. Allowed unused caught errors must match /^_/u           @typescript-eslint/no-unused-vars
+  494:41  warning  Unexpected any. Specify a different type                                               @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\contexts\electron-provider.tsx
+   8:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   9:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   9:58  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  10:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\contexts\tutorial-context.tsx
+  2:37  warning  'useEffect' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-barcode-scanner.ts
+   53:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  157:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-date-range-params.ts
+  1:33  warning  'useEffect' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  3:10  warning  'addDays' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-inventory-sync.tsx
+   9:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  18:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  19:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  20:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  21:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-permissions.tsx
+  115:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  119:50  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  137:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-query-state.ts
+  34:6  warning  React Hook useMemo has an unnecessary dependency: 'location'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-real-time-sync.ts
+   36:13  warning  Unexpected any. Specify a different type                                                                                      @typescript-eslint/no-explicit-any
+   75:11  warning  'toast' is assigned a value but never used. Allowed unused vars must match /^_/u                                              @typescript-eslint/no-unused-vars
+  201:6   warning  React Hook useCallback has a missing dependency: 'sendCapabilitiesMessage'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  251:40  warning  Unexpected any. Specify a different type                                                                                      @typescript-eslint/no-explicit-any
+  258:34  warning  Unexpected any. Specify a different type                                                                                      @typescript-eslint/no-explicit-any
+  276:18  warning  'e' is defined but never used. Allowed unused caught errors must match /^_/u                                                  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-toast.ts
+  18:7  warning  'actionTypes' is assigned a value but only used as a type. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\hooks\use-websocket.ts
+   8:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  15:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  16:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  17:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\lib\document-generator.ts
+   15:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   15:63  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   19:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   19:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   23:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   23:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   51:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  139:9   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  171:9   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  197:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  217:9   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\lib\electron-bridge.ts
+   25:14  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   25:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   32:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   40:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   48:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   52:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   98:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  141:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  144:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  164:58  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  179:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  195:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  212:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  213:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  215:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\auth-page.tsx
+    4:19  warning  'KeyRound' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+   51:54  warning  Unexpected any. Specify a different type                                                     @typescript-eslint/no-explicit-any
+   52:17  warning  'loginMutation' is assigned a value but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+   52:32  warning  'registerMutation' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+   54:10  warning  'location' is assigned a value but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+  207:31  warning  Unexpected any. Specify a different type                                                     @typescript-eslint/no-explicit-any
+  252:14  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u             @typescript-eslint/no-unused-vars
+  448:58  warning  Unexpected any. Specify a different type                                                     @typescript-eslint/no-explicit-any
+  474:26  warning  Unexpected any. Specify a different type                                                     @typescript-eslint/no-explicit-any
+  635:14  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u             @typescript-eslint/no-unused-vars
+  756:14  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u             @typescript-eslint/no-unused-vars
+  850:13  warning  Unexpected any. Specify a different type                                                     @typescript-eslint/no-explicit-any
+  899:14  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u             @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\barcode-scanner-page.tsx
+   8:27  warning  'Zap' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+  11:10  warning  'queryClient' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\dashboard.tsx
+   70:44  warning  'itemsLoading' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  112:23  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  134:23  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  147:23  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  156:23  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  165:23  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  179:23  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\document-extractor-page.tsx
+    5:54  warning  'ChevronDown' is defined but never used. Allowed unused vars must match /^_/u                                              @typescript-eslint/no-unused-vars
+   43:10  warning  'Textarea' is defined but never used. Allowed unused vars must match /^_/u                                                 @typescript-eslint/no-unused-vars
+   45:3   warning  'AlertDialog' is defined but never used. Allowed unused vars must match /^_/u                                              @typescript-eslint/no-unused-vars
+   46:3   warning  'AlertDialogAction' is defined but never used. Allowed unused vars must match /^_/u                                        @typescript-eslint/no-unused-vars
+   47:3   warning  'AlertDialogCancel' is defined but never used. Allowed unused vars must match /^_/u                                        @typescript-eslint/no-unused-vars
+   48:3   warning  'AlertDialogContent' is defined but never used. Allowed unused vars must match /^_/u                                       @typescript-eslint/no-unused-vars
+   49:3   warning  'AlertDialogDescription' is defined but never used. Allowed unused vars must match /^_/u                                   @typescript-eslint/no-unused-vars
+   50:3   warning  'AlertDialogFooter' is defined but never used. Allowed unused vars must match /^_/u                                        @typescript-eslint/no-unused-vars
+   51:3   warning  'AlertDialogHeader' is defined but never used. Allowed unused vars must match /^_/u                                        @typescript-eslint/no-unused-vars
+   52:3   warning  'AlertDialogTitle' is defined but never used. Allowed unused vars must match /^_/u                                         @typescript-eslint/no-unused-vars
+   53:3   warning  'AlertDialogTrigger' is defined but never used. Allowed unused vars must match /^_/u                                       @typescript-eslint/no-unused-vars
+  107:11  warning  Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  110:31  warning  Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  127:14  warning  Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  345:6   warning  React Hook useCallback has a missing dependency: 'handleDatabaseImport'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  579:66  warning  'key' is defined but never used. Allowed unused args must match /^_/u                                                      @typescript-eslint/no-unused-vars
+  798:72  warning  'key' is defined but never used. Allowed unused args must match /^_/u                                                      @typescript-eslint/no-unused-vars
+  961:72  warning  'key' is defined but never used. Allowed unused args must match /^_/u                                                      @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\download.tsx
+  4:20  warning  'Server' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\exceptions.tsx
+  10:10  warning  'Label' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\home.tsx
+  17:8  warning  'ControlTowerOverview' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\image-recognition-page.tsx
+   8:10  warning  'useQuery' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+   9:10  warning  'apiRequest' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  14:10  warning  'Badge' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+  16:24  warning  'AlertTriangle' is defined but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+  16:44  warning  'Server' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+  17:10  warning  'Button' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+  22:11  warning  'toast' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\logistics.tsx
+  38:8  warning  'ShipmentListItem' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\orders.tsx
+  33:8  warning  'PurchaseOrderListItem' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\profile.tsx
+    1:20  warning  'useRef' is defined but never used. Allowed unused vars must match /^_/u                                         @typescript-eslint/no-unused-vars
+    5:33  warning  'Mail' is defined but never used. Allowed unused vars must match /^_/u                                           @typescript-eslint/no-unused-vars
+   10:46  warning  'CardFooter' is defined but never used. Allowed unused vars must match /^_/u                                     @typescript-eslint/no-unused-vars
+   11:10  warning  'Tabs' is defined but never used. Allowed unused vars must match /^_/u                                           @typescript-eslint/no-unused-vars
+   11:16  warning  'TabsContent' is defined but never used. Allowed unused vars must match /^_/u                                    @typescript-eslint/no-unused-vars
+   11:29  warning  'TabsList' is defined but never used. Allowed unused vars must match /^_/u                                       @typescript-eslint/no-unused-vars
+   11:39  warning  'TabsTrigger' is defined but never used. Allowed unused vars must match /^_/u                                    @typescript-eslint/no-unused-vars
+   50:16  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u                                 @typescript-eslint/no-unused-vars
+   83:6   warning  React Hook useEffect has a missing dependency: 'profileForm'. Either include it or remove the dependency array   react-hooks/exhaustive-deps
+  114:6   warning  React Hook useEffect has a missing dependency: 'securityForm'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  123:57  warning  Unexpected any. Specify a different type                                                                         @typescript-eslint/no-explicit-any
+  339:51  warning  'res' is assigned a value but never used. Allowed unused vars must match /^_/u                                   @typescript-eslint/no-unused-vars
+  343:95  warning  Unexpected any. Specify a different type                                                                         @typescript-eslint/no-explicit-any
+  351:52  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u                                 @typescript-eslint/no-unused-vars
+  400:91  warning  Unexpected any. Specify a different type                                                                         @typescript-eslint/no-explicit-any
+  450:93  warning  Unexpected any. Specify a different type                                                                         @typescript-eslint/no-explicit-any
+  459:50  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u                                 @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\real-time-updates-page.tsx
+  55:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\reorder.tsx
+  1:20  warning  'useEffect' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\reports.tsx
+    9:10  warning  'Alert' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+    9:17  warning  'AlertDescription' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+    9:35  warning  'AlertTitle' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+  105:9   warning  'safeSuppliers' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\suppliers.tsx
+   6:46  warning  'CardFooter' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+   7:10  warning  'Tabs' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+   7:16  warning  'TabsContent' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+   7:29  warning  'TabsList' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+   7:39  warning  'TabsTrigger' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  14:3   warning  'DialogTrigger' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+  15:3   warning  'DialogFooter' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+  16:3   warning  'DialogClose' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  19:3   warning  'Table' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+  20:3   warning  'TableBody' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  21:3   warning  'TableCell' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  22:3   warning  'TableHead' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  23:3   warning  'TableHeader' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  24:3   warning  'TableRow' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+  30:10  warning  'Separator' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  31:10  warning  'Check' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+  31:52  warning  'Plus' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+  31:64  warning  'ExternalLink' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+  38:10  warning  'Badge' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+  58:10  warning  'logoUrl' is assigned a value but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+  58:19  warning  'setLogoUrl' is assigned a value but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+  67:42  warning  'isLogoLoading' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\sync-dashboard.tsx
+  11:60  warning  'Server' is defined but never used. Allowed unused vars must match /^_/u                 @typescript-eslint/no-unused-vars
+  28:10  warning  'activeTab' is assigned a value but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+  28:21  warning  'setActiveTab' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\sync-test-page.tsx
+  5:10  warning  'Tabs' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+  5:16  warning  'TabsContent' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  5:29  warning  'TabsList' is defined but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+  5:39  warning  'TabsTrigger' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  8:27  warning  'GearIcon' is defined but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\pages\warehouses.tsx
+  20:3   warning  'DialogTrigger' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  21:3   warning  'DialogClose' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  37:29  warning  'CardDescription' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  37:46  warning  'CardHeader' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+  37:58  warning  'CardTitle' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\client\src\types\qrcode.d.ts
+  46:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\auth.ts
+    8:10  warning  'User' is defined but never used. Allowed unused vars must match /^_/u                           @typescript-eslint/no-unused-vars
+   15:3   warning  'csrfProtection' is defined but never used. Allowed unused vars must match /^_/u                 @typescript-eslint/no-unused-vars
+   16:3   warning  'handleCSRFError' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+   17:3   warning  'detectSuspiciousActivity' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+   22:3   warning  'sendWelcomeEmail' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+   24:3   warning  'sendSuspiciousActivityEmail' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+   34:33  warning  `import()` type annotations are forbidden                                                        @typescript-eslint/consistent-type-imports
+  108:21  warning  Unexpected any. Specify a different type                                                         @typescript-eslint/no-explicit-any
+  109:21  warning  Unexpected any. Specify a different type                                                         @typescript-eslint/no-explicit-any
+  110:27  warning  Unexpected any. Specify a different type                                                         @typescript-eslint/no-explicit-any
+  125:25  warning  Unexpected any. Specify a different type                                                         @typescript-eslint/no-explicit-any
+  126:31  warning  Unexpected any. Specify a different type                                                         @typescript-eslint/no-explicit-any
+  369:15  warning  'confirmPassword' is assigned a value but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+  875:17  warning  'password' is assigned a value but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+  875:27  warning  'twoFactorSecret' is assigned a value but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+  875:44  warning  'passwordResetToken' is assigned a value but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  875:64  warning  'passwordResetExpires' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  936:15  warning  'password' is assigned a value but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+  936:25  warning  'twoFactorSecret' is assigned a value but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+  936:42  warning  'passwordResetToken' is assigned a value but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  936:62  warning  'passwordResetExpires' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\controllers\document-extractor-controller.ts
+   21:3   warning  'FileType' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+   47:7   warning  'fileFilter' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  205:16  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u       @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\controllers\image-recognition-controller.ts
+   62:53  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  158:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  189:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\controllers\profile-picture-controller.ts
+   49:13  warning  'password' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+   97:13  warning  'password' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  148:13  warning  'password' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\controllers\user-controller.ts
+   90:13  warning  'password' is assigned a value but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+  158:11  warning  'updatedSettings' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\database-storage.ts
+   14:3   warning  'supplierLogos' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+   16:3   warning  'vatRates' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+   21:3   warning  'barcodes' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+   22:3   warning  'demandForecasts' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+   22:25  warning  'DemandForecast' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+   22:46  warning  'InsertDemandForecast' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+   23:3   warning  'externalIntegrations' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+   23:30  warning  'ExternalIntegration' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   23:56  warning  'InsertExternalIntegration' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+   24:3   warning  'auditLogs' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+   24:19  warning  'AuditLog' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+   24:34  warning  'InsertAuditLog' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+   25:3   warning  'userPreferences' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+   26:3   warning  'permissions' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+   27:60  warning  'InsertUserVerificationToken' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+   28:32  warning  'InsertSession' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+   29:3   warning  'customRoles' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+   30:3   warning  'customRolePermissions' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+   34:3   warning  'userPerformanceMetrics' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+   35:3   warning  'timeRestrictions' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+   36:24  warning  'ItemStatus' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+   37:30  warning  'ReorderRequestStatus' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+   38:3   warning  'stockMovementTypeEnum' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+   38:26  warning  'userRoleEnum' is defined but never used. Allowed unused vars must match /^_/u                 @typescript-eslint/no-unused-vars
+   38:40  warning  'permissionTypeEnum' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+   38:60  warning  'resourceEnum' is defined but never used. Allowed unused vars must match /^_/u                 @typescript-eslint/no-unused-vars
+   39:24  warning  'PasswordResetRequest' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+   41:3   warning  'invoices' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+   42:3   warning  'invoiceItems' is defined but never used. Allowed unused vars must match /^_/u                 @typescript-eslint/no-unused-vars
+   43:3   warning  'payments' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+   44:3   warning  'billingSettings' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+   45:3   warning  'taxRates' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+   46:3   warning  'discounts' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+   47:3   warning  'billingReminderLogs' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   52:8   warning  'memorystore' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+   54:53  warning  'inArray' is defined but never used. Allowed unused vars must match /^_/u                      @typescript-eslint/no-unused-vars
+   54:62  warning  'isNull' is defined but never used. Allowed unused vars must match /^_/u                       @typescript-eslint/no-unused-vars
+   54:81  warning  'ne' is defined but never used. Allowed unused vars must match /^_/u                           @typescript-eslint/no-unused-vars
+   54:85  warning  'sql' is defined but never used. Allowed unused vars must match /^_/u                          @typescript-eslint/no-unused-vars
+  373:15  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+  467:25  warning  'userId' is defined but never used. Allowed unused args must match /^_/u                       @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\db.ts
+  9:7  warning  'DEFAULT_CONNECTION_STRING' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\forecast-service.ts
+   2:10  warning  'stockMovementTypeEnum' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  22:3   warning  'daysToForecast' is assigned a value but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  73:7   warning  'startWeek' is assigned a value but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+  74:7   warning  'endWeek' is assigned a value but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\index.ts
+   73:44  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  104:9   warning  'wsService' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  163:17  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\init-db.ts
+   3:3   warning  'inventoryItems' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+   4:3   warning  'warehouses' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   5:3   warning  'categories' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   6:3   warning  'suppliers' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+   8:3   warning  'permissions' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+   9:3   warning  'stockMovements' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  10:3   warning  'appSettings' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+  14:10  warning  'PgTable' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  49:11  warning  'userCount' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  52:12  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u      @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\operations-routes.ts
+  967:17  warning  'opSeed' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\proxy.ts
+  13:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  92:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\real-time-sync-service.ts
+   10:7   warning  'gunzipAsync' is assigned a value but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+   27:12  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+   55:5   warning  'syncSequence' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  246:65  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  286:63  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  314:17  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  394:69  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  419:17  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  492:92  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  602:43  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  603:21  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+  639:72  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\reorder-request-generators.ts
+    5:66  warning  Unexpected any. Specify a different type                                 @typescript-eslint/no-explicit-any
+  174:66  warning  Unexpected any. Specify a different type                                 @typescript-eslint/no-explicit-any
+  174:73  warning  'title' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  197:68  warning  Unexpected any. Specify a different type                                 @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\routes.ts
+    12:3   warning  'generateReorderRequestsPdfReport' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+    13:3   warning  'generateReorderRequestsCsvReport' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+    14:3   warning  'generateReorderRequestsExcelReport' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+    42:3   warning  'insertAppSettingsSchema' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+    45:3   warning  'insertReorderRequestSchema' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+    48:3   warning  'barcodeFormSchema' is defined but never used. Allowed unused vars must match /^_/u                        @typescript-eslint/no-unused-vars
+    50:3   warning  'warehouseFormSchema' is defined but never used. Allowed unused vars must match /^_/u                      @typescript-eslint/no-unused-vars
+    53:3   warning  'stockMovementFormSchema' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+    58:3   warning  'userRoleEnum' is defined but never used. Allowed unused vars must match /^_/u                             @typescript-eslint/no-unused-vars
+    59:3   warning  'resourceEnum' is defined but never used. Allowed unused vars must match /^_/u                             @typescript-eslint/no-unused-vars
+    60:3   warning  'permissionTypeEnum' is defined but never used. Allowed unused vars must match /^_/u                       @typescript-eslint/no-unused-vars
+    62:8   warning  'Resource' is defined but never used. Allowed unused vars must match /^_/u                                 @typescript-eslint/no-unused-vars
+    63:8   warning  'PermissionType' is defined but never used. Allowed unused vars must match /^_/u                           @typescript-eslint/no-unused-vars
+    65:8   warning  'DocumentType' is defined but never used. Allowed unused vars must match /^_/u                             @typescript-eslint/no-unused-vars
+   890:60  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  1172:60  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  1476:21  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  1555:17  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  1872:18  warning  'e' is defined but never used. Allowed unused caught errors must match /^_/u                               @typescript-eslint/no-unused-vars
+  2926:42  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  2951:42  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  3704:17  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  4612:16  warning  'generateInventoryPdfReport' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  4612:50  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  4798:16  warning  'generateInventoryCsvReport' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  4798:50  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  4838:16  warning  'generateInventoryExcelReport' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  4838:52  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  4914:16  warning  'generatePurchaseOrdersPdfReport' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+  4914:55  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5086:16  warning  'generatePurchaseOrdersCsvReport' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+  5086:55  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5126:16  warning  'generatePurchaseOrdersExcelReport' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+  5126:57  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5202:16  warning  'generatePurchaseRequisitionsPdfReport' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  5202:61  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5374:16  warning  'generatePurchaseRequisitionsCsvReport' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+  5374:61  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5414:16  warning  'generatePurchaseRequisitionsExcelReport' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  5414:63  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5491:16  warning  'generateSuppliersPdfReport' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  5491:50  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5660:16  warning  'generateSuppliersCsvReport' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+  5660:50  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+  5697:16  warning  'generateSuppliersExcelReport' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+  5697:52  warning  Unexpected any. Specify a different type                                                                   @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\seed-operational.ts
+  26:9  warning  'shipmentCount' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\seed.ts
+  26:8  warning  'InsertPurchaseRequisition' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+  27:8  warning  'InsertPurchaseRequisitionItem' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  28:8  warning  'InsertPurchaseOrder' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+  29:8  warning  'InsertPurchaseOrderItem' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\cloudinary-service.ts
+  27:31  warning  'file' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+  34:8   warning  Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  56:72  warning  Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\document-extractor-service.ts
+   16:13  warning  'util' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+   37:35  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+   48:9   warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+   51:29  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  163:20  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  164:36  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  184:16  warning  'error' is defined but never used. Allowed unused caught errors must match /^_/u      @typescript-eslint/no-unused-vars
+  198:54  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  207:26  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  207:34  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  216:20  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  217:24  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  220:32  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  247:50  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  250:43  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  265:29  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  320:36  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  341:36  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  346:39  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  397:3   warning  'options' is assigned a value but never used. Allowed unused args must match /^_/u    @typescript-eslint/no-unused-vars
+  403:36  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  404:36  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  469:19  warning  'hocr' is assigned a value but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+  469:25  warning  'tsv' is assigned a value but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+  473:22  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  474:21  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  478:19  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  479:23  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  518:41  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  567:45  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  912:16  warning  'insertIntoDatabase' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  912:41  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+  912:48  warning  'schemaName' is defined but never used. Allowed unused args must match /^_/u          @typescript-eslint/no-unused-vars
+  969:62  warning  Unexpected any. Specify a different type                                              @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\document-generator-service.test.ts
+  56:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\document-generator-service.ts
+    5:10   warning  'createWriteStream' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+   13:3    warning  'ReorderRequest' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   14:3    warning  'User' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+   15:3    warning  'Supplier' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+   16:3    warning  'Warehouse' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+   17:3    warning  'Category' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+   18:3    warning  'PurchaseOrder' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+   19:3    warning  'PurchaseRequisition' is defined but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+   20:3    warning  'reportTypeEnum' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   21:3    warning  'reportFormatEnum' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+   25:7    warning  'pipelineAsync' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  118:18   warning  'height' is assigned a value but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+  266:100  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+  313:68   warning  'title' is defined but never used. Allowed unused args must match /^_/u                   @typescript-eslint/no-unused-vars
+  313:94   warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+  337:96   warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+  409:48   warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+  446:48   warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+  461:50   warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+  478:16   warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+  654:92   warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\email-service.ts
+   56:92  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   91:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  143:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  194:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  248:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  297:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\image-recognition-service.ts
+   8:13  warning  'fs' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+   9:13  warning  'path' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+  37:31  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  94:38  warning  'imageBuffer' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\openai-service.ts
+   10:13  warning  'fs' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+   95:43  warning  Unexpected any. Specify a different type                                      @typescript-eslint/no-explicit-any
+  105:24  warning  Unexpected any. Specify a different type                                      @typescript-eslint/no-explicit-any
+  109:14  warning  'e' is defined but never used. Allowed unused caught errors must match /^_/u  @typescript-eslint/no-unused-vars
+  267:31  warning  Unexpected any. Specify a different type                                      @typescript-eslint/no-explicit-any
+  305:43  warning  Unexpected any. Specify a different type                                      @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\pdfjs-setup.ts
+  52:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  57:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  73:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\services\security-service.ts
+  49:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\storage.ts
+     3:3   warning  'users' is defined but never used. Allowed unused vars must match /^_/u                            @typescript-eslint/no-unused-vars
+     4:3   warning  'categories' is defined but never used. Allowed unused vars must match /^_/u                       @typescript-eslint/no-unused-vars
+     5:3   warning  'inventoryItems' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+     6:3   warning  'suppliers' is defined but never used. Allowed unused vars must match /^_/u                        @typescript-eslint/no-unused-vars
+     7:3   warning  'supplierContracts' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+     8:3   warning  'purchaseRequisitions' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+     9:3   warning  'purchaseRequisitionItems' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+    10:3   warning  'purchaseOrders' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+    11:3   warning  'purchaseOrderItems' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+    12:3   warning  'activityLogs' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+    13:3   warning  'appSettings' is defined but never used. Allowed unused vars must match /^_/u                      @typescript-eslint/no-unused-vars
+    14:3   warning  'supplierLogos' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+    15:3   warning  'vatRates' is defined but never used. Allowed unused vars must match /^_/u                         @typescript-eslint/no-unused-vars
+    16:3   warning  'reorderRequests' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+    17:3   warning  'warehouses' is defined but never used. Allowed unused vars must match /^_/u                       @typescript-eslint/no-unused-vars
+    18:3   warning  'stockMovements' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+    19:3   warning  'warehouseInventory' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+    20:3   warning  'barcodes' is defined but never used. Allowed unused vars must match /^_/u                         @typescript-eslint/no-unused-vars
+    21:3   warning  'demandForecasts' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+    21:46  warning  'InsertDemandForecast' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+    22:3   warning  'externalIntegrations' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+    22:56  warning  'InsertExternalIntegration' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+    23:3   warning  'auditLogs' is defined but never used. Allowed unused vars must match /^_/u                        @typescript-eslint/no-unused-vars
+    23:34  warning  'InsertAuditLog' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+    24:3   warning  'userPreferences' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+    25:3   warning  'permissions' is defined but never used. Allowed unused vars must match /^_/u                      @typescript-eslint/no-unused-vars
+    26:3   warning  'userVerificationTokens' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+    26:60  warning  'InsertUserVerificationToken' is defined but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+    27:3   warning  'sessions' is defined but never used. Allowed unused vars must match /^_/u                         @typescript-eslint/no-unused-vars
+    27:32  warning  'InsertSession' is defined but never used. Allowed unused vars must match /^_/u                    @typescript-eslint/no-unused-vars
+    28:3   warning  'customRoles' is defined but never used. Allowed unused vars must match /^_/u                      @typescript-eslint/no-unused-vars
+    29:3   warning  'customRolePermissions' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+    30:3   warning  'userAccessLogs' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+    31:3   warning  'userContacts' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+    32:3   warning  'userSecuritySettings' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+    33:3   warning  'userPerformanceMetrics' is defined but never used. Allowed unused vars must match /^_/u           @typescript-eslint/no-unused-vars
+    34:3   warning  'timeRestrictions' is defined but never used. Allowed unused vars must match /^_/u                 @typescript-eslint/no-unused-vars
+    35:24  warning  'ItemStatus' is defined but never used. Allowed unused vars must match /^_/u                       @typescript-eslint/no-unused-vars
+    37:3   warning  'stockMovementTypeEnum' is defined but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+    37:26  warning  'userRoleEnum' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+    37:40  warning  'permissionTypeEnum' is defined but never used. Allowed unused vars must match /^_/u               @typescript-eslint/no-unused-vars
+    37:60  warning  'resourceEnum' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+    38:24  warning  'PasswordResetRequest' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+    40:3   warning  'invoices' is defined but never used. Allowed unused vars must match /^_/u                         @typescript-eslint/no-unused-vars
+    41:3   warning  'invoiceItems' is defined but never used. Allowed unused vars must match /^_/u                     @typescript-eslint/no-unused-vars
+    42:3   warning  'payments' is defined but never used. Allowed unused vars must match /^_/u                         @typescript-eslint/no-unused-vars
+    43:3   warning  'billingSettings' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+    44:3   warning  'taxRates' is defined but never used. Allowed unused vars must match /^_/u                         @typescript-eslint/no-unused-vars
+    45:3   warning  'discounts' is defined but never used. Allowed unused vars must match /^_/u                        @typescript-eslint/no-unused-vars
+    46:3   warning  'billingReminderLogs' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+    47:3   warning  'imageAnalysisLogs' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+    52:10  warning  'db' is defined but never used. Allowed unused vars must match /^_/u                               @typescript-eslint/no-unused-vars
+    52:14  warning  'pool' is defined but never used. Allowed unused vars must match /^_/u                             @typescript-eslint/no-unused-vars
+    53:10  warning  'eq' is defined but never used. Allowed unused vars must match /^_/u                               @typescript-eslint/no-unused-vars
+    53:14  warning  'and' is defined but never used. Allowed unused vars must match /^_/u                              @typescript-eslint/no-unused-vars
+    53:19  warning  'or' is defined but never used. Allowed unused vars must match /^_/u                               @typescript-eslint/no-unused-vars
+    53:23  warning  'like' is defined but never used. Allowed unused vars must match /^_/u                             @typescript-eslint/no-unused-vars
+    53:29  warning  'desc' is defined but never used. Allowed unused vars must match /^_/u                             @typescript-eslint/no-unused-vars
+    53:35  warning  'lte' is defined but never used. Allowed unused vars must match /^_/u                              @typescript-eslint/no-unused-vars
+    53:40  warning  'gte' is defined but never used. Allowed unused vars must match /^_/u                              @typescript-eslint/no-unused-vars
+    53:45  warning  'gt' is defined but never used. Allowed unused vars must match /^_/u                               @typescript-eslint/no-unused-vars
+    53:49  warning  'lt' is defined but never used. Allowed unused vars must match /^_/u                               @typescript-eslint/no-unused-vars
+    53:53  warning  'inArray' is defined but never used. Allowed unused vars must match /^_/u                          @typescript-eslint/no-unused-vars
+    53:62  warning  'isNull' is defined but never used. Allowed unused vars must match /^_/u                           @typescript-eslint/no-unused-vars
+    53:70  warning  'isNotNull' is defined but never used. Allowed unused vars must match /^_/u                        @typescript-eslint/no-unused-vars
+    53:81  warning  'ne' is defined but never used. Allowed unused vars must match /^_/u                               @typescript-eslint/no-unused-vars
+    53:85  warning  'sql' is defined but never used. Allowed unused vars must match /^_/u                              @typescript-eslint/no-unused-vars
+    56:7   warning  'PostgresSessionStore' is assigned a value but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+   158:59  warning  Unexpected any. Specify a different type                                                           @typescript-eslint/no-explicit-any
+   945:46  warning  Unexpected any. Specify a different type                                                           @typescript-eslint/no-explicit-any
+  1540:45  warning  'verified' is defined but never used. Allowed unused args must match /^_/u                         @typescript-eslint/no-unused-vars
+  2815:11  warning  'updatedSourceInventory' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+  5261:25  warning  Unexpected any. Specify a different type                                                           @typescript-eslint/no-explicit-any
+
+C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\server\websocket-service.ts
+    7:10  warning  'AppSettings' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+   25:12  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  404:47  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  494:45  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+
+Ô£û 660 problems (0 errors, 660 warnings)
+

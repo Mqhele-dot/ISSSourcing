@@ -1,0 +1,847 @@
+- generic [ref=f4e2]:
+  - generic [ref=f4e4]:
+    - link "Skip to main content" [ref=f4e5] [cursor=pointer]:
+      - /url: "#main-content"
+    - generic [ref=f4e6]:
+      - complementary [ref=f4e7]:
+        - generic [ref=f4e9]:
+          - heading "ISSSourcing" [level=1] [ref=f4e16]
+          - button "Collapse navigation sidebar" [ref=f4e18] [cursor=pointer]
+        - navigation [ref=f4e22]:
+          - generic [ref=f4e23]:
+            - generic [ref=f4e24]:
+              - paragraph [ref=f4e353]: Operations
+              - link "Overview (Preview)" [ref=f4e354] [cursor=pointer]:
+                - /url: /operations
+                - generic "Overview" [ref=f4e362]: Overview (Preview)
+              - link "Control tower (Preview)" [ref=f4e363] [cursor=pointer]:
+                - /url: /operations/control-tower
+                - generic "Control tower" [ref=f4e373]: Control tower (Preview)
+              - link "Logistics (Preview)" [ref=f4e374] [cursor=pointer]:
+                - /url: /operations/logistics
+                - generic "Logistics" [ref=f4e382]: Logistics (Preview)
+              - link "Exceptions (Preview)" [ref=f4e383] [cursor=pointer]:
+                - /url: /operations/exceptions
+                - generic "Exceptions" [ref=f4e388]: Exceptions (Preview)
+            - generic [ref=f4e61]:
+              - paragraph [ref=f4e389]: Inventory
+              - link "Inventory (Preview)" [ref=f4e390] [cursor=pointer]:
+                - /url: /inventory
+                - generic "Inventory" [ref=f4e396]: Inventory (Preview)
+              - link "Warehouse ops (Preview)" [ref=f4e397] [cursor=pointer]:
+                - /url: /inventory/warehouse-operations
+                - generic "Warehouse ops" [ref=f4e406]: Warehouse ops (Preview)
+              - link "Cycle counts (Preview)" [ref=f4e407] [cursor=pointer]:
+                - /url: /inventory/cycle-counts
+                - generic "Cycle counts" [ref=f4e415]: Cycle counts (Preview)
+              - link "Reorder requests (Preview)" [ref=f4e416] [cursor=pointer]:
+                - /url: /inventory/reorder
+                - generic "Reorder requests" [ref=f4e422]: Reorder requests (Preview)
+              - link "Barcode scanner (Preview)" [ref=f4e423] [cursor=pointer]:
+                - /url: /inventory/barcodes
+                - generic "Barcode scanner" [ref=f4e432]: Barcode scanner (Preview)
+            - generic [ref=f4e106]:
+              - paragraph [ref=f4e433]: Procurement
+              - link "Sourcing & RFQs" [ref=f4e434] [cursor=pointer]:
+                - /url: /procurement/sourcing
+                - generic "Sourcing & RFQs" [ref=f4e441]
+              - link "Purchase orders" [ref=f4e442] [cursor=pointer]:
+                - /url: /procurement/orders
+                - generic "Purchase orders" [ref=f4e449]
+              - link "Requisitions" [ref=f4e450] [cursor=pointer]:
+                - /url: /procurement/requisitions
+                - generic "Requisitions" [ref=f4e456]
+              - link "Suppliers" [ref=f4e457] [cursor=pointer]:
+                - /url: /procurement/suppliers
+                - generic "Suppliers" [ref=f4e465]
+              - link "Contracts" [ref=f4e466] [cursor=pointer]:
+                - /url: /procurement/contracts
+                - generic "Contracts" [ref=f4e472]
+              - link "Supplier portal" [ref=f4e473] [cursor=pointer]:
+                - /url: /procurement/supplier-portal
+                - generic "Supplier portal" [ref=f4e481]
+            - generic [ref=f4e156]:
+              - paragraph [ref=f4e482]: Finance
+              - link "Accounts payable (Preview)" [ref=f4e483] [cursor=pointer]:
+                - /url: /finance/accounts-payable
+                - generic "Accounts payable" [ref=f4e488]: Accounts payable (Preview)
+              - link "Invoices (Preview)" [ref=f4e489] [cursor=pointer]:
+                - /url: /finance/invoices
+                - generic "Invoices" [ref=f4e495]: Invoices (Preview)
+            - generic [ref=f4e171]:
+              - paragraph [ref=f4e496]: Analytics
+              - link "Overview" [ref=f4e497] [cursor=pointer]:
+                - /url: /analytics/overview
+                - generic "Overview" [ref=f4e501]
+              - link "Reports" [ref=f4e502] [cursor=pointer]:
+                - /url: /analytics/reports
+                - generic "Reports" [ref=f4e508]
+              - link "Saved reports" [ref=f4e509] [cursor=pointer]:
+                - /url: /analytics/saved-reports
+                - generic "Saved reports" [ref=f4e514]
+              - link "Export center" [ref=f4e515] [cursor=pointer]:
+                - /url: /analytics/export-center
+                - generic "Export center" [ref=f4e520]
+            - generic [ref=f4e197]:
+              - paragraph [ref=f4e521]: Admin
+              - link "Settings" [ref=f4e522] [cursor=pointer]:
+                - /url: /admin/settings
+                - generic "Settings" [ref=f4e528]
+              - link "Document extractor" [ref=f4e529] [cursor=pointer]:
+                - /url: /admin/document-extractor
+                - generic "Document extractor" [ref=f4e539]
+              - link "Integrations" [ref=f4e540] [cursor=pointer]:
+                - /url: /admin/integrations
+                - generic "Integrations" [ref=f4e545]
+              - link "Audit logs" [ref=f4e546] [cursor=pointer]:
+                - /url: /admin/audit-logs
+                - generic "Audit logs" [ref=f4e551]
+              - link "Subscription" [ref=f4e552] [cursor=pointer]:
+                - /url: /admin/subscription
+                - generic "Subscription" [ref=f4e557]
+              - generic [ref=f4e235]:
+                - paragraph [ref=f4e558]: Files & recognition
+                - link "Documents" [ref=f4e559] [cursor=pointer]:
+                  - /url: /admin/documents
+                  - generic "Documents" [ref=f4e564]
+                - link "Downloads" [ref=f4e565] [cursor=pointer]:
+                  - /url: /admin/downloads
+                  - generic "Downloads" [ref=f4e570]
+                - link "Image recognition" [ref=f4e571] [cursor=pointer]:
+                  - /url: /admin/image-recognition
+                  - generic "Image recognition" [ref=f4e577]
+              - paragraph [ref=f4e578]: People & access
+              - generic [ref=f4e258]:
+                - paragraph [ref=f4e579]: System & profile
+                - link "System diagnostics" [ref=f4e580] [cursor=pointer]:
+                  - /url: /admin/system-diagnostics
+                  - generic "System diagnostics" [ref=f4e590]
+                - link "Profile" [ref=f4e591] [cursor=pointer]:
+                  - /url: /admin/profile
+                  - generic "Profile" [ref=f4e597]
+            - generic [ref=f4e278]:
+              - paragraph [ref=f4e598]: Learning
+              - link "Get Educated" [ref=f4e599] [cursor=pointer]:
+                - /url: /get-educated
+                - generic "Get Educated" [ref=f4e605]
+        - button "Dark Mode" [ref=f4e288] [cursor=pointer]
+      - generic [ref=f4e292]:
+        - banner [ref=f4e293]:
+          - generic [ref=f4e294]:
+            - paragraph [ref=f4e295]: Inventory
+            - search [ref=f4e296]:
+              - combobox "Global search" [ref=f4e297]
+          - generic [ref=f4e298]:
+            - button "Jump to..." [ref=f4e299] [cursor=pointer]
+            - generic "System status" [ref=f4e303]: LIVE
+            - generic [ref=f4e304]: DEV
+            - generic [ref=f4e305]: ADMIN
+            - button "Toggle theme" [ref=f4e306] [cursor=pointer]
+            - button "Cycle accent palette" [ref=f4e310] [cursor=pointer]
+            - button "99+ Notifications" [ref=f4e606] [cursor=pointer]:
+              - generic [ref=f4e607]: 99+
+              - generic [ref=f4e322]: Notifications
+            - button "SA Open user menu" [ref=f4e608] [cursor=pointer]:
+              - generic [ref=f4e324]: SA
+              - generic [ref=f4e326]: Open user menu
+        - main [ref=f4e327]:
+          - generic [ref=f4e328]:
+            - generic [ref=f4e332]:
+              - text: New here?
+              - strong [ref=f4e333]: Inventory
+              - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+            - generic [ref=f4e334]:
+              - button "Open lesson" [ref=f4e335] [cursor=pointer]
+              - button "Spotlight tour" [ref=f4e338] [cursor=pointer]
+              - button "Dismiss" [ref=f4e339] [cursor=pointer]
+          - alert [ref=f4e609]:
+            - heading "Controlled preview" [level=5] [ref=f4e612]
+            - generic [ref=f4e613]: This module is outside the procurement-only V1 production boundary. Use it for testing, not production execution.
+          - generic [ref=f4e614]:
+            - generic [ref=f4e615]:
+              - generic [ref=f4e616]: Inventory / Overview
+              - generic [ref=f4e617]:
+                - generic [ref=f4e630]:
+                  - heading "Inventory" [level=1] [ref=f4e631]
+                  - paragraph [ref=f4e632]: Operational inventory overview
+                  - paragraph [ref=f4e633]: Track on-hand, allocated, and available stock with location-aware filtering.
+                - generic [ref=f4e635]:
+                  - button "Add item" [ref=f4e636] [cursor=pointer]
+                  - button "Export CSV (browser — visible rows)" [ref=f4e638] [cursor=pointer]
+                  - button "Server CSV" [ref=f4e642] [cursor=pointer]
+                  - button "Refresh" [ref=f4e643] [cursor=pointer]
+            - generic [ref=f4e651]:
+              - generic [ref=f4e656]:
+                - paragraph [ref=f4e657]: "Learning: Inventory"
+                - paragraph [ref=f4e658]: "The Inventory module is the master list of what you stock: SKUs, quantities, locations, and stock health signals such as low or negative availability."
+              - generic [ref=f4e659]:
+                - button "Learn this tab" [ref=f4e660] [cursor=pointer]
+                - button "Dismiss training panel for this visit" [ref=f4e663] [cursor=pointer]
+            - generic [ref=f4e667]:
+              - generic [ref=f4e668]:
+                - heading "Total SKUs" [level=3] [ref=f4e670]
+                - generic [ref=f4e671]: "441"
+              - generic [ref=f4e672]:
+                - heading "Low stock" [level=3] [ref=f4e674]
+                - generic [ref=f4e675]: "441"
+              - generic [ref=f4e676]:
+                - heading "Negative availability" [level=3] [ref=f4e678]
+                - generic [ref=f4e679]: "0"
+              - generic [ref=f4e680]:
+                - heading "Total on hand" [level=3] [ref=f4e682]
+                - generic [ref=f4e683]: "1605"
+              - generic [ref=f4e684]:
+                - heading "Total allocated" [level=3] [ref=f4e686]
+                - generic [ref=f4e687]: "10"
+              - generic [ref=f4e688]:
+                - heading "Total available" [level=3] [ref=f4e690]
+                - generic [ref=f4e691]: "1595"
+            - generic [ref=f4e692]:
+              - generic:
+                - textbox "Search SKU or item name" [ref=f4e694]
+                - combobox [ref=f4e695] [cursor=pointer]:
+                  - generic: All locations
+                - combobox [ref=f4e698] [cursor=pointer]:
+                  - generic: All categories
+              - generic [ref=f4e702]:
+                - combobox [ref=f4e703] [cursor=pointer]:
+                  - generic: Name A-Z
+                - generic [ref=f4e706]:
+                  - button "Table" [ref=f4e707] [cursor=pointer]
+                  - button "Cards" [ref=f4e709] [cursor=pointer]
+                - button "Clear filters" [ref=f4e715] [cursor=pointer]
+                - button "Low stock only" [ref=f4e717] [cursor=pointer]
+            - generic [ref=f4e718]:
+              - generic [ref=f4e719]: "Active filters:"
+              - button "Low stock only" [ref=f4e720] [cursor=pointer]
+            - table [ref=f4e1672]:
+              - rowgroup [ref=f4e1673]:
+                - row [ref=f4e1674]:
+                  - columnheader "Item" [ref=f4e1675]
+                  - columnheader "Location" [ref=f4e1676]
+                  - columnheader "Category" [ref=f4e1677]
+                  - columnheader "Stock position On hand / Alloc / Avail" [ref=f4e1678]:
+                    - generic [ref=f4e1679]:
+                      - generic [ref=f4e1680]: Stock position
+                      - generic [ref=f4e1681]: On hand / Alloc / Avail
+                  - columnheader "Warehouse / unassigned" [ref=f4e1682]
+                  - columnheader "Last movement" [ref=f4e1683]
+                  - columnheader "Threshold" [ref=f4e1684]
+                  - columnheader "Status" [ref=f4e1685]
+                  - columnheader "Updated" [ref=f4e1686]
+                  - columnheader "Actions" [ref=f4e1687]
+              - rowgroup [ref=f4e1688]:
+                - row [ref=f4e1689] [cursor=pointer]:
+                  - cell "Dependency Item 40425375 DEP-ITEM-40425375" [ref=f4e1690]:
+                    - generic [ref=f4e1691]: Dependency Item 40425375
+                    - generic [ref=f4e1692]: DEP-ITEM-40425375
+                  - cell "Unassigned" [ref=f4e1693]
+                  - cell "Uncategorised" [ref=f4e1694]
+                  - cell "10 / 0 / 10" [ref=f4e1695]:
+                    - generic [ref=f4e1696]:
+                      - generic [ref=f4e1697]: "10"
+                      - generic [ref=f4e1698]: /
+                      - generic [ref=f4e1699]: "0"
+                      - generic [ref=f4e1700]: /
+                      - generic [ref=f4e1701]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1702]:
+                    - generic [ref=f4e1703]: 0 / 10
+                    - generic [ref=f4e1704]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1705]
+                  - cell "10" [ref=f4e1707]
+                  - cell "Low" [ref=f4e1708]
+                  - cell "05/07/2026, 10:33:45" [ref=f4e1710]
+                  - cell [ref=f4e1711]:
+                    - generic [ref=f4e1712]:
+                      - button "Preview DEP-ITEM-40425375" [ref=f4e1713]
+                      - button "Open DEP-ITEM-40425375" [ref=f4e1718]
+                - row [ref=f4e1724] [cursor=pointer]:
+                  - cell "Dependency Item 40553355 DEP-ITEM-40553355" [ref=f4e1725]:
+                    - generic [ref=f4e1726]: Dependency Item 40553355
+                    - generic [ref=f4e1727]: DEP-ITEM-40553355
+                  - cell "Unassigned" [ref=f4e1728]
+                  - cell "Uncategorised" [ref=f4e1729]
+                  - cell "10 / 0 / 10" [ref=f4e1730]:
+                    - generic [ref=f4e1731]:
+                      - generic [ref=f4e1732]: "10"
+                      - generic [ref=f4e1733]: /
+                      - generic [ref=f4e1734]: "0"
+                      - generic [ref=f4e1735]: /
+                      - generic [ref=f4e1736]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1737]:
+                    - generic [ref=f4e1738]: 0 / 10
+                    - generic [ref=f4e1739]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1740]
+                  - cell "10" [ref=f4e1742]
+                  - cell "Low" [ref=f4e1743]
+                  - cell "05/07/2026, 10:35:53" [ref=f4e1745]
+                  - cell [ref=f4e1746]:
+                    - generic [ref=f4e1747]:
+                      - button "Preview DEP-ITEM-40553355" [ref=f4e1748]
+                      - button "Open DEP-ITEM-40553355" [ref=f4e1753]
+                - row [ref=f4e1759] [cursor=pointer]:
+                  - cell "Dependency Item 41425716 DEP-ITEM-41425716" [ref=f4e1760]:
+                    - generic [ref=f4e1761]: Dependency Item 41425716
+                    - generic [ref=f4e1762]: DEP-ITEM-41425716
+                  - cell "Unassigned" [ref=f4e1763]
+                  - cell "Uncategorised" [ref=f4e1764]
+                  - cell "10 / 0 / 10" [ref=f4e1765]:
+                    - generic [ref=f4e1766]:
+                      - generic [ref=f4e1767]: "10"
+                      - generic [ref=f4e1768]: /
+                      - generic [ref=f4e1769]: "0"
+                      - generic [ref=f4e1770]: /
+                      - generic [ref=f4e1771]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1772]:
+                    - generic [ref=f4e1773]: 0 / 10
+                    - generic [ref=f4e1774]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1775]
+                  - cell "10" [ref=f4e1777]
+                  - cell "Low" [ref=f4e1778]
+                  - cell "05/07/2026, 10:50:25" [ref=f4e1780]
+                  - cell [ref=f4e1781]:
+                    - generic [ref=f4e1782]:
+                      - button "Preview DEP-ITEM-41425716" [ref=f4e1783]
+                      - button "Open DEP-ITEM-41425716" [ref=f4e1788]
+                - row [ref=f4e1794] [cursor=pointer]:
+                  - cell "Dependency Item 41542186 DEP-ITEM-41542186" [ref=f4e1795]:
+                    - generic [ref=f4e1796]: Dependency Item 41542186
+                    - generic [ref=f4e1797]: DEP-ITEM-41542186
+                  - cell "Unassigned" [ref=f4e1798]
+                  - cell "Uncategorised" [ref=f4e1799]
+                  - cell "10 / 0 / 10" [ref=f4e1800]:
+                    - generic [ref=f4e1801]:
+                      - generic [ref=f4e1802]: "10"
+                      - generic [ref=f4e1803]: /
+                      - generic [ref=f4e1804]: "0"
+                      - generic [ref=f4e1805]: /
+                      - generic [ref=f4e1806]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1807]:
+                    - generic [ref=f4e1808]: 0 / 10
+                    - generic [ref=f4e1809]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1810]
+                  - cell "10" [ref=f4e1812]
+                  - cell "Low" [ref=f4e1813]
+                  - cell "05/07/2026, 10:52:22" [ref=f4e1815]
+                  - cell [ref=f4e1816]:
+                    - generic [ref=f4e1817]:
+                      - button "Preview DEP-ITEM-41542186" [ref=f4e1818]
+                      - button "Open DEP-ITEM-41542186" [ref=f4e1823]
+                - row [ref=f4e1829] [cursor=pointer]:
+                  - cell "Dependency Item 47649352 DEP-ITEM-47649352" [ref=f4e1830]:
+                    - generic [ref=f4e1831]: Dependency Item 47649352
+                    - generic [ref=f4e1832]: DEP-ITEM-47649352
+                  - cell "Unassigned" [ref=f4e1833]
+                  - cell "Uncategorised" [ref=f4e1834]
+                  - cell "10 / 0 / 10" [ref=f4e1835]:
+                    - generic [ref=f4e1836]:
+                      - generic [ref=f4e1837]: "10"
+                      - generic [ref=f4e1838]: /
+                      - generic [ref=f4e1839]: "0"
+                      - generic [ref=f4e1840]: /
+                      - generic [ref=f4e1841]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1842]:
+                    - generic [ref=f4e1843]: 0 / 10
+                    - generic [ref=f4e1844]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1845]
+                  - cell "10" [ref=f4e1847]
+                  - cell "Low" [ref=f4e1848]
+                  - cell "30/06/2026, 21:27:29" [ref=f4e1850]
+                  - cell [ref=f4e1851]:
+                    - generic [ref=f4e1852]:
+                      - button "Preview DEP-ITEM-47649352" [ref=f4e1853]
+                      - button "Open DEP-ITEM-47649352" [ref=f4e1858]
+                - row [ref=f4e1864] [cursor=pointer]:
+                  - cell "Dependency Item 47708338 DEP-ITEM-47708338" [ref=f4e1865]:
+                    - generic [ref=f4e1866]: Dependency Item 47708338
+                    - generic [ref=f4e1867]: DEP-ITEM-47708338
+                  - cell "Unassigned" [ref=f4e1868]
+                  - cell "Uncategorised" [ref=f4e1869]
+                  - cell "10 / 0 / 10" [ref=f4e1870]:
+                    - generic [ref=f4e1871]:
+                      - generic [ref=f4e1872]: "10"
+                      - generic [ref=f4e1873]: /
+                      - generic [ref=f4e1874]: "0"
+                      - generic [ref=f4e1875]: /
+                      - generic [ref=f4e1876]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1877]:
+                    - generic [ref=f4e1878]: 0 / 10
+                    - generic [ref=f4e1879]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1880]
+                  - cell "10" [ref=f4e1882]
+                  - cell "Low" [ref=f4e1883]
+                  - cell "30/06/2026, 21:28:28" [ref=f4e1885]
+                  - cell [ref=f4e1886]:
+                    - generic [ref=f4e1887]:
+                      - button "Preview DEP-ITEM-47708338" [ref=f4e1888]
+                      - button "Open DEP-ITEM-47708338" [ref=f4e1893]
+                - row [ref=f4e1899] [cursor=pointer]:
+                  - cell "Dependency Item 49372906 DEP-ITEM-49372906" [ref=f4e1900]:
+                    - generic [ref=f4e1901]: Dependency Item 49372906
+                    - generic [ref=f4e1902]: DEP-ITEM-49372906
+                  - cell "Unassigned" [ref=f4e1903]
+                  - cell "Uncategorised" [ref=f4e1904]
+                  - cell "10 / 0 / 10" [ref=f4e1905]:
+                    - generic [ref=f4e1906]:
+                      - generic [ref=f4e1907]: "10"
+                      - generic [ref=f4e1908]: /
+                      - generic [ref=f4e1909]: "0"
+                      - generic [ref=f4e1910]: /
+                      - generic [ref=f4e1911]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1912]:
+                    - generic [ref=f4e1913]: 0 / 10
+                    - generic [ref=f4e1914]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1915]
+                  - cell "10" [ref=f4e1917]
+                  - cell "Low" [ref=f4e1918]
+                  - cell "30/06/2026, 21:56:13" [ref=f4e1920]
+                  - cell [ref=f4e1921]:
+                    - generic [ref=f4e1922]:
+                      - button "Preview DEP-ITEM-49372906" [ref=f4e1923]
+                      - button "Open DEP-ITEM-49372906" [ref=f4e1928]
+                - row [ref=f4e1934] [cursor=pointer]:
+                  - cell "Dependency Item 49617009 DEP-ITEM-49617009" [ref=f4e1935]:
+                    - generic [ref=f4e1936]: Dependency Item 49617009
+                    - generic [ref=f4e1937]: DEP-ITEM-49617009
+                  - cell "Unassigned" [ref=f4e1938]
+                  - cell "Uncategorised" [ref=f4e1939]
+                  - cell "10 / 0 / 10" [ref=f4e1940]:
+                    - generic [ref=f4e1941]:
+                      - generic [ref=f4e1942]: "10"
+                      - generic [ref=f4e1943]: /
+                      - generic [ref=f4e1944]: "0"
+                      - generic [ref=f4e1945]: /
+                      - generic [ref=f4e1946]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1947]:
+                    - generic [ref=f4e1948]: 0 / 10
+                    - generic [ref=f4e1949]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1950]
+                  - cell "10" [ref=f4e1952]
+                  - cell "Low" [ref=f4e1953]
+                  - cell "30/06/2026, 22:00:17" [ref=f4e1955]
+                  - cell [ref=f4e1956]:
+                    - generic [ref=f4e1957]:
+                      - button "Preview DEP-ITEM-49617009" [ref=f4e1958]
+                      - button "Open DEP-ITEM-49617009" [ref=f4e1963]
+                - row [ref=f4e1969] [cursor=pointer]:
+                  - cell "Dependency Item 49845789 DEP-ITEM-49845789" [ref=f4e1970]:
+                    - generic [ref=f4e1971]: Dependency Item 49845789
+                    - generic [ref=f4e1972]: DEP-ITEM-49845789
+                  - cell "Unassigned" [ref=f4e1973]
+                  - cell "Uncategorised" [ref=f4e1974]
+                  - cell "10 / 0 / 10" [ref=f4e1975]:
+                    - generic [ref=f4e1976]:
+                      - generic [ref=f4e1977]: "10"
+                      - generic [ref=f4e1978]: /
+                      - generic [ref=f4e1979]: "0"
+                      - generic [ref=f4e1980]: /
+                      - generic [ref=f4e1981]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e1982]:
+                    - generic [ref=f4e1983]: 0 / 10
+                    - generic [ref=f4e1984]: 0 canonical positions
+                  - cell "No movements" [ref=f4e1985]
+                  - cell "10" [ref=f4e1987]
+                  - cell "Low" [ref=f4e1988]
+                  - cell "30/06/2026, 22:04:05" [ref=f4e1990]
+                  - cell [ref=f4e1991]:
+                    - generic [ref=f4e1992]:
+                      - button "Preview DEP-ITEM-49845789" [ref=f4e1993]
+                      - button "Open DEP-ITEM-49845789" [ref=f4e1998]
+                - row [ref=f4e2004] [cursor=pointer]:
+                  - cell "Dependency Item 50077264 DEP-ITEM-50077264" [ref=f4e2005]:
+                    - generic [ref=f4e2006]: Dependency Item 50077264
+                    - generic [ref=f4e2007]: DEP-ITEM-50077264
+                  - cell "Unassigned" [ref=f4e2008]
+                  - cell "Uncategorised" [ref=f4e2009]
+                  - cell "10 / 0 / 10" [ref=f4e2010]:
+                    - generic [ref=f4e2011]:
+                      - generic [ref=f4e2012]: "10"
+                      - generic [ref=f4e2013]: /
+                      - generic [ref=f4e2014]: "0"
+                      - generic [ref=f4e2015]: /
+                      - generic [ref=f4e2016]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2017]:
+                    - generic [ref=f4e2018]: 0 / 10
+                    - generic [ref=f4e2019]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2020]
+                  - cell "10" [ref=f4e2022]
+                  - cell "Low" [ref=f4e2023]
+                  - cell "30/06/2026, 22:07:57" [ref=f4e2025]
+                  - cell [ref=f4e2026]:
+                    - generic [ref=f4e2027]:
+                      - button "Preview DEP-ITEM-50077264" [ref=f4e2028]
+                      - button "Open DEP-ITEM-50077264" [ref=f4e2033]
+                - row [ref=f4e2039] [cursor=pointer]:
+                  - cell "Dependency Item 50968273 DEP-ITEM-50968273" [ref=f4e2040]:
+                    - generic [ref=f4e2041]: Dependency Item 50968273
+                    - generic [ref=f4e2042]: DEP-ITEM-50968273
+                  - cell "Unassigned" [ref=f4e2043]
+                  - cell "Uncategorised" [ref=f4e2044]
+                  - cell "10 / 0 / 10" [ref=f4e2045]:
+                    - generic [ref=f4e2046]:
+                      - generic [ref=f4e2047]: "10"
+                      - generic [ref=f4e2048]: /
+                      - generic [ref=f4e2049]: "0"
+                      - generic [ref=f4e2050]: /
+                      - generic [ref=f4e2051]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2052]:
+                    - generic [ref=f4e2053]: 0 / 10
+                    - generic [ref=f4e2054]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2055]
+                  - cell "10" [ref=f4e2057]
+                  - cell "Low" [ref=f4e2058]
+                  - cell "30/06/2026, 22:22:48" [ref=f4e2060]
+                  - cell [ref=f4e2061]:
+                    - generic [ref=f4e2062]:
+                      - button "Preview DEP-ITEM-50968273" [ref=f4e2063]
+                      - button "Open DEP-ITEM-50968273" [ref=f4e2068]
+                - row [ref=f4e2074] [cursor=pointer]:
+                  - cell "Dependency Item 51042229 DEP-ITEM-51042229" [ref=f4e2075]:
+                    - generic [ref=f4e2076]: Dependency Item 51042229
+                    - generic [ref=f4e2077]: DEP-ITEM-51042229
+                  - cell "Unassigned" [ref=f4e2078]
+                  - cell "Uncategorised" [ref=f4e2079]
+                  - cell "10 / 0 / 10" [ref=f4e2080]:
+                    - generic [ref=f4e2081]:
+                      - generic [ref=f4e2082]: "10"
+                      - generic [ref=f4e2083]: /
+                      - generic [ref=f4e2084]: "0"
+                      - generic [ref=f4e2085]: /
+                      - generic [ref=f4e2086]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2087]:
+                    - generic [ref=f4e2088]: 0 / 10
+                    - generic [ref=f4e2089]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2090]
+                  - cell "10" [ref=f4e2092]
+                  - cell "Low" [ref=f4e2093]
+                  - cell "30/06/2026, 22:24:02" [ref=f4e2095]
+                  - cell [ref=f4e2096]:
+                    - generic [ref=f4e2097]:
+                      - button "Preview DEP-ITEM-51042229" [ref=f4e2098]
+                      - button "Open DEP-ITEM-51042229" [ref=f4e2103]
+                - row [ref=f4e2109] [cursor=pointer]:
+                  - cell "Dependency Item 58249602 DEP-ITEM-58249602" [ref=f4e2110]:
+                    - generic [ref=f4e2111]: Dependency Item 58249602
+                    - generic [ref=f4e2112]: DEP-ITEM-58249602
+                  - cell "Unassigned" [ref=f4e2113]
+                  - cell "Uncategorised" [ref=f4e2114]
+                  - cell "10 / 0 / 10" [ref=f4e2115]:
+                    - generic [ref=f4e2116]:
+                      - generic [ref=f4e2117]: "10"
+                      - generic [ref=f4e2118]: /
+                      - generic [ref=f4e2119]: "0"
+                      - generic [ref=f4e2120]: /
+                      - generic [ref=f4e2121]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2122]:
+                    - generic [ref=f4e2123]: 0 / 10
+                    - generic [ref=f4e2124]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2125]
+                  - cell "10" [ref=f4e2127]
+                  - cell "Low" [ref=f4e2128]
+                  - cell "29/06/2026, 20:37:29" [ref=f4e2130]
+                  - cell [ref=f4e2131]:
+                    - generic [ref=f4e2132]:
+                      - button "Preview DEP-ITEM-58249602" [ref=f4e2133]
+                      - button "Open DEP-ITEM-58249602" [ref=f4e2138]
+                - row [ref=f4e2144] [cursor=pointer]:
+                  - cell "Dependency Item 58718660 DEP-ITEM-58718660" [ref=f4e2145]:
+                    - generic [ref=f4e2146]: Dependency Item 58718660
+                    - generic [ref=f4e2147]: DEP-ITEM-58718660
+                  - cell "Unassigned" [ref=f4e2148]
+                  - cell "Uncategorised" [ref=f4e2149]
+                  - cell "10 / 0 / 10" [ref=f4e2150]:
+                    - generic [ref=f4e2151]:
+                      - generic [ref=f4e2152]: "10"
+                      - generic [ref=f4e2153]: /
+                      - generic [ref=f4e2154]: "0"
+                      - generic [ref=f4e2155]: /
+                      - generic [ref=f4e2156]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2157]:
+                    - generic [ref=f4e2158]: 0 / 10
+                    - generic [ref=f4e2159]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2160]
+                  - cell "10" [ref=f4e2162]
+                  - cell "Low" [ref=f4e2163]
+                  - cell "29/06/2026, 20:45:18" [ref=f4e2165]
+                  - cell [ref=f4e2166]:
+                    - generic [ref=f4e2167]:
+                      - button "Preview DEP-ITEM-58718660" [ref=f4e2168]
+                      - button "Open DEP-ITEM-58718660" [ref=f4e2173]
+                - row [ref=f4e2179] [cursor=pointer]:
+                  - cell "Dependency Item 58762538 DEP-ITEM-58762538" [ref=f4e2180]:
+                    - generic [ref=f4e2181]: Dependency Item 58762538
+                    - generic [ref=f4e2182]: DEP-ITEM-58762538
+                  - cell "Unassigned" [ref=f4e2183]
+                  - cell "Uncategorised" [ref=f4e2184]
+                  - cell "10 / 0 / 10" [ref=f4e2185]:
+                    - generic [ref=f4e2186]:
+                      - generic [ref=f4e2187]: "10"
+                      - generic [ref=f4e2188]: /
+                      - generic [ref=f4e2189]: "0"
+                      - generic [ref=f4e2190]: /
+                      - generic [ref=f4e2191]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2192]:
+                    - generic [ref=f4e2193]: 0 / 10
+                    - generic [ref=f4e2194]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2195]
+                  - cell "10" [ref=f4e2197]
+                  - cell "Low" [ref=f4e2198]
+                  - cell "29/06/2026, 20:46:02" [ref=f4e2200]
+                  - cell [ref=f4e2201]:
+                    - generic [ref=f4e2202]:
+                      - button "Preview DEP-ITEM-58762538" [ref=f4e2203]
+                      - button "Open DEP-ITEM-58762538" [ref=f4e2208]
+                - row [ref=f4e2214] [cursor=pointer]:
+                  - cell "Dependency Item 60825328 DEP-ITEM-60825328" [ref=f4e2215]:
+                    - generic [ref=f4e2216]: Dependency Item 60825328
+                    - generic [ref=f4e2217]: DEP-ITEM-60825328
+                  - cell "Unassigned" [ref=f4e2218]
+                  - cell "Uncategorised" [ref=f4e2219]
+                  - cell "10 / 0 / 10" [ref=f4e2220]:
+                    - generic [ref=f4e2221]:
+                      - generic [ref=f4e2222]: "10"
+                      - generic [ref=f4e2223]: /
+                      - generic [ref=f4e2224]: "0"
+                      - generic [ref=f4e2225]: /
+                      - generic [ref=f4e2226]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2227]:
+                    - generic [ref=f4e2228]: 0 / 10
+                    - generic [ref=f4e2229]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2230]
+                  - cell "10" [ref=f4e2232]
+                  - cell "Low" [ref=f4e2233]
+                  - cell "29/06/2026, 21:20:25" [ref=f4e2235]
+                  - cell [ref=f4e2236]:
+                    - generic [ref=f4e2237]:
+                      - button "Preview DEP-ITEM-60825328" [ref=f4e2238]
+                      - button "Open DEP-ITEM-60825328" [ref=f4e2243]
+                - row [ref=f4e2249] [cursor=pointer]:
+                  - cell "Dependency Item 61261072 DEP-ITEM-61261072" [ref=f4e2250]:
+                    - generic [ref=f4e2251]: Dependency Item 61261072
+                    - generic [ref=f4e2252]: DEP-ITEM-61261072
+                  - cell "Unassigned" [ref=f4e2253]
+                  - cell "Uncategorised" [ref=f4e2254]
+                  - cell "10 / 0 / 10" [ref=f4e2255]:
+                    - generic [ref=f4e2256]:
+                      - generic [ref=f4e2257]: "10"
+                      - generic [ref=f4e2258]: /
+                      - generic [ref=f4e2259]: "0"
+                      - generic [ref=f4e2260]: /
+                      - generic [ref=f4e2261]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2262]:
+                    - generic [ref=f4e2263]: 0 / 10
+                    - generic [ref=f4e2264]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2265]
+                  - cell "10" [ref=f4e2267]
+                  - cell "Low" [ref=f4e2268]
+                  - cell "29/06/2026, 21:27:41" [ref=f4e2270]
+                  - cell [ref=f4e2271]:
+                    - generic [ref=f4e2272]:
+                      - button "Preview DEP-ITEM-61261072" [ref=f4e2273]
+                      - button "Open DEP-ITEM-61261072" [ref=f4e2278]
+                - row [ref=f4e2284] [cursor=pointer]:
+                  - cell "Dependency Item 61322060 DEP-ITEM-61322060" [ref=f4e2285]:
+                    - generic [ref=f4e2286]: Dependency Item 61322060
+                    - generic [ref=f4e2287]: DEP-ITEM-61322060
+                  - cell "Unassigned" [ref=f4e2288]
+                  - cell "Uncategorised" [ref=f4e2289]
+                  - cell "10 / 0 / 10" [ref=f4e2290]:
+                    - generic [ref=f4e2291]:
+                      - generic [ref=f4e2292]: "10"
+                      - generic [ref=f4e2293]: /
+                      - generic [ref=f4e2294]: "0"
+                      - generic [ref=f4e2295]: /
+                      - generic [ref=f4e2296]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2297]:
+                    - generic [ref=f4e2298]: 0 / 10
+                    - generic [ref=f4e2299]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2300]
+                  - cell "10" [ref=f4e2302]
+                  - cell "Low" [ref=f4e2303]
+                  - cell "29/06/2026, 21:28:42" [ref=f4e2305]
+                  - cell [ref=f4e2306]:
+                    - generic [ref=f4e2307]:
+                      - button "Preview DEP-ITEM-61322060" [ref=f4e2308]
+                      - button "Open DEP-ITEM-61322060" [ref=f4e2313]
+                - row [ref=f4e2319] [cursor=pointer]:
+                  - cell "Dependency Item 67050059 DEP-ITEM-67050059" [ref=f4e2320]:
+                    - generic [ref=f4e2321]: Dependency Item 67050059
+                    - generic [ref=f4e2322]: DEP-ITEM-67050059
+                  - cell "Unassigned" [ref=f4e2323]
+                  - cell "Uncategorised" [ref=f4e2324]
+                  - cell "10 / 0 / 10" [ref=f4e2325]:
+                    - generic [ref=f4e2326]:
+                      - generic [ref=f4e2327]: "10"
+                      - generic [ref=f4e2328]: /
+                      - generic [ref=f4e2329]: "0"
+                      - generic [ref=f4e2330]: /
+                      - generic [ref=f4e2331]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2332]:
+                    - generic [ref=f4e2333]: 0 / 10
+                    - generic [ref=f4e2334]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2335]
+                  - cell "10" [ref=f4e2337]
+                  - cell "Low" [ref=f4e2338]
+                  - cell "15/07/2026, 00:10:50" [ref=f4e2340]
+                  - cell [ref=f4e2341]:
+                    - generic [ref=f4e2342]:
+                      - button "Preview DEP-ITEM-67050059" [ref=f4e2343]
+                      - button "Open DEP-ITEM-67050059" [ref=f4e2348]
+                - row [ref=f4e2354] [cursor=pointer]:
+                  - cell "Dependency Item 67159553 DEP-ITEM-67159553" [ref=f4e2355]:
+                    - generic [ref=f4e2356]: Dependency Item 67159553
+                    - generic [ref=f4e2357]: DEP-ITEM-67159553
+                  - cell "Unassigned" [ref=f4e2358]
+                  - cell "Uncategorised" [ref=f4e2359]
+                  - cell "10 / 0 / 10" [ref=f4e2360]:
+                    - generic [ref=f4e2361]:
+                      - generic [ref=f4e2362]: "10"
+                      - generic [ref=f4e2363]: /
+                      - generic [ref=f4e2364]: "0"
+                      - generic [ref=f4e2365]: /
+                      - generic [ref=f4e2366]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2367]:
+                    - generic [ref=f4e2368]: 0 / 10
+                    - generic [ref=f4e2369]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2370]
+                  - cell "10" [ref=f4e2372]
+                  - cell "Low" [ref=f4e2373]
+                  - cell "15/07/2026, 00:12:39" [ref=f4e2375]
+                  - cell [ref=f4e2376]:
+                    - generic [ref=f4e2377]:
+                      - button "Preview DEP-ITEM-67159553" [ref=f4e2378]
+                      - button "Open DEP-ITEM-67159553" [ref=f4e2383]
+                - row [ref=f4e2389] [cursor=pointer]:
+                  - cell "Dependency Item 67398794 DEP-ITEM-67398794" [ref=f4e2390]:
+                    - generic [ref=f4e2391]: Dependency Item 67398794
+                    - generic [ref=f4e2392]: DEP-ITEM-67398794
+                  - cell "Unassigned" [ref=f4e2393]
+                  - cell "Uncategorised" [ref=f4e2394]
+                  - cell "10 / 0 / 10" [ref=f4e2395]:
+                    - generic [ref=f4e2396]:
+                      - generic [ref=f4e2397]: "10"
+                      - generic [ref=f4e2398]: /
+                      - generic [ref=f4e2399]: "0"
+                      - generic [ref=f4e2400]: /
+                      - generic [ref=f4e2401]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2402]:
+                    - generic [ref=f4e2403]: 0 / 10
+                    - generic [ref=f4e2404]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2405]
+                  - cell "10" [ref=f4e2407]
+                  - cell "Low" [ref=f4e2408]
+                  - cell "15/07/2026, 00:16:39" [ref=f4e2410]
+                  - cell [ref=f4e2411]:
+                    - generic [ref=f4e2412]:
+                      - button "Preview DEP-ITEM-67398794" [ref=f4e2413]
+                      - button "Open DEP-ITEM-67398794" [ref=f4e2418]
+                - row [ref=f4e2424] [cursor=pointer]:
+                  - cell "Dependency Item 67509046 DEP-ITEM-67509046" [ref=f4e2425]:
+                    - generic [ref=f4e2426]: Dependency Item 67509046
+                    - generic [ref=f4e2427]: DEP-ITEM-67509046
+                  - cell "Unassigned" [ref=f4e2428]
+                  - cell "Uncategorised" [ref=f4e2429]
+                  - cell "10 / 0 / 10" [ref=f4e2430]:
+                    - generic [ref=f4e2431]:
+                      - generic [ref=f4e2432]: "10"
+                      - generic [ref=f4e2433]: /
+                      - generic [ref=f4e2434]: "0"
+                      - generic [ref=f4e2435]: /
+                      - generic [ref=f4e2436]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2437]:
+                    - generic [ref=f4e2438]: 0 / 10
+                    - generic [ref=f4e2439]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2440]
+                  - cell "10" [ref=f4e2442]
+                  - cell "Low" [ref=f4e2443]
+                  - cell "15/07/2026, 00:18:29" [ref=f4e2445]
+                  - cell [ref=f4e2446]:
+                    - generic [ref=f4e2447]:
+                      - button "Preview DEP-ITEM-67509046" [ref=f4e2448]
+                      - button "Open DEP-ITEM-67509046" [ref=f4e2453]
+                - row [ref=f4e2459] [cursor=pointer]:
+                  - cell "Dependency Item 67960554 DEP-ITEM-67960554" [ref=f4e2460]:
+                    - generic [ref=f4e2461]: Dependency Item 67960554
+                    - generic [ref=f4e2462]: DEP-ITEM-67960554
+                  - cell "Unassigned" [ref=f4e2463]
+                  - cell "Uncategorised" [ref=f4e2464]
+                  - cell "10 / 0 / 10" [ref=f4e2465]:
+                    - generic [ref=f4e2466]:
+                      - generic [ref=f4e2467]: "10"
+                      - generic [ref=f4e2468]: /
+                      - generic [ref=f4e2469]: "0"
+                      - generic [ref=f4e2470]: /
+                      - generic [ref=f4e2471]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2472]:
+                    - generic [ref=f4e2473]: 0 / 10
+                    - generic [ref=f4e2474]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2475]
+                  - cell "10" [ref=f4e2477]
+                  - cell "Low" [ref=f4e2478]
+                  - cell "15/07/2026, 00:26:00" [ref=f4e2480]
+                  - cell [ref=f4e2481]:
+                    - generic [ref=f4e2482]:
+                      - button "Preview DEP-ITEM-67960554" [ref=f4e2483]
+                      - button "Open DEP-ITEM-67960554" [ref=f4e2488]
+                - row [ref=f4e2494] [cursor=pointer]:
+                  - cell "Dependency Item 68071094 DEP-ITEM-68071094" [ref=f4e2495]:
+                    - generic [ref=f4e2496]: Dependency Item 68071094
+                    - generic [ref=f4e2497]: DEP-ITEM-68071094
+                  - cell "Unassigned" [ref=f4e2498]
+                  - cell "Uncategorised" [ref=f4e2499]
+                  - cell "10 / 0 / 10" [ref=f4e2500]:
+                    - generic [ref=f4e2501]:
+                      - generic [ref=f4e2502]: "10"
+                      - generic [ref=f4e2503]: /
+                      - generic [ref=f4e2504]: "0"
+                      - generic [ref=f4e2505]: /
+                      - generic [ref=f4e2506]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2507]:
+                    - generic [ref=f4e2508]: 0 / 10
+                    - generic [ref=f4e2509]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2510]
+                  - cell "10" [ref=f4e2512]
+                  - cell "Low" [ref=f4e2513]
+                  - cell "15/07/2026, 00:27:51" [ref=f4e2515]
+                  - cell [ref=f4e2516]:
+                    - generic [ref=f4e2517]:
+                      - button "Preview DEP-ITEM-68071094" [ref=f4e2518]
+                      - button "Open DEP-ITEM-68071094" [ref=f4e2523]
+                - row [ref=f4e2529] [cursor=pointer]:
+                  - cell "Dependency Item 68785742 DEP-ITEM-68785742" [ref=f4e2530]:
+                    - generic [ref=f4e2531]: Dependency Item 68785742
+                    - generic [ref=f4e2532]: DEP-ITEM-68785742
+                  - cell "Unassigned" [ref=f4e2533]
+                  - cell "Uncategorised" [ref=f4e2534]
+                  - cell "10 / 0 / 10" [ref=f4e2535]:
+                    - generic [ref=f4e2536]:
+                      - generic [ref=f4e2537]: "10"
+                      - generic [ref=f4e2538]: /
+                      - generic [ref=f4e2539]: "0"
+                      - generic [ref=f4e2540]: /
+                      - generic [ref=f4e2541]: "10"
+                  - cell "0 / 10 0 canonical positions" [ref=f4e2542]:
+                    - generic [ref=f4e2543]: 0 / 10
+                    - generic [ref=f4e2544]: 0 canonical positions
+                  - cell "No movements" [ref=f4e2545]
+                  - cell "10" [ref=f4e2547]
+                  - cell "Low" [ref=f4e2548]
+                  - cell "15/07/2026, 00:39:45" [ref=f4e2550]
+                  - cell [ref=f4e2551]:
+                    - generic [ref=f4e2552]:
+                      - button "Preview DEP-ITEM-68785742" [ref=f4e2553]
+                      - button "Open DEP-ITEM-68785742" [ref=f4e2558]
+            - generic [ref=f4e1618]:
+              - paragraph [ref=f4e1619]: Showing 26-50 of 441
+              - generic [ref=f4e1620]:
+                - combobox "Rows per page" [ref=f4e1621] [cursor=pointer]:
+                  - generic: 25 rows
+                - button "First" [ref=f4e2564] [cursor=pointer]
+                - button "Previous" [ref=f4e2565] [cursor=pointer]
+                - generic [ref=f4e1624]: Page 2 of 18
+                - button "Next" [active] [ref=f4e1625] [cursor=pointer]
+                - button "Last" [ref=f4e1626] [cursor=pointer]
+        - button "Help & Tutorials" [ref=f4e348] [cursor=pointer]
+  - button "Diagnostics 11" [ref=f4e1628] [cursor=pointer]
+  - region "Notifications (F8)":
+    - list

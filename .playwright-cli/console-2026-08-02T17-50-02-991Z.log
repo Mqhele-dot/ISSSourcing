@@ -1,0 +1,17 @@
+[    1196ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=81f4a998:17232
+[    1524ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://127.0.0.1:5057/api/inventory:0
+[    2258ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5057/api/v2/inventory?page=1&pageSize=25&low=1&sort=name_asc:0
+[  101137ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=81f4a998:17232
+[  101407ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://127.0.0.1:5057/api/inventory:0
+[  101846ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5057/api/v2/inventory?page=1&pageSize=25&low=1&sort=name_asc:0
+[  126313ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5057/api/v2/inventory?page=1&pageSize=25&low=1&sort=name_asc:0
+[  127632ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5057/api/v2/inventory?page=1&pageSize=25&low=1&sort=name_asc:0
+[  131456ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://127.0.0.1:5057/api/inventory:0
+[  137414ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://127.0.0.1:5057/api/inventory:0
+[  154877ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5057/@vite/client:992
+[  154884ms] [ERROR] Creating a worker from 'blob:http://127.0.0.1:5057/a546249f-84b2-49bd-a08a-1de92efa6f56' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked. @ http://127.0.0.1:5057/@vite/client:1062
+[  163406ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5057/api/ready:0
+[  166383ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5057/api/notifications?page=1&pageSize=8:0
+[  195425ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5057/api/ready:0
+[  198443ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5057/api/notifications?page=1&pageSize=8:0
+[  225360ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5057/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=81f4a998:17232

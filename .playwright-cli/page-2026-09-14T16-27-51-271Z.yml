@@ -1,0 +1,17 @@
+- generic [ref=f25e2]:
+  - generic [ref=f25e5]:
+    - main [ref=f25e6]:
+      - generic [ref=f25e7]: Checking product setup…
+    - navigation "Mobile primary" [ref=f25e11]:
+      - link "Home" [ref=f25e12] [cursor=pointer]:
+        - /url: /m/home
+      - link "Count" [ref=f25e17] [cursor=pointer]:
+        - /url: /m/counts
+      - link "Scan" [ref=f25e22] [cursor=pointer]:
+        - /url: /m/scan
+      - link "Approvals" [ref=f25e30] [cursor=pointer]:
+        - /url: /m/approvals
+      - link "More" [ref=f25e35] [cursor=pointer]:
+        - /url: /m/more
+  - region "Notifications (F8)":
+    - list

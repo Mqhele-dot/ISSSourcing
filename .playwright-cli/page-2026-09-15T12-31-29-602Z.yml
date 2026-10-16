@@ -1,0 +1,48 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e4]:
+    - generic [ref=f1e6]:
+      - heading "Inventory Manager" [level=1] [ref=f1e7]
+      - paragraph [ref=f1e8]: Sign in to access your inventory dashboard
+      - generic [ref=f1e9]:
+        - tablist [ref=f1e10]:
+          - tab "Login" [selected] [ref=f1e11] [cursor=pointer]
+          - tab "Register" [ref=f1e12] [cursor=pointer]
+        - tabpanel "Login" [ref=f1e13]:
+          - generic [ref=f1e14]:
+            - generic [ref=f1e15]:
+              - heading "Welcome back" [level=3] [ref=f1e16]
+              - paragraph [ref=f1e17]: Enter your credentials to sign in to your account
+            - generic [ref=f1e19]:
+              - generic [ref=f1e20]:
+                - text: Username
+                - textbox "Username" [ref=f1e21]:
+                  - /placeholder: Enter your username
+              - generic [ref=f1e22]:
+                - text: Password
+                - textbox "Password" [ref=f1e23]:
+                  - /placeholder: Enter your password
+              - generic [ref=f1e24]:
+                - generic [ref=f1e25]:
+                  - checkbox "Remember me" [ref=f1e26] [cursor=pointer]
+                  - checkbox [aria-hidden]
+                  - generic [ref=f1e27]: Remember me
+                - button "Forgot password?" [ref=f1e28] [cursor=pointer]
+              - button "Sign In" [ref=f1e29] [cursor=pointer]
+    - generic [ref=f1e31]:
+      - heading "Manage Your Inventory with Ease" [level=2] [ref=f1e32]
+      - paragraph [ref=f1e33]: Track inventory across multiple warehouses, generate purchase orders, and get real-time insights into your stock levels.
+      - generic [ref=f1e34]:
+        - generic [ref=f1e35]:
+          - heading "Real-time Tracking" [level=3] [ref=f1e36]
+          - paragraph [ref=f1e37]: Monitor inventory changes instantly across your organization
+        - generic [ref=f1e38]:
+          - heading "Smart Reordering" [level=3] [ref=f1e39]
+          - paragraph [ref=f1e40]: Automated suggestions when stock levels run low
+        - generic [ref=f1e41]:
+          - heading "Multi-warehouse" [level=3] [ref=f1e42]
+          - paragraph [ref=f1e43]: Manage inventory across different physical locations
+        - generic [ref=f1e44]:
+          - heading "Detailed Reports" [level=3] [ref=f1e45]
+          - paragraph [ref=f1e46]: Generate comprehensive reports in multiple formats
+  - region "Notifications (F8)":
+    - list
