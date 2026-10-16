@@ -7,6 +7,7 @@ import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { z } from "zod";
 import { getActiveOrganizationId } from "../../organization-context";
 import { buildAnalyticsInsights } from "./analytics-insights-service";
+import { registerFinancialMeasureRoutes } from "./register-financial-measure-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -18,6 +19,7 @@ type AuthBundle = {
  * Reports/analytics JSON endpoints (not `/api/export` file download — that stays in routes until split).
  */
 export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
+  registerFinancialMeasureRoutes(app, auth);
   const masterRead = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
   const masterWrite = [auth.ensureAuthenticated, auth.ensurePermission("reports", "update")];
 

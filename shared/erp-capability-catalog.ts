@@ -25,6 +25,8 @@ const rank:Record<ErpCapabilityStatus,number>={missing:0,blocked:0,partial:1,deg
 const unique=new Map<string,ErpCapability>();
 for(const item of rawCapabilities){const key=canonicalKey(item.label);const prior=unique.get(key);if(!prior){unique.set(key,item);continue;}const status=rank[item.status]<rank[prior.status]?item.status:prior.status;unique.set(key,{...prior,status,aliases:[...prior.aliases,item.id]});}
 const evidence:Record<string,Partial<ErpCapability>>={
+  "suppliers.supplier-communication-history":{status:"implemented",routes:["/procurement/suppliers/:id"],apis:["/api/v2/suppliers/:id/communications"],permissions:["suppliers:read"],evidence:["scripts/test-supplier-communications-runtime.ts","e2e/small-business-release.spec.ts"]},
+  "inventory.slow-moving-stock-reports":{status:"implemented",routes:["/inventory/reorder"],apis:["/api/v2/inventory/slow-moving"],permissions:["inventory:read"],evidence:["server/modules/reorder/register-planning-routes.ts","e2e/small-business-release.spec.ts"]},
   "procurement.purchase-contracts":{
     routes:["/procurement/contracts"],
     apis:["/api/v2/procurement/contracts","/api/v2/procurement/contracts/:id","/api/v2/procurement/contracts/:id/release-po"],
@@ -48,8 +50,22 @@ export const erpCapabilitySummary = Object.freeze({ rawTotal:rawCapabilities.len
 export function resolveCapabilityAvailability(
   catalog: readonly ErpCapability[],
   isEnabled: (flag: string) => boolean,
-): readonly ErpCapability[] {
-  return catalog.map(item => item.featureFlag && !isEnabled(item.featureFlag)
-    ? {...item, status: "disabled" as const}
-    : item);
+): readonly ResolvedErpCapability[] {
+  return catalog.map(item => {
+    const enabled = item.featureFlag ? isEnabled(item.featureFlag) : null;
+    return {
+      ...item,
+      status: enabled === false ? "disabled" as const : item.status,
+      implementationStatus: item.status,
+      enablement: enabled === null ? "not_gated" as const : enabled ? "enabled" as const : "disabled" as const,
+      // Test names and source-audit dates are not successful release-gate evidence.
+      verification: "unverified" as const,
+    };
+  });
 }
+
+export type ResolvedErpCapability = ErpCapability & {
+  implementationStatus: ErpCapabilityStatus;
+  enablement: "not_gated" | "enabled" | "disabled";
+  verification: "unverified";
+};

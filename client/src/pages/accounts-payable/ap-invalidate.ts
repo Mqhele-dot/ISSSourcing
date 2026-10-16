@@ -2,7 +2,7 @@ import { queryClient } from "@/lib/queryClient";
 import { apQueryKeys } from "./ap-query-keys";
 
 async function invalidateAll(keys: readonly (readonly string[])[]) {
-  await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey: [...queryKey] })));
+  await Promise.all([...keys, ["/api/v2/analytics/financial-measures"]].map((queryKey) => queryClient.invalidateQueries({ queryKey: [...queryKey] })));
 }
 
 /** After creating or updating captures (stage, promote). */

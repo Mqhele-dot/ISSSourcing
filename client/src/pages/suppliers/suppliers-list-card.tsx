@@ -172,7 +172,7 @@ export function SuppliersListCard({
                       </div>
                     )}
                     {supplier.address && (
-                      <div className="flex items-center col-span-2">
+                      <div className="flex flex-wrap items-center gap-y-2 col-span-2">
                         <MapPin className="h-4 w-4 mr-2 text-muted-foreground flex-shrink-0" />
                         <span>{supplier.address}</span>
                       </div>
@@ -214,15 +214,19 @@ export function SuppliersListCard({
                       </div>
                     ) : null}
                     {performanceBySupplier.get(supplier.id) ? (
-                      <div className="flex items-center col-span-2">
+                      <div className="flex flex-wrap items-center gap-y-2 col-span-2">
                         <span className="text-muted-foreground text-sm">Supplier rating:</span>
                         <span className="ml-2">
-                          {performanceBySupplier.get(supplier.id)?.overallRating.toFixed(1)}/5
+                          {performanceBySupplier.get(supplier.id)?.overallRating == null ? "Insufficient evidence" : `${performanceBySupplier.get(supplier.id)?.overallRating?.toFixed(1)}/5`}
                           {" · "}
-                          OTD {performanceBySupplier.get(supplier.id)?.onTimeDeliveryRate.toFixed(1)}%
+                          OTD {performanceBySupplier.get(supplier.id)?.onTimeDeliveryRate == null ? "Not measured" : `${performanceBySupplier.get(supplier.id)?.onTimeDeliveryRate?.toFixed(1)}%`}
                           {" · "}
-                          Price compliance {performanceBySupplier.get(supplier.id)?.priceComplianceRate.toFixed(1)}%
+                          Undisputed invoices {performanceBySupplier.get(supplier.id)?.priceComplianceRate == null ? "Not measured" : `${performanceBySupplier.get(supplier.id)?.priceComplianceRate?.toFixed(1)}%`}
                         </span>
+                        <details className="basis-full text-xs text-muted-foreground">
+                          <summary className="cursor-pointer">Why this rating?</summary>
+                          <p>On-time delivery compares the first receipt with the promised date across {performanceBySupplier.get(supplier.id)?.ordersMeasured} measured orders. The undisputed-invoice rate covers {performanceBySupplier.get(supplier.id)?.invoicesMeasured} invoices; it does not verify contract prices. The rating weights these rates 60% and 40%, then converts to a five-point scale. Both measures need evidence.</p>
+                        </details>
                       </div>
                     ) : null}
                   </div>

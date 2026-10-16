@@ -5,11 +5,11 @@ import type { Supplier } from "@shared/schema";
 export type SupplierPerformanceRow = {
   supplierId: number;
   supplierName: string;
-  onTimeDeliveryRate: number;
-  priceComplianceRate: number;
+  onTimeDeliveryRate: number | null;
+  priceComplianceRate: number | null;
   ordersMeasured: number;
   invoicesMeasured: number;
-  overallRating: number;
+  overallRating: number | null;
 };
 
 /** Primary list + reference data for the suppliers page (colocated hook). */

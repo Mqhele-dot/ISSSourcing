@@ -361,7 +361,7 @@ export default function SystemDiagnosticsPage() {
   });
   const capabilityQuery = useQuery({
     queryKey: ["/api/v2/diagnostics/capability-coverage"],
-    queryFn: () => requestJson<{summary:{total:number;implemented:number;partial:number;missing:number;disabled:number};items:Array<{id:string;category:string;label:string;status:string;featureFlag:string|null;evidence:string[];verifiedAt:string|null}>}>("GET", "/api/v2/diagnostics/capability-coverage"),
+    queryFn: () => requestJson<{summary:{total:number;implemented:number;partial:number;missing:number;disabled:number};items:Array<{id:string;category:string;label:string;status:string;implementationStatus:string;enablement:string;verification:string;featureFlag:string|null;evidence:string[];verifiedAt:string|null}>}>("GET", "/api/v2/diagnostics/capability-coverage"),
     throwOnError: false,
   });
   const probesMutation = useMutation({
@@ -676,8 +676,9 @@ export default function SystemDiagnosticsPage() {
               <SummaryTile label="Missing">{capabilityQuery.data.summary.missing}</SummaryTile>
               <SummaryTile label="Disabled">{capabilityQuery.data.summary.disabled}</SummaryTile>
             </div>
+            <p className="text-sm text-muted-foreground">Implementation is a source assessment, not release sign-off. Enabling a feature does not verify it.</p>
             <div className="max-h-72 overflow-auto rounded-md border">
-              {capabilityQuery.data.items.filter(item => item.status !== "implemented").map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-sm last:border-b-0"><div><span className="font-medium">{item.label}</span><span className="ml-2 text-xs text-muted-foreground">{item.category}</span></div><div className="flex items-center gap-2"><Badge variant={item.status === "missing" || item.status === "blocked" ? "destructive" : "outline"}>{item.status}</Badge>{item.featureFlag ? <span className="text-xs text-muted-foreground">{item.featureFlag}</span> : null}</div></div>)}
+              {capabilityQuery.data.items.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-sm last:border-b-0"><div><span className="font-medium">{item.label}</span><span className="ml-2 text-xs text-muted-foreground">{item.category}</span><p className="text-xs text-muted-foreground">Release verification: {item.verification ?? "unverified"}</p></div><div className="flex flex-wrap items-center gap-2"><Badge variant={item.implementationStatus === "missing" ? "destructive" : "outline"}>{item.implementationStatus ?? item.status}</Badge><Badge variant="outline">{item.enablement?.replaceAll("_", " ") ?? "Unknown enablement"}</Badge></div></div>)}
             </div>
           </> : null}
         </CardContent>

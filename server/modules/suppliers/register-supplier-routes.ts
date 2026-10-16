@@ -22,6 +22,7 @@ import { db, pool } from "../../db";
 import { mdmSupplierDocuments, organizationMembers, organizations, supplierPortalMappings, suppliers as supplierTable, users } from "@shared/schema";
 import { appendAuditEvent, appendAuditEventWithClient } from "../../services/audit-chain-service";
 import { getCountryPack } from "../master-data/country-pack-registry";
+import { supplierPerformanceEvidence } from "@shared/supplier-performance-evidence";
 
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
@@ -197,13 +198,41 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get(["/api/suppliers/performance", "/api/v2/suppliers/performance"], ...supplierRead, async (req: Request, res: Response) => {
+  app.get(["/api/suppliers/performance", "/api/v2/suppliers/performance"], ...supplierRead, auth.ensurePermission("suppliers", "read"), async (req: Request, res: Response) => {
     try {
       const requestedIds = req.path.startsWith("/api/v2/")
         ? String(req.query.ids ?? "").split(",").filter(Boolean).map(Number)
         : [];
       if (req.path.startsWith("/api/v2/") && (requestedIds.length === 0 || requestedIds.length > 100 || requestedIds.some((id) => !Number.isInteger(id) || id <= 0))) {
         return sendError(res, 400, "INVALID_SUPPLIER_IDS", "ids must contain between 1 and 100 comma-separated supplier IDs");
+      }
+      if (req.path.startsWith("/api/v2/")) {
+        const result = await pool.query(`WITH selected AS (
+          SELECT id,name FROM suppliers WHERE organization_id=$1 AND id=ANY($2::int[])
+        ), receipts AS (
+          SELECT po.id,po.supplier_id,po.expected_delivery_date,
+            min(coalesce(m.received_at,m.timestamp)) AS first_receipt
+          FROM purchase_orders po JOIN selected s ON s.id=po.supplier_id
+          JOIN stock_movements m ON m.organization_id=po.organization_id
+            AND m.reference_type='purchase_order' AND m.reference_id=po.id AND m.type='RECEIPT'
+          WHERE po.organization_id=$1 AND po.expected_delivery_date IS NOT NULL
+          GROUP BY po.id,po.supplier_id,po.expected_delivery_date
+        ), delivery AS (
+          SELECT supplier_id,count(*)::int AS measured,
+            count(*) FILTER (WHERE first_receipt<=expected_delivery_date)::int AS on_time
+          FROM receipts GROUP BY supplier_id
+        ), billing AS (
+          SELECT i.supplier_id,count(*)::int AS measured,
+            count(*) FILTER (WHERE upper(i.status::text)='DISPUTED')::int AS disputed
+          FROM invoices i JOIN selected s ON s.id=i.supplier_id
+          WHERE i.organization_id=$1 GROUP BY i.supplier_id
+        ) SELECT s.id,s.name,coalesce(d.measured,0) AS orders,coalesce(d.on_time,0) AS on_time,
+          coalesce(b.measured,0) AS invoices,coalesce(b.disputed,0) AS disputed
+          FROM selected s LEFT JOIN delivery d ON d.supplier_id=s.id
+          LEFT JOIN billing b ON b.supplier_id=s.id ORDER BY s.id`,
+        [getActiveOrganizationId(), requestedIds]);
+        return sendOk(res, result.rows.map(row => ({supplierId: row.id, supplierName: row.name,
+          ...supplierPerformanceEvidence(Number(row.orders), Number(row.on_time), Number(row.invoices), Number(row.disputed))})));
       }
       const allSuppliers = await supplierRepo.findAll();
       const supplierList = requestedIds.length ? allSuppliers.filter((supplier) => requestedIds.includes(supplier.id)) : allSuppliers;
@@ -238,20 +267,10 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
 
         const disputeCount = supplierInvoices.filter((invoice) => String(invoice.status).toUpperCase() === "DISPUTED").length;
         const invoiceMeasured = supplierInvoices.length;
-        const priceComplianceRate =
-          invoiceMeasured > 0 ? Number((((invoiceMeasured - disputeCount) / invoiceMeasured) * 100).toFixed(1)) : 100;
-        const onTimeDeliveryRate =
-          measuredOrders > 0 ? Number(((onTimeCount / measuredOrders) * 100).toFixed(1)) : 0;
-        const overallRating = Number(((onTimeDeliveryRate * 0.6 + priceComplianceRate * 0.4) / 20).toFixed(1)); // /5 scale
-
         return {
           supplierId: supplier.id,
           supplierName: supplier.name,
-          onTimeDeliveryRate,
-          priceComplianceRate,
-          ordersMeasured: measuredOrders,
-          invoicesMeasured: invoiceMeasured,
-          overallRating,
+          ...supplierPerformanceEvidence(measuredOrders, onTimeCount, invoiceMeasured, disputeCount),
         };
       });
 

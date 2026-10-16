@@ -66,6 +66,7 @@ async function invalidateMany(queryClient: QueryClient, prefixes: readonly (read
 }
 
 const dashboardsAndAnalyticsPrefixes: readonly (readonly string[])[] = [
+  ["/api/v2/analytics/financial-measures"],
   qk.controlTower as unknown as readonly string[],
   qk.analytics as unknown as readonly string[],
   qk.reports as unknown as readonly string[],
