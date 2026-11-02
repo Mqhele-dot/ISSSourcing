@@ -9,10 +9,18 @@ import { pool } from "../db";
 import { runWithTenantContext } from "../organization-context";
 import { runAuditIntegrityChecks } from "../services/audit-integrity-monitor";
 import { startActionInboxWorker } from "../services/action-inbox-worker";
+import { startDiagnosticMonitoringWorker } from "../diagnostics/monitoring-worker";
+import { startDurableDiagnosticCapture } from "../diagnostics/durable-events";
+import {startConfiguredCompactMaintenanceWorker} from '../modules/exports/compact-maintenance-worker';
 
 export function startBackgroundTasks(server: Server): void {
+  startDurableDiagnosticCapture();
   startExportWorker();
-  startActionInboxWorker();
+  startActionInboxWorker(server);
+  startDiagnosticMonitoringWorker(server);
+  void startConfiguredCompactMaintenanceWorker(pool,server,process.env,{
+    onFailure:()=>logger.warn('Compact housekeeping failed; private reservations remain recorded for retry.'),
+  }).catch(()=>logger.warn('Compact housekeeping was not started. Check its explicit private-storage configuration and approved migration prerequisites.'));
 
   const auditIntegrityIntervalMinutes = Math.max(60, Number(process.env.AUDIT_INTEGRITY_INTERVAL_MINUTES ?? 1440));
   void runAuditIntegrityChecks().catch((error) => {

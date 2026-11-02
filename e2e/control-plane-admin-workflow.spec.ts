@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
 import { apiJsonRequest, loginForTests } from "../scripts/test-http.ts";
 import { pool } from "../server/db.ts";
+import { verifyCompactDesktopGuidance } from "./wave7-helpers";
 
 const scryptAsync = promisify(scrypt);
 const TEST_PASSWORD = "Admin123!";
@@ -193,6 +194,7 @@ test.describe("control-plane production controls", () => {
   test("admin can create approval policy and audit captures it", async ({ page }) => {
     await loginAs(page, "admin", 1);
     await page.goto("/finance/approval-policies", { waitUntil: "domcontentloaded" });
+    if (await verifyCompactDesktopGuidance(page,"Approval policies")) return;
     await expect(page.getByTestId("approval-policies-page")).toBeVisible({ timeout: 20_000 });
 
     const policyName = `Control plane E2E policy ${Date.now()}`;

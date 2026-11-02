@@ -432,7 +432,7 @@ export type ControlTowerDashboardData = {
     openPurchaseOrders: number;
     delayedShipments: number;
     apInvoicesDueOrOverdue: number;
-    operationalExceptions: number;
+    operationalExceptions: number | null;
     supplierRiskAlerts: number;
   };
   procurementPipeline: Array<{

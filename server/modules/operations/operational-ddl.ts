@@ -174,16 +174,8 @@ export const OPERATIONAL_TABLE_DDLS = [
   `
   ALTER TABLE shipments ADD COLUMN IF NOT EXISTS organization_id integer REFERENCES organizations(id)
   `,
-  `
-  UPDATE shipments shipment
-  SET organization_id = purchase_order.organization_id
-  FROM purchase_orders purchase_order
-  WHERE shipment.organization_id IS NULL
-    AND (
-      shipment.purchase_order_id = purchase_order.id
-      OR shipment.po_number = purchase_order.order_number
-    )
-  `,
+  // Unassigned legacy ownership requires governed reconciliation. Never infer
+  // a tenant from a document number during startup (numbers can repeat).
   `
   CREATE INDEX IF NOT EXISTS shipments_organization_id_idx
   ON shipments (organization_id)
@@ -196,10 +188,8 @@ export const OPERATIONAL_TABLE_DDLS = [
   `
   UPDATE shipments SET source_type = 'purchase_order' WHERE source_type IS NULL AND po_number IS NOT NULL
   `,
-  `
-  UPDATE shipments s SET source_id = po.id, source_ref = po.order_number
-  FROM purchase_orders po WHERE s.po_number = po.order_number AND s.source_id IS NULL
-  `,
+  // Source identity also requires reviewed evidence; never infer it from a
+  // potentially duplicated document number during application startup.
   `UPDATE operational_exceptions e SET organization_id = s.organization_id
    FROM shipments s
    WHERE e.organization_id IS NULL

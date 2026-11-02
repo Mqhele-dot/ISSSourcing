@@ -23,11 +23,7 @@ async function initializeTransporter() {
         }
       });
 
-      console.log('Test email account created:', {
-        user: testAccount.user,
-        pass: testAccount.pass,
-        previewUrl: 'https://ethereal.email'
-      });
+      console.log('Test email account created. Credentials are not written to logs.');
       transporterInitialized = true;
       return;
     }
@@ -84,6 +80,9 @@ export function buildISSSourcingNotificationEmailHtml(title: string, bodyText: s
  */
 export async function sendEmail(options: EmailOptions, deliveryTransport?: Pick<Transporter, "sendMail">): Promise<{ success: boolean; info?: any; error?: Error }> {
   try {
+    if(!deliveryTransport&&(!process.env.EMAIL_HOST?.trim()||!process.env.EMAIL_USER?.trim()||!process.env.EMAIL_PASS?.trim())) {
+      return {success:false,error:new Error("Email delivery is not configured. Configure and verify an email channel before sending.")};
+    }
     if (!deliveryTransport && !transporter) {
       await initializeTransporter();
     }

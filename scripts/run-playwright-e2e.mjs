@@ -8,12 +8,14 @@
  * - If both are already healthy (e.g. CI or `npm run dev` in another terminal), only tests run.
  * - Otherwise starts `npm run dev`, waits for both URLs, runs tests, then stops only the server we started.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import {createServerObservationLog} from "./e2e-server-observations.mjs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { probeUrl } from "./e2e-http-probe.mjs";
 import { assertDisposableE2eEnvironment, assertDisposableE2eServer } from "./e2e-database-guard.mjs";
+import { resolveE2eServerCommand, spawnE2eServer } from "./e2e-server-command.mjs";
 
 const PORT = process.env.PORT || "5000";
 const READY_URL = process.env.PLAYWRIGHT_E2E_READY_URL || `http://127.0.0.1:${PORT}/api/ready`;
@@ -22,11 +24,16 @@ const START_TIMEOUT_MS = Number(process.env.PLAYWRIGHT_E2E_SERVER_TIMEOUT_MS || 
 const POLL_MS = 500;
 const DEV_COMMAND = process.env.PLAYWRIGHT_E2E_DEV_COMMAND || "npm run dev";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+resolveE2eServerCommand(DEV_COMMAND,repoRoot);
 const tsxCli = path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
 const playwrightCli = path.join(repoRoot, "node_modules", "playwright", "cli.js");
 
+function runCommand(command,args,options){
+  return new Promise((resolve,reject)=>{const child=spawn(command,args,options);
+    child.once("error",reject);child.once("exit",(status,signal)=>resolve({status,signal}));});
+}
 function runTsx(scriptPath) {
-  return spawnSync(process.execPath, [tsxCli, scriptPath], {
+  return runCommand(process.execPath, [tsxCli, scriptPath], {
     cwd: repoRoot,
     stdio: "inherit",
     shell: false,
@@ -94,6 +101,7 @@ async function waitForApiAndAuthReachable() {
 }
 
 let devProc = null;
+const serverEvidence=createServerObservationLog(process.env.E2E_SERVER_EVIDENCE_LOG);
 let exitCode = 1;
 
 const lastResults = {
@@ -130,12 +138,18 @@ try {
     console.log(`[E2E] Command: ${DEV_COMMAND}`);
     console.log("[E2E] (stdio from dev server follows)\n");
 
-    devProc = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
-      cwd: repoRoot,
-      stdio: "inherit",
-      shell: false,
-      env: process.env,
+    const launched=spawnE2eServer(DEV_COMMAND,{cwd:repoRoot,env:process.env});
+    devProc=launched.child;
+    devProc.once("spawn",()=>{
+      serverEvidence.consume(JSON.stringify({timestamp:new Date().toISOString(),level:"info",message:"E2E owned server spawned",meta:{runtimeMode:launched.definition.mode,entryPoint:launched.definition.entryPoint,pid:devProc.pid}})+"\n","launcher");
+      console.log(`[E2E] Actual backend: ${launched.definition.mode}; entry point: ${launched.definition.entryPoint}`);
     });
+
+    // Child test commands are asynchronous below, so these pipes keep draining
+    // throughout the browser gate rather than blocking the app on a full pipe.
+    for(const [channel,stream] of [["stdout",devProc.stdout],["stderr",devProc.stderr]]){
+      stream.on("data",chunk=>{serverEvidence.consume(chunk,channel);process.stdout.write(chunk);});
+    }
 
     devProc.on("error", (err) => {
       console.error("[E2E] Failed to spawn dev server:", err);
@@ -163,13 +177,13 @@ try {
   await assertDisposableE2eServer(READY_URL, expectedDatabaseIdentity);
 
   console.log("[E2E] Running npm run test:purchase-order-endpoints (server is up)...\n");
-  const poEndpoints = runTsx("scripts/test-purchase-order-endpoints.ts");
+  const poEndpoints = await runTsx("scripts/test-purchase-order-endpoints.ts");
   if (poEndpoints.status !== 0) {
     throw new Error(`Purchase-order endpoint gate failed (${poEndpoints.status ?? "unknown"}).`);
   }
 
   console.log("[E2E] Running npm run test:dashboard-data (server is up)...\n");
-  const dashData = runTsx("scripts/test-dashboard-data.ts");
+  const dashData = await runTsx("scripts/test-dashboard-data.ts");
   if (dashData.status !== 0) {
     throw new Error(`Dashboard data gate failed (${dashData.status ?? "unknown"}).`);
   }
@@ -181,13 +195,13 @@ try {
   ]) {
     const label = path.basename(scriptPath, path.extname(scriptPath));
     console.log(`[E2E] Running npm run ${label} (server is up)...\n`);
-    const sub = runTsx(scriptPath);
+    const sub = await runTsx(scriptPath);
     if (sub.status !== 0) {
       throw new Error(`${label} gate failed (${sub.status ?? "unknown"}).`);
     }
   }
 
-  const testResult = spawnSync(
+  const testResult = await runCommand(
     process.execPath,
     [playwrightCli, "test", "-c", "playwright.config.ts", ...process.argv.slice(2)],
     {
@@ -204,11 +218,18 @@ try {
 } finally {
   if (devProc) {
     try {
-      devProc.kill("SIGTERM");
+      if(devProc.exitCode===null&&devProc.signalCode===null){
+        let timer;
+        const closed=new Promise(resolve=>devProc.once("close",resolve));
+        devProc.kill("SIGTERM");
+        try{await Promise.race([closed,new Promise((_resolve,reject)=>{timer=setTimeout(()=>reject(new Error("Owned test server did not stop")),5000);})]);}
+        finally{clearTimeout(timer);}
+      }
     } catch {
-      /* ignore */
+      console.error("Owned test-server shutdown could not be verified; release gate failed.");exitCode=1;
     }
   }
+  try{serverEvidence.finish();}catch{console.error("Sanitized server evidence is incomplete; release gate failed.");exitCode=1;}
 }
 
 process.exit(exitCode);

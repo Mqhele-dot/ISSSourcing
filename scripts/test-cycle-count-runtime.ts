@@ -18,8 +18,11 @@ if(process.argv.includes("--local-disposable")) {
   const url=new URL(configured);
   assert.ok(["localhost","127.0.0.1","[::1]"].includes(url.hostname),"Local database host required");
   ownedName=`iss_cycle_test_${randomUUID().replaceAll("-","")}`;
+  url.pathname=`/${ownedName}`;
+  assertDisposableDatabaseUrl(url.toString());
   url.pathname="/postgres";owner=new pg.Pool({connectionString:url.toString(),connectionTimeoutMillis:5000});
   await owner.query(`CREATE DATABASE "${ownedName}"`);
+  console.log(`Created exact test-owned database ${ownedName}.`);
   url.pathname=`/${ownedName}`;process.env.TEST_DATABASE_URL=url.toString();
 }
 assertDisposableDatabaseUrl(process.env.TEST_DATABASE_URL);
@@ -163,6 +166,6 @@ try {
     assert.match(ownedName,/^iss_cycle_test_[a-f0-9]{32}$/);
     await owner.query(`DROP DATABASE "${ownedName}"`);
     await owner.end();
-    console.log("Removed the test-owned disposable database; application data was not changed.");
+    console.log(`Removed exact test-owned database ${ownedName}; application data was not changed.`);
   }
 }

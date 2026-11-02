@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type {z} from "zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/hooks/use-settings";
@@ -187,7 +188,7 @@ export default function ContractsPage() {
     },
   });
 
-  const form = useForm<SupplierContractForm>({
+  const form = useForm<z.input<typeof supplierContractFormSchema>,unknown,SupplierContractForm>({
     resolver: zodResolver(supplierContractFormSchema),
     defaultValues: defaultFormValues,
   });

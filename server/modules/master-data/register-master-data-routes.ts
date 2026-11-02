@@ -459,6 +459,54 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
+  app.get("/api/mdm/fx/rates", ...masterRead, requireMdmPermission("exchange-rates", "read"), async(req,res)=>{
+    const page=Number(req.query.page??1),pageSize=Number(req.query.pageSize??25),q=String(req.query.q??'').trim();
+    if(!Number.isSafeInteger(page)||page<1||page>1000000||![25,50,100].includes(pageSize)||(req.query.q!==undefined&&typeof req.query.q!=='string')||q.length>100||Object.keys(req.query).some(k=>!['page','pageSize','q'].includes(k)))return sendError(res,400,'FX_INVALID_PAGE','Choose a valid search and a page size of 25, 50 or 100.');
+    const client=await pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      await client.query("SET LOCAL statement_timeout='10s'");
+      const org=getActiveOrganizationId();
+      const rows=await client.query(`WITH published AS (
+        SELECT DISTINCT ON(source_rate_id) source_rate_id,id,version,rate,from_currency_code,to_currency_code,effective_at,expires_at,withdrawn,COALESCE(applied_at,recorded_at) applied_at
+        FROM reporting_fx_revisions WHERE organization_id=$1 ORDER BY source_rate_id,version DESC,id DESC
+      ), requests AS (
+        SELECT DISTINCT ON(entity_id) entity_id,id,status FROM mdm_change_requests WHERE organization_id=$1 AND domain='exchange-rates' AND entity_id IS NOT NULL ORDER BY entity_id,id DESC
+      ) SELECT r.id,r.from_currency_code AS "fromCurrencyCode",r.to_currency_code AS "toCurrencyCode",r.rate::text,
+        r.effective_date AS "effectiveAt",r.expires_at AS "expiresAt",r.active,
+        v.id::text AS "revisionId",v.version AS "revisionVersion",v.rate::text AS "publishedRate",v.applied_at AS "appliedAt",
+        COALESCE(r.rate::numeric=v.rate AND r.from_currency_code=v.from_currency_code AND r.to_currency_code=v.to_currency_code
+          AND r.effective_date=v.effective_at AND (r.expires_at IS NOT DISTINCT FROM v.expires_at) AND r.active=(NOT v.withdrawn),false) AS "revisionMatchesMasterData",
+        CASE WHEN v.withdrawn THEN 'withdrawn' WHEN v.id IS NOT NULL THEN 'applied'
+          WHEN c.status='approved' THEN 'approved_awaiting_application'
+          WHEN c.status IN ('submitted','validation_passed','pending_approval') THEN 'awaiting_approval' ELSE 'unverified' END AS eligibility,
+        c.id AS "requestId",c.status AS "requestStatus"
+        FROM mdm_exchange_rates r LEFT JOIN published v ON v.source_rate_id=r.id LEFT JOIN requests c ON c.entity_id=r.id
+        WHERE r.organization_id=$1 AND ($2='' OR r.from_currency_code ILIKE '%'||$2||'%' OR r.to_currency_code ILIKE '%'||$2||'%')
+        ORDER BY r.effective_date DESC,r.id DESC LIMIT $3 OFFSET $4`,[org,q,pageSize,(page-1)*pageSize]);
+      const count=await client.query("SELECT count(*)::int total FROM mdm_exchange_rates WHERE organization_id=$1 AND ($2='' OR from_currency_code ILIKE '%'||$2||'%' OR to_currency_code ILIKE '%'||$2||'%')",[org,q]);
+      await client.query('COMMIT');
+      return sendOk(res,{items:rows.rows,total:count.rows[0].total,page,pageSize});
+    }catch{await client.query('ROLLBACK').catch(()=>undefined);return sendError(res,503,'FX_RATES_UNAVAILABLE','Exchange rates could not be loaded. Ask an administrator to verify reporting migrations, then retry.');}
+    finally{client.release();}
+  });
+
+  app.get("/api/mdm/fx/:id/revisions", ...masterRead, requireMdmPermission("exchange-rates", "read"), async(req,res)=>{
+    const id=Number(req.params.id),page=Number(req.query.page??1),pageSize=Number(req.query.pageSize??25);
+    if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(page)||page<1||page>1000000||![25,50,100].includes(pageSize)||Object.keys(req.query).some(k=>!['page','pageSize'].includes(k))) return sendError(res,400,'FX_INVALID_PAGE','Choose a valid rate and a page size of 25, 50 or 100.');
+    try {
+      const org=getActiveOrganizationId();
+      const owned=await pool.query('SELECT id,from_currency_code AS "fromCurrencyCode",to_currency_code AS "toCurrencyCode",rate::text,effective_date AS "effectiveAt",expires_at AS "expiresAt" FROM mdm_exchange_rates WHERE organization_id=$1 AND id=$2',[org,id]);
+      if(!owned.rowCount) return sendError(res,404,'FX_RATE_NOT_FOUND','The exchange rate was not found in your organization.');
+      const rows=await pool.query(`SELECT id::text,version,rate::text,from_currency_code AS "fromCurrencyCode",to_currency_code AS "toCurrencyCode",
+        effective_at AS "effectiveAt",expires_at AS "expiresAt",approved_at AS "approvedAt",approved_by AS "approvedBy",
+        COALESCE(applied_at,recorded_at) AS "appliedAt",withdrawn,change_request_id AS "changeRequestId"
+        FROM reporting_fx_revisions WHERE organization_id=$1 AND source_rate_id=$2 ORDER BY version DESC,id DESC LIMIT $3 OFFSET $4`,[org,id,pageSize,(page-1)*pageSize]);
+      const count=await pool.query('SELECT count(*)::int total FROM reporting_fx_revisions WHERE organization_id=$1 AND source_rate_id=$2',[org,id]);
+      return sendOk(res,{current:owned.rows[0],items:rows.rows,total:count.rows[0].total,page,pageSize});
+    }catch{return sendError(res,503,'FX_HISTORY_UNAVAILABLE','Rate history could not be loaded. Retry or contact your administrator.');}
+  });
+
   app.post("/api/mdm/fx/import", ...masterRead, auth.ensureTwoFactorAuthenticated, requireMdmPermission("exchange-rates", "import"), async (_req: Request, res: Response) => {
     try {
       if (!process.env.FX_PROVIDER_URL) return sendError(res, 409, "FX_PROVIDER_NOT_CONFIGURED", "The FX provider is not configured.", { hint: "Set FX_PROVIDER_URL and optionally FX_PROVIDER_TOKEN on the server." });
@@ -599,7 +647,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
         res,
         500,
         "MDM_CHANGE_REQUEST_APPLY_FAILED",
-        error instanceof Error ? error.message : "Failed to apply MDM change request",
+        "The change could not be applied. Retry or contact your administrator with the request ID.",
       );
     }
   });

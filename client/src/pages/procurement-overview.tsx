@@ -10,11 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requestJson } from "@/lib/queryClient";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
-import { useReportingMoney } from "@/hooks/use-reporting-money";
+import { formatDocumentMoney } from "@shared/document-money";
 
 type Overview = {
-  kpis: { openRequisitions: number; pendingApprovals: number; openRfqs: number; openPurchaseOrders: number; awaitingConfirmation: number; partiallyReceived: number; lateDeliveries: number; exceptions: number; spendThisPeriod: string; unmatchedInvoices: number };
-  needsAttention: Array<{ id: number; number: string; status: string; amount: string; updatedAt: string }>;
+kpis: { openRequisitions: number; pendingApprovals: number; openRfqs: number; openPurchaseOrders: number; awaitingConfirmation: number; partiallyReceived: number; lateDeliveries: number; exceptions: number; spendThisPeriod: string|null; unmatchedInvoices: number };
+  needsAttention: Array<{ id: number; number: string; status: string; amount: string|null; currencyCode: string|null; updatedAt: string }>;
   lateOrders: Array<{ id: number; number: string; status: string; expectedDeliveryDate: string; amount: string }>;
   poStatus: Array<{ label: string; value: number }>;
   spendBySupplier: Array<{ label: string; value: string }>;
@@ -22,7 +22,6 @@ type Overview = {
 };
 
 export default function ProcurementOverviewPage() {
-  const { formatMoney } = useReportingMoney();
   const overview = useQuery({ queryKey: ["/api/v2/procurement/overview"], queryFn: () => requestJson<Overview>("GET", "/api/v2/procurement/overview") });
   const data = overview.data;
   const cards = data ? [
@@ -44,7 +43,7 @@ export default function ProcurementOverviewPage() {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, count, Icon, href, testId]) => <Card key={label} data-testid={testId}><CardContent className="flex items-start justify-between gap-3 p-4"><div><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{count}</p><Button asChild variant="link" className="h-auto p-0 text-xs"><Link href={href}>Review <ArrowRight className="ml-1 h-3 w-3" /></Link></Button></div><Icon className="h-5 w-5 text-primary" /></CardContent></Card>)}</section>
         <Card><CardContent className="flex flex-wrap items-center justify-between gap-4 p-5"><div><p className="text-sm text-muted-foreground">Unmatched invoices</p><p className="text-2xl font-semibold tabular-nums">{data.kpis.unmatchedInvoices}</p></div><Button asChild variant="outline"><Link href={APP_ROUTES.finance.accountsPayableExceptions}>Open AP exceptions</Link></Button></CardContent></Card>
         <section className="grid gap-4 xl:grid-cols-2"><Card data-testid="procurement-pipeline-chart"><CardHeader><CardTitle className="text-base">PO status distribution</CardTitle></CardHeader><CardContent className="space-y-3">{data.poStatus.map((row) => <div key={row.label}><div className="mb-1 flex justify-between text-sm"><span>{row.label}</span><span>{row.value}</span></div><div className="h-2 rounded bg-muted"><div className="h-2 rounded bg-primary" style={{ width: `${Math.max(3, Number(row.value) / maxPo * 100)}%` }} /></div></div>)}</CardContent></Card><Card><CardHeader><CardTitle className="text-base">Supplier spend breakdown</CardTitle></CardHeader><CardContent>Unavailable while supplier breakdowns are migrated to dated reporting-currency evidence. Mixed-currency totals are not displayed.</CardContent></Card></section>
-        <Card data-testid="procurement-needs-attention-table"><CardHeader><CardTitle>Needs attention</CardTitle></CardHeader><CardContent className="overflow-x-auto p-0"><Table><TableHeader><TableRow><TableHead>Record</TableHead><TableHead>Status</TableHead><TableHead>Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{data.needsAttention.map((row) => <TableRow key={row.id}><TableCell className="font-medium">{row.number}</TableCell><TableCell><Badge variant="outline">{row.status}</Badge></TableCell><TableCell>{formatMoney(Number(row.amount))}</TableCell><TableCell className="text-right"><Button asChild size="sm" variant="outline"><Link href={APP_ROUTES.procurement.requisition(row.id)}>Open</Link></Button></TableCell></TableRow>)}{data.needsAttention.length === 0 ? <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">No requisition requires attention.</TableCell></TableRow> : null}</TableBody></Table></CardContent></Card>
+<Card data-testid="procurement-needs-attention-table"><CardHeader><CardTitle>Needs attention</CardTitle></CardHeader><CardContent className="overflow-x-auto p-0"><Table><TableHeader><TableRow><TableHead>Record</TableHead><TableHead>Status</TableHead><TableHead>Document amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{data.needsAttention.map((row) => <TableRow key={row.id}><TableCell className="font-medium">{row.number}</TableCell><TableCell><Badge variant="outline">{row.status}</Badge></TableCell><TableCell>{formatDocumentMoney(row.amount,row.currencyCode)}</TableCell><TableCell className="text-right"><Button asChild size="sm" variant="outline"><Link href={APP_ROUTES.procurement.requisition(row.id)}>Open</Link></Button></TableCell></TableRow>)}{data.needsAttention.length === 0 ? <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">No requisition requires attention.</TableCell></TableRow> : null}</TableBody></Table></CardContent></Card>
         <p className="text-xs text-muted-foreground">Server snapshot generated {new Date(data.generatedAt).toLocaleString()}.</p>
       </div> : null}
     </PageDataState>

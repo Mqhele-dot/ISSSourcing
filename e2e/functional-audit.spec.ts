@@ -164,7 +164,10 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
     await expect(page.getByTestId("po-kpi-received")).toBeVisible();
     await page.getByTestId("po-search-input").fill("PO-FQA");
     await expect(page.getByTestId("po-row-PO-FQA-001")).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId("po-kpi-total-value")).toContainText(/4,?000|4000/);
+    // Search filters operational rows, not the governed financial observation.
+    // Never restore the retired sum of draft/mixed-currency document values.
+    await expect(page.getByTestId("po-kpi-total-value")).toContainText("Use the approved-value evidence below");
+    await expect(page.getByTestId("po-kpi-total-value")).toContainText("Draft, cancelled and mixed-currency document totals are not added together");
 
     await page.getByTestId("po-sort-select").click();
     await page.getByRole("option", { name: /total high to low/i }).click();
@@ -208,6 +211,13 @@ test.describe("Functional QA audit (FQA seed, business output)", () => {
 
     await gotoAuthed(page, "/procurement/orders/PO-FQA-002");
     await expect(page.getByTestId("po-detail-page")).toBeVisible({ timeout: 20000 });
+    const warehouse=page.getByRole('combobox',{name:'Receive warehouse',exact:true});
+    await expect(warehouse).toBeEnabled();
+    await warehouse.click();
+    const warehouseOption=page.getByRole('option').first();
+    const warehouseName=(await warehouseOption.innerText()).trim();
+    await warehouseOption.click();
+    await expect(warehouse).toContainText(warehouseName);
     await page.getByTestId("po-receive-qty-SKU-A").first().fill("999");
     await page.getByTestId("po-receive-submit-button").click();
     await expect(page.getByTestId("po-receive-error")).toContainText(/cannot exceed remaining quantity/i);

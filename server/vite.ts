@@ -2,18 +2,13 @@ import express, { type Express } from "express";
 import fs from "fs";
 import path, { dirname } from "path";
 import { fileURLToPath } from "url";
-import {
-  createServer as createViteServer,
-  createLogger,
-  type ServerOptions as ViteServerOptions,
-} from "vite";
+import type { ServerOptions as ViteServerOptions } from "vite";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import { type Server } from "http";
-import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
+import { resolveBuiltClientPath } from "./bootstrap/public-client-assets";
 
-const viteLogger = createLogger();
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -45,6 +40,9 @@ function viteHmrDisabled(codespacesPublicOrigin: string | null): boolean {
 }
 
 export async function setupVite(app: Express, server: Server) {
+  const { createServer: createViteServer, createLogger } = await import("vite");
+  const { default: viteConfig } = await import("../vite.config");
+  const viteLogger = createLogger();
   const publicOrigin = codespacePublicWebOrigin();
   const hmrHost =
     publicOrigin != null
@@ -137,17 +135,7 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const candidates = [
-    path.resolve(__dirname, "public"),
-    path.resolve(process.cwd(), "dist", "public"),
-  ];
-  const distPath = candidates.find((candidate) => fs.existsSync(path.resolve(candidate, "index.html")));
-
-  if (!distPath) {
-    throw new Error(
-      `Could not find built client index.html. Checked: ${candidates.map((candidate) => path.resolve(candidate, "index.html")).join(", ")}. Make sure to build the client first.`,
-    );
-  }
+  const distPath = resolveBuiltClientPath();
 
   const indexPath = path.resolve(distPath, "index.html");
 

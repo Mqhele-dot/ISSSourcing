@@ -122,7 +122,7 @@ export default function ProfilePage() {
   }, [user, profileForm]);
 
   // Set up security preferences form
-  const securityForm = useForm<SecurityPreferences>({
+  const securityForm = useForm<z.input<typeof securityPreferencesSchema>,unknown,SecurityPreferences>({
     resolver: zodResolver(securityPreferencesSchema),
     defaultValues: {
       twoFactorEnabled: securityPreferences?.twoFactorEnabled ?? false,

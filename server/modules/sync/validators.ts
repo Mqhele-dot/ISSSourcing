@@ -12,7 +12,7 @@ export const syncBatchItemSchema = z.object({
     "mobile_count_recount",
     "mobile_count_spot",
   ]),
-  payload: z.record(z.unknown()).default({}),
+  payload: z.record(z.string(),z.unknown()).default({}),
 });
 
 export const syncBatchBodySchema = z.object({

@@ -21,6 +21,8 @@ type ServerDiagnosticEventInput = Omit<ServerDiagnosticEvent, "id" | "timestamp"
 
 const MAX_EVENTS = 1200;
 const events: ServerDiagnosticEvent[] = [];
+let durableSink: ((event: ServerDiagnosticEvent) => void) | undefined;
+export function setDiagnosticEventSink(sink: (event: ServerDiagnosticEvent) => void): void { durableSink=sink; }
 const SENSITIVE_KEY_RE = /(database_url|authorization|cookie|token|password|secret|session|csrf|api[-_]?key|set-cookie)/i;
 
 function makeId(): string {
@@ -65,6 +67,7 @@ export function recordServerDiagnosticEvent(input: ServerDiagnosticEventInput): 
   };
   events.unshift(event);
   if (events.length > MAX_EVENTS) events.length = MAX_EVENTS;
+  durableSink?.(event);
   return event;
 }
 

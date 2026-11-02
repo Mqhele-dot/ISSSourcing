@@ -15,14 +15,16 @@ export async function readReportingEvidenceContext(client: PoolClient, organizat
 /** Legacy mutable rates are deliberately not inferred to have approval evidence. */
 export async function readApprovedReportingRates(client: PoolClient, organizationId: number, toCurrencyCode: string, fromCurrencyCodes: string[]): Promise<ApprovedReportingRate[]> {
   const result = await client.query(`WITH revisions AS (
-    SELECT *,lead(approved_at) OVER(PARTITION BY organization_id,source_rate_id ORDER BY version) AS superseded_at
+    SELECT *,lead(COALESCE(applied_at,recorded_at)) OVER(PARTITION BY organization_id,source_rate_id ORDER BY version) AS superseded_at
     FROM reporting_fx_revisions WHERE organization_id=$1
   ) SELECT id::text,version,organization_id AS "organizationId",from_currency_code AS "fromCurrencyCode",
     to_currency_code AS "toCurrencyCode",rate::text,effective_at AS "effectiveAt",expires_at AS "expiresAt",
-    approved_at AS "approvedAt",superseded_at AS "supersededAt" FROM revisions
+    approved_at AS "approvedAt",COALESCE(applied_at,recorded_at) AS "appliedAt",withdrawn,
+    CASE WHEN applied_at IS NULL THEN 'legacy_recorded' ELSE 'applied' END AS "publicationProvenance",
+    superseded_at AS "supersededAt" FROM revisions
     WHERE to_currency_code=$2 AND from_currency_code=ANY($3::text[])`,[organizationId,toCurrencyCode,fromCurrencyCodes]);
   return result.rows.map(row=>({...row,
-    effectiveAt:new Date(row.effectiveAt).toISOString(), approvedAt:new Date(row.approvedAt).toISOString(),
+    effectiveAt:new Date(row.effectiveAt).toISOString(), approvedAt:new Date(row.approvedAt).toISOString(),appliedAt:new Date(row.appliedAt).toISOString(),
     expiresAt:row.expiresAt ? new Date(row.expiresAt).toISOString() : null,
     supersededAt:row.supersededAt ? new Date(row.supersededAt).toISOString() : null }));
 }

@@ -11,16 +11,23 @@ import { sendError, sendOk } from "../../api-response";
 import { storage } from "../../storage";
 import { createExportJob, getScopedExportJob, listExportJobs, refreshScopedExportDownloadToken } from "./export-jobs";
 import { exportRateLimiter } from "../../services/security-service";
+import {exportDownloadRateLimiter} from './export-download-rate-limit';
 import {
   getProcurementLineReportRows,
   type ProcurementLineReportFilters,
 } from "../../services/procurement-line-report-service";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
+import {requireCompleteQuickExport,quickExportRowLimit,ExportScopeTooLargeError} from "./export-completeness";
+import {requireExportSource,filterExportHistoryForAccess} from "./export-source-access";
+import {readExportArtifacts,openVerifiedExportArtifact,type StoredExportArtifact} from "./paired-export-artifacts";
+import {exportsDir} from "../../http/upload-config";
+import {pipeline} from "node:stream/promises";
+import {shipmentOrderLinkSql} from "../operations/shipment-order-link";
 
 const createSavedReportSchema = z.object({
   reportName: z.string().trim().min(1),
   dataset: z.string().trim().min(1),
-  filters: z.record(z.unknown()).default({}),
+  filters: z.record(z.string(),z.unknown()).default({}),
   visibleColumns: z.array(z.string()).default([]),
   defaultFormat: z.enum(["csv", "excel", "pdf", "docx"]).default("csv"),
   sourcePage: z.string().trim().optional(),
@@ -29,7 +36,7 @@ const createSavedReportSchema = z.object({
 const createExportJobSchema = z.object({
   dataset: z.string().trim().min(1),
   format: z.enum(["csv", "excel", "pdf", "docx"]),
-  filters: z.record(z.unknown()).default({}),
+  filters: z.record(z.string(),z.unknown()).default({}),
   sourcePage: z.string().trim().optional(),
   reason: z.string().trim().max(200).optional(),
 });
@@ -37,7 +44,7 @@ const createExportJobSchema = z.object({
 const customPreviewSchema = z.object({
   dataset: z.string().trim().min(1),
   columns: z.array(z.string().trim().min(1)).max(30).optional(),
-  filters: z.record(z.unknown()).default({}),
+  filters: z.record(z.string(),z.unknown()).default({}),
   limit: z.coerce.number().int().min(1).max(100).default(25),
 });
 
@@ -58,7 +65,7 @@ function currentUserId(req: Request): number | null {
   return Number.isFinite(userId) && userId > 0 ? userId : null;
 }
 
-function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number]) {
+function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number],artifacts:StoredExportArtifact[]=[]) {
   let error: { code: string; message: string; hint?: string; requestId?: string | null } | null = null;
   if (row.lastError) {
     try {
@@ -79,13 +86,14 @@ function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number]
   }
   return {
     ...row,
+    artifacts:artifacts.filter(file=>file.jobId===row.id).map(file=>({kind:file.kind,fileName:file.fileName,fileSize:file.fileSize,mimeType:file.mimeType,snapshotReference:file.snapshotReference,sourceRowCount:file.sourceRowCount})),
     error,
     createdBy: row.createdBy ? `User #${row.createdBy}` : null,
     downloadUrl:
-      row.status === "succeeded" && row.downloadToken && (!row.downloadTokenExpiresAt || new Date(row.downloadTokenExpiresAt).getTime() > Date.now())
+      row.profile!=="compact_excel" && row.status === "succeeded" && row.downloadToken && (!row.downloadTokenExpiresAt || new Date(row.downloadTokenExpiresAt).getTime() > Date.now())
         ? `/api/export/download/${row.id}?token=${encodeURIComponent(row.downloadToken)}`
         : null,
-    canRetry: row.status === "failed",
+    canRetry: row.profile!=="compact_excel" && row.status === "failed",
   };
 }
 
@@ -243,9 +251,9 @@ async function buildCustomDatasetRows(
           CASE WHEN shipment.eta IS NOT NULL AND shipment.eta < NOW() AND shipment.status NOT IN ('delivered', 'received') THEN 'Yes' ELSE 'No' END AS "lateRisk"
         FROM shipments shipment
         LEFT JOIN purchase_orders po
-          ON po.order_number = shipment.po_number
+            ON ${shipmentOrderLinkSql('shipment','po')}
         WHERE po.organization_id = $1
-        ORDER BY shipment.updated_at DESC NULLS LAST
+          ORDER BY shipment.updated_at DESC NULLS LAST, shipment.id DESC
         LIMIT $2 OFFSET $3
       `,
       [orgId, limit, offset],
@@ -274,9 +282,9 @@ async function buildCustomDatasetRows(
           ON supplier.id = po.supplier_id
          AND supplier.organization_id = po.organization_id
         LEFT JOIN shipments shipment
-          ON shipment.po_number = po.order_number
+            ON ${shipmentOrderLinkSql('shipment','po')}
         WHERE po.organization_id = $1
-        ORDER BY po.created_at DESC, shipment.updated_at DESC NULLS LAST
+          ORDER BY po.created_at DESC, po.id DESC, shipment.updated_at DESC NULLS LAST, shipment.id DESC
         LIMIT $2 OFFSET $3
       `,
       [orgId, limit, offset],
@@ -294,13 +302,19 @@ export function registerExportCenterRoutes(
   },
 ): void {
   const exportAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "export")];
+  const frozenSourceAccess:RequestHandler=async(req,res,next)=>{
+    const job=await getScopedExportJob(Number(req.params.id));
+    if(!job)return next();
+    return requireExportSource(auth,job.dataset,job.filters)(req,res,next);
+  };
+  const requestedSourceAccess:RequestHandler=(req,res,next)=>requireExportSource(auth,String(req.body?.dataset??""),req.body?.filters??{})(req,res,next);
   const reportPreviewAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
 
   app.get("/api/export-center/datasets", ...reportPreviewAccess, (_req: Request, res: Response) => {
     sendOk(res, getExportDatasetRegistry());
   });
 
-  app.post("/api/export-center/custom-preview", ...reportPreviewAccess, async (req: Request, res: Response) => {
+  app.post("/api/export-center/custom-preview", ...reportPreviewAccess,requestedSourceAccess, async (req: Request, res: Response) => {
     try {
       const parsed = customPreviewSchema.parse(req.body);
       const registry = getExportDatasetRegistry();
@@ -333,7 +347,7 @@ export function registerExportCenterRoutes(
     }
   });
 
-  app.post("/api/reports/preview", ...reportPreviewAccess, async (req: Request, res: Response) => {
+  app.post("/api/reports/preview", ...reportPreviewAccess,requestedSourceAccess, async (req: Request, res: Response) => {
     try {
       const parsed = reportsPreviewSchema.parse(req.body);
       const entry = getExportDatasetRegistry().find((item) => item.key === parsed.dataset);
@@ -396,7 +410,7 @@ export function registerExportCenterRoutes(
     }
   });
 
-  app.post("/api/export-center/custom-export", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {
+  app.post("/api/export-center/custom-export", ...exportAccess,requestedSourceAccess, exportRateLimiter, async (req: Request, res: Response) => {
     try {
       const parsed = customExportSchema.parse(req.body);
       const registry = getExportDatasetRegistry();
@@ -411,7 +425,7 @@ export function registerExportCenterRoutes(
       if (columns.length === 0) {
         return sendError(res, 400, "REPORT_COLUMNS_INVALID", "Select at least one valid column.");
       }
-      const rows = await buildCustomDatasetRows(parsed.dataset, 10_000, 0, parsed.filters);
+      const rows = requireCompleteQuickExport(await buildCustomDatasetRows(parsed.dataset,quickExportRowLimit+1,0,parsed.filters));
       const visibleRows = rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? ""])));
       const csv = toCsv(columns, visibleRows);
       const compressed = gzipSync(csv, { level: 9 });
@@ -425,6 +439,7 @@ export function registerExportCenterRoutes(
       res.send(compressed);
     } catch (error) {
       const fieldIssues = zodFieldIssues(error);
+      if(error instanceof ExportScopeTooLargeError)return sendError(res,error.status,error.code,error.message,{hint:error.hint});
       sendError(res, 400, "CUSTOM_REPORT_EXPORT_FAILED", "The custom report could not be exported.", {
         hint: "Review the report definition and retry. If it fails again, use the request ID in System Diagnostics.",
         fieldIssues,
@@ -432,9 +447,12 @@ export function registerExportCenterRoutes(
     }
   });
 
-  app.get("/api/export-center/history", ...exportAccess, async (_req: Request, res: Response) => {
-    const rows = await listExportJobs();
-    sendOk(res, rows.map(withDownloadUrl));
+  app.get("/api/export-center/history", ...exportAccess,auth.ensurePermission("reports","read"), async (_req: Request, res: Response,next) => {
+    try{
+    const rows = await filterExportHistoryForAccess(await listExportJobs());
+    const artifacts=await readExportArtifacts(pool,getActiveOrganizationId(),rows.map(row=>row.id));
+    sendOk(res, rows.map(row=>withDownloadUrl(row,artifacts)));
+    }catch(error){next(error);}
   });
 
   app.get("/api/export-center/saved-reports", ...exportAccess, async (_req: Request, res: Response) => {
@@ -495,7 +513,8 @@ export function registerExportCenterRoutes(
     sendOk(res, result.rows[0], 201);
   });
 
-  app.post("/api/export-jobs", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {
+  app.post("/api/export-jobs", ...exportAccess,requestedSourceAccess, exportRateLimiter, async (req: Request, res: Response) => {
+    if(req.body?.profile!==undefined&&req.body.profile!=="standard")return sendError(res,req.body.profile==="compact_excel"?409:400,"EXPORT_PROFILE_NOT_ENABLED","The requested export profile is not enabled. No replacement export was created.",{hint:"Compact Excel must pass its release gates first. Existing export formats remain separate choices."});
     const parsed = createExportJobSchema.parse(req.body);
     const dataset = getExportDatasetRegistry().find((entry) => entry.key === parsed.dataset);
     if (!dataset) return sendError(res, 400, "EXPORT_DATASET_UNSUPPORTED", "The selected export dataset is not supported.");
@@ -515,7 +534,7 @@ export function registerExportCenterRoutes(
     sendOk(res, withDownloadUrl(job), 202);
   });
 
-  app.get("/api/export-jobs/:id", ...exportAccess, async (req: Request, res: Response) => {
+  app.get("/api/export-jobs/:id", ...exportAccess, frozenSourceAccess, async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
       return sendError(res, 400, "INVALID_EXPORT_JOB_ID", "Invalid export job id.");
@@ -524,10 +543,10 @@ export function registerExportCenterRoutes(
     if (!job) {
       return sendError(res, 404, "EXPORT_JOB_NOT_FOUND", "Export job not found.");
     }
-    sendOk(res, withDownloadUrl(job));
+    sendOk(res, withDownloadUrl(job,await readExportArtifacts(pool,job.organizationId,[job.id])));
   });
 
-  app.post("/api/export-jobs/:id/retry", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {
+  app.post("/api/export-jobs/:id/retry", ...exportAccess, frozenSourceAccess, exportRateLimiter, async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
       return sendError(res, 400, "INVALID_EXPORT_JOB_ID", "Invalid export job id.");
@@ -536,6 +555,7 @@ export function registerExportCenterRoutes(
     if (!job) {
       return sendError(res, 404, "EXPORT_JOB_NOT_FOUND", "Export job not found.");
     }
+    if(job.profile==='compact_excel')return sendError(res,409,'EXPORT_PROFILE_NOT_ENABLED','Compact Excel retries are not enabled. No replacement export was created.');
     if (job.status !== "failed") {
       return sendError(res, 409, "EXPORT_RETRY_INVALID_STATE", "Only failed export jobs can be retried.");
     }
@@ -551,43 +571,55 @@ export function registerExportCenterRoutes(
     sendOk(res, withDownloadUrl(retry), 202);
   });
 
-  app.post("/api/export-jobs/:id/download-token", ...exportAccess, exportRateLimiter, async (req: Request, res: Response) => {
+  app.post("/api/export-jobs/:id/download-token", ...exportAccess, frozenSourceAccess, exportDownloadRateLimiter, async (req: Request, res: Response) => {
+    const selection=z.object({artifact:z.enum(["summary","archive"]).optional()}).strict().safeParse(req.body??{});
+    if(!selection.success)return sendError(res,400,"INVALID_EXPORT_ARTIFACT","Choose the summary workbook or full-detail archive.");
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_EXPORT_JOB_ID", "Invalid export job id.");
+    const job=await getScopedExportJob(id);
+    if(!job)return sendError(res,404,'EXPORT_JOB_NOT_FOUND','Export job not found.');
+    if(job.profile==='compact_excel')return sendError(res,409,'EXPORT_PROFILE_NOT_ENABLED','Compact Excel downloads are not enabled. No download token was changed.');
     const refreshed = await refreshScopedExportDownloadToken(id);
     if (!refreshed?.downloadToken) {
       return sendError(res, 410, "EXPORT_FILE_RETENTION_EXPIRED", "The retained export is no longer available.", {
         hint: "Run the export again from Reports or Export Center.",
       });
     }
+    const artifacts=await readExportArtifacts(pool,refreshed.organizationId,[refreshed.id]);
+    const selected=artifacts.find(file=>file.kind===(selection.data.artifact??"summary"));
+    if(selection.data.artifact&&!selected)return sendError(res,404,"EXPORT_ARTIFACT_NOT_FOUND","This export does not have the selected file.");
     return sendOk(res, {
       jobId: refreshed.id,
-      fileName: refreshed.fileName,
-      downloadUrl: `/api/export/download/${refreshed.id}?token=${encodeURIComponent(refreshed.downloadToken)}`,
+      fileName: selected?.fileName??refreshed.fileName,
+      downloadUrl: `/api/export/download/${refreshed.id}?token=${encodeURIComponent(refreshed.downloadToken)}${selected?`&artifact=${selected.kind}`:""}`,
       expiresAt: refreshed.downloadTokenExpiresAt,
     });
   });
 
-  app.get("/api/export/download/:id", ...exportAccess, async (req: Request, res: Response) => {
+  app.get("/api/export/download/:id", ...exportAccess, frozenSourceAccess, exportDownloadRateLimiter, async (req: Request, res: Response) => {
+    const selection=z.enum(["summary","archive"]).optional().safeParse(req.query.artifact);
+    if(!selection.success)return sendError(res,400,"INVALID_EXPORT_ARTIFACT","Choose the summary workbook or full-detail archive.");
     const id = Number(req.params.id);
     const token = typeof req.query.token === "string" ? req.query.token : "";
     if (!Number.isFinite(id) || !token) {
       return sendError(res, 400, "INVALID_EXPORT_DOWNLOAD_REQUEST", "Invalid export download request.");
     }
     const job = await getScopedExportJob(id);
+    if(job?.profile==='compact_excel')return sendError(res,409,'EXPORT_PROFILE_NOT_ENABLED','Compact Excel downloads are not enabled. No file was delivered.');
     if (!job || job.status !== "succeeded" || !job.filePath || !job.downloadToken) {
       return sendError(res, 404, "EXPORT_FILE_NOT_FOUND", "Export file is not available.");
     }
     if (job.downloadToken !== token) {
       return sendError(res, 403, "EXPORT_DOWNLOAD_TOKEN_INVALID", "Export download token is invalid.");
     }
+    if(job.retentionExpiresAt&&new Date(job.retentionExpiresAt).getTime()<=Date.now())return sendError(res,410,"EXPORT_FILE_RETENTION_EXPIRED","This export has expired. Generate a new export from the same saved observation if it is still available.");
     if (job.downloadTokenExpiresAt && new Date(job.downloadTokenExpiresAt).getTime() < Date.now()) {
       recordServerDiagnosticEvent({
         source: "integration",
         severity: "warning",
         title: "Export download token expired",
         message: `Export download token expired for job ${job.id}`,
-        route: req.originalUrl,
+        route: req.path,
         details: { jobId: job.id, dataset: job.dataset, format: job.format, remediation: "Issue a fresh scoped token from Export Center." },
       });
       if (req.accepts(["html", "json"]) === "html") {
@@ -596,6 +628,25 @@ export function registerExportCenterRoutes(
       return sendError(res, 410, "EXPORT_DOWNLOAD_TOKEN_EXPIRED", "Export download token has expired.", {
         hint: "Request a new download token from Export Center.",
       });
+    }
+    const artifacts=await readExportArtifacts(pool,job.organizationId,[job.id]);
+    const selected=artifacts.find(file=>file.kind===(selection.data??"summary"));
+    if(selection.data&&!selected)return sendError(res,404,"EXPORT_ARTIFACT_NOT_FOUND","This export does not have the selected file.");
+    if(selected){
+      let stream:Awaited<ReturnType<typeof openVerifiedExportArtifact>>|undefined;
+      try{
+        stream=await openVerifiedExportArtifact(exportsDir,job.organizationId,selected);
+        res.setHeader("Content-Type",selected.mimeType);res.setHeader("Content-Length",String(selected.fileSize));
+        res.setHeader("Content-Disposition",`attachment; filename="${selected.fileName}"`);
+        res.setHeader("Cache-Control","private, no-store");res.setHeader("X-Content-Type-Options","nosniff");
+        await pipeline(stream,res);return;
+      }catch{
+        stream?.destroy();
+        if(res.headersSent){res.destroy();return;}
+        res.removeHeader("Content-Length");res.removeHeader("Content-Disposition");
+        res.removeHeader("Content-Type");
+        return sendError(res,409,"EXPORT_FILE_VERIFICATION_FAILED","This export file could not be verified. No replacement data was generated.",{hint:"Generate the export again, or ask your administrator to review its saved evidence."});
+      }
     }
     const absolutePath = path.isAbsolute(job.filePath) ? job.filePath : path.join(process.cwd(), job.filePath);
     if (!fs.existsSync(absolutePath)) {

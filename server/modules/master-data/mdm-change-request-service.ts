@@ -1,4 +1,5 @@
 import { pool } from "../../db";
+import { approveReportingFx, applyReportingFx } from "./governed-fx-service";
 import { fulfillInventoryItemRequest } from "../inventory/item-request-service";
 import {
   createMdmDomainRecord,
@@ -141,6 +142,7 @@ export async function approveMdmChangeRequest(input: {
 }) {
   const row = await findChangeRequest(input.organizationId, input.id);
   if (!row) return null;
+  if(row.domain==='exchange-rates') return approveReportingFx(input);
   if (Number(row.submitted_by) === input.actorId && input.allowAdminOverride !== true) {
     throw new MdmApprovalError(
       "MDM_MAKER_CANNOT_APPROVE",
@@ -230,6 +232,7 @@ export async function applyMdmChangeRequest(input: {
 }) {
   const row = await findChangeRequest(input.organizationId, input.id);
   if (!row) return null;
+  if(row.domain==='exchange-rates') return applyReportingFx(input);
   if (String(row.status) === "applied") {
     throw new MdmApprovalError("MDM_CHANGE_ALREADY_APPLIED", "This Master Data change was already applied.", 409);
   }

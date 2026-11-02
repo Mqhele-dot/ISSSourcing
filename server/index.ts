@@ -11,11 +11,12 @@ import { registerGlobalErrorHandler } from "./bootstrap/global-error-handler";
 import { attachStartupBannerListener } from "./bootstrap/startup-banner";
 import { registerDevTestRoutes } from "./dev-test-routes";
 import {
-  getServerDiagnosticEvents,
   recordServerDiagnosticEvent,
   registerProcessDiagnosticHandlers,
 } from "./diagnostics/server-diagnostics-store";
 import { readiness, setDbReady, setSchemaReady, setSessionStoreReady, setWebsocketReady } from "./readiness";
+import { publicStartupStatus } from "./diagnostics/public-startup-status";
+import { registerPublicClientAssets } from "./bootstrap/public-client-assets";
 
 const app = express();
 let startupFailure: { message: string; stack?: string; at: string } | null = null;
@@ -25,13 +26,15 @@ registerProcessDiagnosticHandlers();
 registerRequestContextMiddleware(app);
 registerSecurityMiddleware(app);
 
+// The recovery UI and packaged modules must survive a session-store outage.
+// Only public build assets bypass sessions; business APIs/uploads do not.
+if (!appEnv.isDevelopment || process.env.LOCAL_DEV_STATIC === "1") {
+  registerPublicClientAssets(app);
+}
+
 app.get(["/startup-diagnostics", "/api/startup-diagnostics"], (_req, res) => {
-  res.status(startupFailure ? 503 : 200).json({
-    ok: !startupFailure,
-    startupFailure,
-    readiness,
-    events: getServerDiagnosticEvents().filter((event) => event.source === "startup").slice(0, 20),
-  });
+  res.status(startupFailure ? 503 : 200).json(publicStartupStatus(startupFailure?.at??null,readiness,
+    String(res.getHeader("x-request-id")??"")||null));
 });
 
 (async () => {

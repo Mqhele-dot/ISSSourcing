@@ -1,4 +1,6 @@
 import { pool } from "../../db";
+import { INVENTORY_BASE_SQL } from "../inventory/operational-stock-query";
+import { shipmentOrderLinkSql } from "./shipment-order-link";
 import { postGoodsReceipt } from "../inventory/goods-receipt-service";
 import { initializeOperationalData } from "./operational-ddl";
 import { refsMatch, toNumber, toString } from "./operational-utils";
@@ -2128,7 +2130,7 @@ export async function listOperationalShipments(filters: {
   const directionPat = n.direction;
   const sourceTypePat = n.sourceType;
 
-  const whereClauses: string[] = [`COALESCE(s.organization_id, po.organization_id) = $1`];
+  const whereClauses: string[] = [`s.organization_id = $1`];
   const params: unknown[] = [organizationId];
 
   if (statusPat) {
@@ -2210,7 +2212,7 @@ export async function listOperationalShipments(filters: {
     SELECT s.id, s.po_number, s.carrier, s.status, s.eta, s.drift_minutes, s.created_at, s.updated_at,
            s.tracking_number, s.direction, s.source_type, s.freight_cost, s.transport_mode
     FROM shipments s
-    LEFT JOIN purchase_orders po ON po.order_number = s.po_number AND po.organization_id = $1
+    LEFT JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND po.organization_id = $1
     LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $1
     ${whereSql}
     ORDER BY s.updated_at DESC, s.id DESC
@@ -2270,7 +2272,7 @@ export async function listOperationalShipmentsPage(input: {
 }) {
   const organizationId = getActiveOrganizationId();
   const n = normalizeShipmentFilters(input);
-  const clauses = [`COALESCE(s.organization_id, po.organization_id) = $1`];
+  const clauses = [`s.organization_id = $1`];
   const values: unknown[] = [organizationId];
   const addContains = (expression: string, value?: string) => {
     if (!value) return;
@@ -2316,7 +2318,7 @@ export async function listOperationalShipmentsPage(input: {
     clauses.push(`${riskExpression} = $${values.length}`);
   }
   const whereSql = clauses.join(" AND ");
-  const fromSql = `FROM shipments s LEFT JOIN purchase_orders po ON po.order_number = s.po_number AND po.organization_id = $1 LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $1`;
+  const fromSql = `FROM shipments s LEFT JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND po.organization_id = $1 LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $1`;
   const summaryResult = await pool.query<{
     total: string; in_transit: string; late: string; no_eta: string; due_soon: string; exception: string; delivered: string;
   }>(`SELECT COUNT(*)::text total,
@@ -2417,10 +2419,10 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
       s.source_id,
       s.source_ref
     FROM shipments s
-    LEFT JOIN purchase_orders po ON po.order_number = s.po_number AND po.organization_id = $2
+    LEFT JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND po.organization_id = $2
     LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $2
     WHERE s.id = $1
-      AND COALESCE(s.organization_id, po.organization_id) = $2
+      AND s.organization_id = $2
     LIMIT 1
     `,
     [id, organizationId],
@@ -2459,13 +2461,13 @@ export async function getOperationalShipmentDetail(idOrRef: string) {
     `
     SELECT id, status, title, type
     FROM operational_exceptions e
-    WHERE (e.related_refs->>'shipment_id') = $1
+    WHERE (e.related_refs->>'shipment_id') = $1 AND e.organization_id = $2
     ORDER BY
       CASE WHEN lower(e.status) IN ('open', 'in_progress') THEN 0 ELSE 1 END,
       e.updated_at DESC NULLS LAST
     LIMIT 1
     `,
-    [String(shipment.id)],
+    [String(shipment.id), organizationId],
   );
   const relatedException = relatedEx.rows[0] ?? null;
 
@@ -3112,9 +3114,10 @@ export async function getOperationalControlTowerOverview() {
     `
     SELECT severity, count(*)::int AS count
     FROM operational_exceptions
-    WHERE status IN ('open', 'in_progress')
+    WHERE organization_id = $1 AND status IN ('open', 'in_progress')
     GROUP BY severity
     `,
+    [orgId],
   );
 
   const lateShipmentsResult = await pool.query<{ count: number }>(
@@ -3122,7 +3125,7 @@ export async function getOperationalControlTowerOverview() {
     SELECT count(*)::int AS count
     FROM shipments s
     INNER JOIN purchase_orders po
-      ON po.order_number = s.po_number
+      ON ${shipmentOrderLinkSql('s','po')}
      AND po.organization_id = $1
     WHERE s.eta IS NOT NULL
       AND s.eta < now()
@@ -3142,22 +3145,7 @@ export async function getOperationalControlTowerOverview() {
   );
 
   const lowStockResult = await pool.query<{ count: number }>(
-    `
-    SELECT count(*)::int AS count
-    FROM (
-      SELECT
-        i.sku,
-        COALESCE(SUM(p.on_hand), COALESCE(i.quantity, 0)) AS on_hand,
-        COALESCE(SUM(p.allocated), 0) AS allocated,
-        COALESCE(i.low_stock_threshold, 0) AS threshold
-      FROM inventory_items i
-      LEFT JOIN inventory_positions p
-        ON p.sku = i.sku
-      WHERE i.organization_id = $1
-      GROUP BY i.id
-    ) stock
-    WHERE (stock.on_hand - stock.allocated) <= stock.threshold
-    `,
+    `${INVENTORY_BASE_SQL} SELECT count(*)::int AS count FROM base WHERE available <= low_stock_threshold`,
     [orgId],
   );
 
@@ -3188,7 +3176,7 @@ export async function getOperationalControlTowerOverview() {
       SELECT count(*)::int AS count
       FROM shipments s
       INNER JOIN purchase_orders po
-        ON po.order_number = s.po_number
+        ON ${shipmentOrderLinkSql('s','po')}
        AND po.organization_id = $1
       WHERE lower(s.status) IN ('created','in_transit','delayed')
       `,
@@ -3209,6 +3197,7 @@ export async function getOperationalControlTowerOverview() {
   }
 
   return {
+    scope: {organizationId:orgId, stockBasis:"operational_availability_not_quality_eligible",stockObservation:"current"},
     kpis: {
       exceptionsBySeverity,
       openExceptionsTotal,

@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Files, ShieldCheck, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Files, ShieldCheck } from "lucide-react";
 import { KpiCard } from "./ap-shared";
 import type { Overview } from "./types";
 
@@ -7,7 +7,7 @@ type Props = {
   formatMoney: (value: number | null | undefined) => string;
 };
 
-export function ApOverviewHeader({ stats, formatMoney }: Props) {
+export function ApOverviewHeader({ stats }: Props) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       <KpiCard
@@ -33,12 +33,6 @@ export function ApOverviewHeader({ stats, formatMoney }: Props) {
         value={stats.approvedCount}
         hint="Approval status only; payment readiness also requires outstanding balance and match evidence"
         icon={<CheckCircle2 className="h-4 w-4 text-muted-foreground" />}
-      />
-      <KpiCard
-        title="Outstanding"
-        value={formatMoney(stats.outstandingAmount ?? 0)}
-        hint="Current unpaid AP exposure"
-        icon={<Wallet className="h-4 w-4 text-muted-foreground" />}
       />
     </div>
   );

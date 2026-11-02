@@ -3,6 +3,8 @@ import { runWithTenantContext } from "../organization-context";
 import { emitNotification, emitNotificationToRoles, requiredNotificationAccess } from "./notification-emitter";
 import { buildISSSourcingNotificationEmailHtml, sendEmail } from "./email-service";
 import { storage } from "../storage";
+import { deliverDiagnosticNotificationIntents, generateDiagnosticDailySummaries } from "../diagnostics/diagnostic-delivery";
+import type { Server } from "node:http";
 
 function emailConfigured(): boolean {
   return Boolean(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS && process.env.DISABLE_NOTIFICATION_EMAIL !== "true");
@@ -34,7 +36,16 @@ async function withSystemTenant<T>(org: number, purpose: string, action: () => P
     systemActor: { id: "action-inbox-worker", purpose } }, action);
 }
 
+let reliabilityDeliveryRunning=false;
+export async function runReliabilityDeliveryCycle(now = new Date()): Promise<void> {
+  if(reliabilityDeliveryRunning)return;
+  reliabilityDeliveryRunning=true;
+  try {await generateDiagnosticDailySummaries(now,{scheduled:true});await deliverDiagnosticNotificationIntents();}
+  finally {reliabilityDeliveryRunning=false;}
+}
+
 export async function runActionInboxDeliveryCycle(now = new Date()): Promise<void> {
+  await runReliabilityDeliveryCycle(now);
   const due = await pool.query<{ id: number; organization_id: number; user_id: number; title: string; type: string; application_role: string; entity_type: string | null;
     entity_id: number | null; target_path: string | null; due_at: Date; reminder_enabled: boolean | null }>(`
     SELECT n.id,n.organization_id,n.user_id,n.title,n.type,m.application_role,n.entity_type,n.entity_id,n.target_path,n.due_at,p.reminder_enabled
@@ -142,8 +153,20 @@ export async function runActionInboxDeliveryCycle(now = new Date()): Promise<voi
   }
 }
 
-export function startActionInboxWorker(): void {
-  const run = () => void runActionInboxDeliveryCycle().catch((error) => console.warn("Action Inbox delivery failed:", error));
+type InboxWorkerTimer={unref:()=>void;cancel:()=>void};
+type InboxWorkerRuntime={schedule?:(task:()=>void,milliseconds:number)=>InboxWorkerTimer;
+  runActions?:()=>Promise<void>;runReliability?:()=>Promise<void>};
+export function startActionInboxWorker(server?:Server,runtime:InboxWorkerRuntime={}): void {
+  const schedule=runtime.schedule??((task,milliseconds)=>{
+    const timer=setInterval(task,milliseconds);return {unref:()=>timer.unref(),cancel:()=>clearInterval(timer)};
+  });
+  const run = () => void (runtime.runActions??runActionInboxDeliveryCycle)().catch(() => console.warn("Action Inbox delivery failed; the worker will retry."));
   run();
-  setInterval(run, 30 * 60 * 1000).unref();
+  const reminderTimer=schedule(run, 30 * 60 * 1000);
+  // Reliability incidents and the 08:00 local summary must not wait for the
+  // slower purchasing reminder sweep. Both use the same existing inbox worker.
+  const reliabilityTimer=schedule(()=>void (runtime.runReliability??runReliabilityDeliveryCycle)().catch(()=>
+    console.warn("Reliability delivery failed; the worker will retry.")),60_000);
+  reminderTimer.unref();reliabilityTimer.unref();
+  server?.once("close",()=>{reminderTimer.cancel();reliabilityTimer.cancel();});
 }

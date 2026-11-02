@@ -11,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { parseSupplierRouteId, SUPPLIER_DETAIL_ROUTE_PATTERN } from "@/lib/supplier-detail-route";
 import { SupplierCommunications } from "./supplier-communications";
+import { FinancialMeasuresPanel } from "@/components/financial-measures-panel";
+import { ApAgingPanel } from "@/pages/accounts-payable/ap-aging-panel";
 
 export default function SupplierDetailPage() {
   const [, setLocation] = useLocation();
@@ -117,6 +119,8 @@ export default function SupplierDetailPage() {
       ) : null}
       {data&&!isError&&<InspectionRuleEditor subjectType="supplier" subjectId={id}/>}
       {data&&!isError&&<SupplierCommunications supplierId={id}/>}
+      {data&&!isError&&<FinancialMeasuresPanel filters={{supplierId:id}}/>}
+      {data&&!isError&&<ApAgingPanel key={id} initialSupplierId={id} showDetails={false}/>}
     </div>
   );
 }

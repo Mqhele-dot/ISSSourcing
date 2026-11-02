@@ -4,6 +4,7 @@ import { appEnv } from "../../config/env";
 import { getActiveOrganizationId, getTenantContext } from "../../organization-context";
 import { incrementMetric } from "../../observability/metrics";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
+import {readExpiredExportFiles} from "./expired-export-files";
 
 export type ExportJobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -18,6 +19,7 @@ export type CreateExportJobInput = {
 };
 
 export type ExportJobRow = {
+  profile: "standard" | "compact_excel";
   id: number;
   organizationId: number;
   createdBy: number | null;
@@ -46,6 +48,7 @@ export type ExportJobRow = {
 
 function mapExportJobRow(row: any): ExportJobRow {
   return {
+    profile: row.profile === "compact_excel" ? "compact_excel" : "standard",
     id: Number(row.id),
     organizationId: Number(row.organization_id),
     createdBy: row.created_by == null ? null : Number(row.created_by),
@@ -144,8 +147,8 @@ export async function refreshScopedExportDownloadToken(id: number): Promise<Expo
   const tokenExpiry = new Date(Date.now() + tokenTtlMinutes * 60_000);
   const result = await pool.query(
     `UPDATE export_jobs
-     SET download_token = $3,
-         download_token_expires_at = $4,
+     SET download_token = CASE WHEN download_token IS NOT NULL AND download_token_expires_at>now() THEN download_token ELSE $3 END,
+         download_token_expires_at = CASE WHEN download_token IS NOT NULL AND download_token_expires_at>now() THEN download_token_expires_at ELSE $4 END,
          updated_at = NOW()
      WHERE id = $1
        AND organization_id = $2
@@ -170,9 +173,10 @@ export async function claimNextQueuedExportJob(): Promise<ExportJobRow | null> {
       WHERE id = (
         SELECT id
         FROM export_jobs
-        WHERE status = 'queued'
-        ORDER BY created_at ASC
+        WHERE status = 'queued' AND COALESCE(to_jsonb(export_jobs)->>'profile','standard')='standard'
+        ORDER BY created_at ASC, id ASC
         LIMIT 1
+        FOR UPDATE SKIP LOCKED
       )
       RETURNING *
     `,
@@ -283,34 +287,8 @@ export async function requeueExportJob(id: number): Promise<void> {
   incrementMetric("exports.jobs.queued");
 }
 
-export async function listExpiredExportJobs(): Promise<Array<{ id: number; filePath: string | null }>> {
-  const result = await pool.query(
-    `
-      SELECT id, file_path
-      FROM export_jobs
-      WHERE retention_expires_at IS NOT NULL
-        AND retention_expires_at < NOW()
-        AND file_path IS NOT NULL
-    `,
-  );
-  return result.rows.map((row) => ({
-    id: Number(row.id),
-    filePath: row.file_path ?? null,
-  }));
-}
-
-export async function clearExpiredExportJobFile(id: number): Promise<void> {
-  await pool.query(
-    `
-      UPDATE export_jobs
-      SET file_path = NULL,
-          download_token = NULL,
-          download_token_expires_at = NULL,
-          updated_at = NOW()
-      WHERE id = $1
-    `,
-    [id],
-  );
+export async function listExpiredExportJobs() {
+  return readExpiredExportFiles(pool);
 }
 
 export async function getLatestFailedExportJobForOrg(organizationId: number): Promise<{

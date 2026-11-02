@@ -42,6 +42,7 @@ export const MASTER_DATA_SECTION_SLUGS = [
   "overview",
   "units",
   "currencies",
+  "exchangeRates",
   "taxCodes",
   "commodityCodes",
   "incoterms",

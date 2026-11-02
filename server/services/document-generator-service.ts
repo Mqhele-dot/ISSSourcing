@@ -35,6 +35,7 @@ import {
 } from "./export-config";
 import { format } from 'date-fns';
 import { REPORTING_CURRENCY_FALLBACK_CODE } from "../lib/org-reporting-money";
+import {buildGenericSummaryMetrics} from "./operational-report-summary";
 
 // ——— Shared PDF layout (matches app style: ISSSourcing, accent blue, clean table) ———
 const PDF_LAYOUT = {
@@ -226,24 +227,6 @@ function formatExportValue(value: unknown, key?: string, forHumanReadableExport 
   if (value instanceof Date) return format(value, "yyyy-MM-dd");
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return String(value);
-}
-
-function buildGenericSummaryMetrics(data: any[], columns: { header: string; key: string; width: number }[]): Array<{ label: string; value: string }> {
-  const currencyColumns = columns.filter((col) => PDF_COLUMN_FORMAT[col.key] === "currency").map((col) => col.key);
-  const currencyTotal = data.reduce((sum, item) => {
-    for (const key of currencyColumns) {
-      const n = Number(item?.[key] ?? 0);
-      if (Number.isFinite(n)) sum += n;
-    }
-    return sum;
-  }, 0);
-
-  return [
-    { label: "Records", value: String(data.length) },
-    { label: "Columns", value: String(columns.length) },
-    { label: "Updated", value: format(new Date(), "yyyy-MM-dd") },
-    { label: "Monetary Sum", value: formatPdfMoney(currencyTotal) },
-  ];
 }
 
 /** First body `y` below the header rule (PDF coords, origin bottom-left). */

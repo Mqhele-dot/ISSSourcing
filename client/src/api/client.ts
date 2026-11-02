@@ -805,6 +805,7 @@ export async function fetchSpendAnalytics(params?: {
   departmentId?: number;
 }): Promise<{
   spendBySupplier: Array<{ supplierName: string; totalSpend: number }>;
+  financialMeasures?:{state:"unavailable";reason:string;summaryEndpoint:string;deprecatedFields:string[]};
   inventoryTurnover: Array<{ sku: string; turnover: number }>;
   warehouseUtilization: Array<{ warehouseName: string; utilization: number }>;
   supplierPerformance: Array<{ supplierName: string; onTimeDeliveryRate: number; ordersMeasured: number }>;

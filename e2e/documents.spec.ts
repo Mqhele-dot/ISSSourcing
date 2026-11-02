@@ -13,7 +13,7 @@ test.describe("Documents workspace", () => {
     const fileName = `playwright-doc-${stamp}.txt`;
 
     await gotoAuthed(page, "/admin/documents");
-    await expect(page.getByRole("heading", { name: /documents/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Documents", exact: true, level: 1 })).toBeVisible({ timeout: 15_000 });
 
     await page.getByLabel("Entity ID").first().fill(entityId);
     await page.getByLabel("File").setInputFiles({
@@ -26,7 +26,7 @@ test.describe("Documents workspace", () => {
     await expect(page.getByRole("dialog", { name: /process document/i })).toBeVisible();
     await page.getByRole("button", { name: /confirm upload/i }).click();
 
-    await expect(page.getByText(/document version was saved successfully/i)).toBeVisible();
+    await expect(page.getByText("Document version was saved successfully.", { exact: true })).toBeVisible();
 
     await page.getByText("Filter by entity type", { exact: true }).locator("..").getByRole("combobox").click();
     await page.getByRole("option", { name: "Purchase order" }).click();

@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { randomUUID } from "node:crypto";
 
 type ApiErrorBody = {
   code: string;
@@ -11,11 +12,14 @@ type ApiErrorBody = {
 
 type ApiMeta = Record<string, unknown> & { requestId: string };
 
-function resolveRequestId(res: Response): string {
+export function resolveRequestId(res: Response): string {
   const existing =
     (res.locals?.requestId as string | undefined) ??
     (res.getHeader("X-Request-Id") as string | undefined);
-  return existing || "unknown-request-id";
+  const requestId = existing || randomUUID();
+  res.locals.requestId = requestId;
+  if (!res.headersSent) res.setHeader("X-Request-Id", requestId);
+  return requestId;
 }
 
 export function sendOk<T>(res: Response, data: T, status = 200, meta?: Record<string, unknown>) {

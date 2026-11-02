@@ -45,6 +45,15 @@ try {
     INSERT INTO organization_members(organization_id,user_id,active,status) VALUES(1,1,true,'active');
     INSERT INTO inventory_items VALUES(10,1,'TEST-10','Test item',now()-interval '90 days',10,12,false,0,10,10,'active'),(20,2,'FOREIGN','Foreign item',now()-interval '90 days',10,12,false,0,10,10,'active');
     INSERT INTO warehouse_inventory(organization_id,item_id,quantity) VALUES(1,10,2);
+    CREATE TABLE warehouses(id integer PRIMARY KEY, organization_id integer, location text);
+    INSERT INTO warehouses VALUES(1,1,'Test warehouse'),(2,2,'Foreign warehouse');
+    ALTER TABLE inventory_items ADD COLUMN quantity numeric DEFAULT 0,ADD COLUMN category_id integer,
+      ADD COLUMN supplier_id integer,ADD COLUMN expiry_date date,ADD COLUMN default_location text,
+      ADD COLUMN location text,ADD COLUMN updated_at timestamp DEFAULT now();
+    ALTER TABLE warehouse_inventory ADD COLUMN warehouse_id integer DEFAULT 1,ADD COLUMN location text,
+      ADD COLUMN updated_at timestamp DEFAULT now();
+    ALTER TABLE inventory_allocations ADD COLUMN warehouse_id integer;
+    UPDATE inventory_items SET quantity=2 WHERE id=10;
   `);
   const { registerPlanningRoutes } = await import("../server/modules/reorder/register-planning-routes");
   const { runWithTenantContext } = await import("../server/organization-context");
@@ -58,9 +67,9 @@ try {
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server!.once("listening", resolve));
   const port = (server.address() as { port: number }).port;
-  const post = async (itemId: number) => {
+  const post = async (itemId: number, lookbackDays = 90) => {
     const response = await fetch(`http://127.0.0.1:${port}/api/v2/inventory/reorder-suggestions/${itemId}/request`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lookbackDays: 90 }),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lookbackDays }),
     });
     return { status: response.status, body: await response.json() as { data?: { quantity: number } } };
   };
@@ -71,7 +80,54 @@ try {
   assert.equal((await post(20)).status, 409, "A foreign-tenant item cannot be requested.");
   assert.equal(Number((await pool.query("SELECT count(*) n FROM reorder_requests WHERE organization_id=1")).rows[0].n), 1);
   assert.equal(Number((await pool.query("SELECT count(*) n FROM audit_logs WHERE action='REORDER_REQUEST_FROM_SUGGESTION'")).rows[0].n), 1);
-  console.log("Reorder suggestion runtime passed: recalculation, duplicate guard, tenant isolation and audit evidence.");
+  await pool.query("ALTER TABLE warehouse_inventory ALTER COLUMN quantity TYPE numeric");
+  await pool.query("ALTER TABLE inventory_allocations ALTER COLUMN quantity TYPE numeric");
+  await pool.query(`INSERT INTO inventory_items(id,organization_id,sku,name,created_at,lead_time,reorder_point,low_stock_threshold,status,safety_hold)
+    VALUES(30,1,'DECIMAL','Decimal evidence',now()-interval '90 days',0,99,1,'active',false);
+    INSERT INTO warehouse_inventory(organization_id,item_id,quantity) VALUES(1,30,0.3);
+    INSERT INTO inventory_allocations(organization_id,item_id,quantity,status) VALUES(1,30,0.1,'reserved')`);
+  const list = async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v2/inventory/reorder-suggestions?pageSize=25`);
+    assert.equal(response.status,200);
+    return (await response.json()).data;
+  };
+  const decimal = (await list()).items.find((item: {id:number})=>item.id===30);
+  assert.equal(Number(decimal.availableNow),0.2);
+  assert.equal(Number(decimal.targetQuantity),1,"Explicit low-stock threshold overrides reorder point");
+  assert.equal((await post(30)).body.data?.quantity,1);
+  await pool.query(`INSERT INTO inventory_items(id,organization_id,sku,name,created_at,lead_time,reorder_point,low_stock_threshold,status,safety_hold)
+    SELECT n,1,'VOLUME-'||n,'Volume item',now()-interval '90 days',0,1,1,'active',false FROM generate_series(100,5100) n`);
+  const volume = await list();
+  assert.equal(volume.total,5003,"Authoritative totals include more than 5,000 eligible items");
+  assert.equal(volume.items.length,25,"Rendering payload remains bounded");
+  await pool.query(`INSERT INTO inventory_items(id,organization_id,sku,name,created_at,quantity,lead_time,reorder_point,low_stock_threshold,status,safety_hold)
+    VALUES(40,1,'HELD','Held evidence',now()-interval '120 days',10,0,20,20,'active',true),
+      (50,1,'LEGACY','Unassigned evidence',now()-interval '120 days',4.2,0,10,10,'active',false),
+      (60,1,'NEGATIVE','Negative evidence',now()-interval '120 days',-1,0,1,1,'active',false),
+      (70,1,'INACTIVE','Inactive evidence',now()-interval '120 days',0,0,20,20,'inactive',false);
+    INSERT INTO warehouse_inventory(organization_id,item_id,quantity) VALUES(1,40,10),(1,60,-1);
+    INSERT INTO inventory_allocations(organization_id,item_id,quantity,status) VALUES(1,40,2,'reserved'),(1,50,0.2,'reserved');`);
+  const {INVENTORY_BASE_SQL,operationalStockBaseSql}=await import('../server/modules/inventory/operational-stock-query');
+  const canonical=await pool.query(`${INVENTORY_BASE_SQL} SELECT id,available::text AS available FROM base WHERE id IN (30,40,50,60)`,[1]);
+  const suggestions=await list();
+  for(const id of [30,50,60]) {
+    const row=suggestions.items.find((item:{id:number})=>item.id===id);
+    assert.equal(row.availableNow,canonical.rows.find(item=>item.id===id)?.available,`Planning must match canonical operational availability for ${id}`);
+  }
+  assert.ok(!suggestions.items.some((item:{id:number})=>[40,70].includes(item.id)),"Held and inactive items cannot become reorder suggestions");
+  const legacy=suggestions.items.find((item:{id:number})=>item.id===50);
+  assert.equal(legacy.unassignedQuantity,'4.2',"Unassigned stock is disclosed, not assigned to an invented warehouse");
+  assert.equal(legacy.availableNow,'4.0');
+  assert.equal((await post(50,45)).body.data?.quantity,6,"Every supported lookback can convert using the same stock basis");
+  assert.equal((await post(40)).status,409,"Safety holds prevent suggestion conversion");
+  assert.equal((await post(60,29)).status,400,"Invalid lookback periods remain blocked");
+  const slowResponse=await fetch(`http://127.0.0.1:${port}/api/v2/inventory/slow-moving?pageSize=25`);
+  assert.equal(slowResponse.status,200);
+  const held=(await slowResponse.json()).data.items.find((item:{id:number})=>item.id===40);
+  assert.equal(held.availableNow,'0',"Slow-moving stock must not describe held quantities as available");
+  const warehouse=await pool.query(`${operationalStockBaseSql(2)} SELECT incomplete_reservation_evidence FROM base WHERE id=50`,[1,1]);
+  assert.equal(warehouse.rows[0].incomplete_reservation_evidence,true,"Warehouse scope must disclose unattributed reservations");
+  console.log("Reorder runtime passed: shared stock/hold/fractional/legacy parity, 5,000+ totals, supported lookbacks, duplicate guard, tenant isolation and audit evidence.");
 } finally {
   if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
   if (pool) await pool.end();

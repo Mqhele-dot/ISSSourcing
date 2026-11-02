@@ -61,7 +61,7 @@ export type Overview = {
   exceptionCount: number;
   paymentBatchCount: number;
   pendingPaymentBatchCount: number;
-  outstandingAmount: number;
+  outstandingAmount: number|null;
 };
 export type ApprovalQueue = {
   invoices: Invoice[];

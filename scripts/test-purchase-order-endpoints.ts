@@ -248,12 +248,12 @@ async function main() {
   });
   assert.equal(
     put2.status,
-    409,
-    `PUT commercial PO-FQA-002 should block supplier/contract currency mismatch: ${put2.status} ${JSON.stringify(put2.json)}`,
+    200,
+    `Explicitly cleared commercial fields must remain cleared: ${put2.status} ${JSON.stringify(put2.json)}`,
   );
   assert.equal(
-    (put2.json as { error?: { code?: string } })?.error?.code,
-    "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED",
+    (await pool.query("SELECT contract_id FROM purchase_orders WHERE id=$1 AND organization_id=1", [id2])).rows[0].contract_id,
+    null,
   );
 
   const putEur = await apiJsonRequest(`/purchase-orders/${id2}`, {
@@ -268,8 +268,27 @@ async function main() {
   );
   assert.equal(
     (putEur.json as { error?: { code?: string } })?.error?.code,
-    "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED",
+    "SUPPLIER_CURRENCY_OVERRIDE_BLOCKED",
   );
+
+  const selectedContract = (await pool.query(`SELECT s.default_contract_id FROM suppliers s
+    JOIN purchase_orders p ON p.supplier_id=s.id AND p.organization_id=s.organization_id
+    WHERE p.id=$1 AND p.organization_id=1`, [id2])).rows[0].default_contract_id;
+  const attach = await apiJsonRequest(`/purchase-orders/${id2}`, {
+    method: "PUT", body: { contractId: selectedContract, currencyCode: "USD" }, cookie: adminCookie2,
+  });
+  assert.equal(attach.status, 200, "Explicit agreement selection must still validate and persist");
+  const lockedCurrency = await apiJsonRequest(`/purchase-orders/${id2}`, {
+    method: "PUT", body: { currencyCode: "EUR" }, cookie: adminCookie2,
+  });
+  assert.equal(lockedCurrency.status, 409);
+  assert.equal((lockedCurrency.json as { error?: { code?: string } })?.error?.code,
+    "SUPPLIER_CONTRACT_CURRENCY_OVERRIDE_BLOCKED", "Selected agreements still control currency");
+  const clearContract = await apiJsonRequest(`/purchase-orders/${id2}`, {
+    method: "PUT", body: { contractId: null, currencyCode: "ZAR" }, cookie: adminCookie2,
+  });
+  assert.equal(clearContract.status, 200, "Clearing an existing agreement must not reattach the supplier default");
+  assert.equal((await pool.query("SELECT contract_id FROM purchase_orders WHERE id=$1 AND organization_id=1", [id2])).rows[0].contract_id, null);
 
   const get3 = await apiJsonRequest("/purchase/orders/PO-FQA-003", { cookie: adminCookie2 });
   if (!get3.ok) {

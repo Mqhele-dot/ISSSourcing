@@ -59,7 +59,7 @@ export function TaxSettingsForm() {
   const { settings, isLoading, error, refetch, updateSettings } = useSettings();
 
   // Create form
-  const form = useForm<TaxSettingsFormType>({
+  const form = useForm<z.input<typeof taxSettingsSchema>,unknown,TaxSettingsFormType>({
     resolver: zodResolver(taxSettingsSchema),
     defaultValues: {
       enableVat: settings?.enableVat ?? false,

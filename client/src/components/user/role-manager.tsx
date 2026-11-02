@@ -222,7 +222,7 @@ export function RoleManager() {
     : selectedCustomRolePermissions || [];
   
   // Form for creating new custom role
-  const createRoleForm = useForm<z.infer<typeof createRoleSchema>>({
+  const createRoleForm = useForm<z.input<typeof createRoleSchema>,unknown,z.output<typeof createRoleSchema>>({
     resolver: zodResolver(createRoleSchema),
     defaultValues: {
       name: "",

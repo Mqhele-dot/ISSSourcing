@@ -1560,14 +1560,14 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
 
       const defaultedPatch = await applySupplierDefaultsToPurchaseOrder({
         supplierId: existingOrder.supplierId,
-        contractId: patchPayload.contractId ?? existingOrder.contractId,
-        departmentId: patchPayload.departmentId ?? existingOrder.departmentId,
-        paymentTermsId: patchPayload.paymentTermsId ?? existingOrder.paymentTermsId,
-        incotermId: patchPayload.incotermId ?? existingOrder.incotermId,
+        contractId: patchPayload.contractId === undefined ? existingOrder.contractId : patchPayload.contractId,
+        departmentId: patchPayload.departmentId === undefined ? existingOrder.departmentId : patchPayload.departmentId,
+        paymentTermsId: patchPayload.paymentTermsId === undefined ? existingOrder.paymentTermsId : patchPayload.paymentTermsId,
+        incotermId: patchPayload.incotermId === undefined ? existingOrder.incotermId : patchPayload.incotermId,
         currencyCode: patchPayload.currencyCode ?? existingOrder.currencyCode,
-        taxCodeId: patchPayload.taxCodeId ?? existingOrder.taxCodeId,
+        taxCodeId: patchPayload.taxCodeId === undefined ? existingOrder.taxCodeId : patchPayload.taxCodeId,
         confirmCurrencyOverride: patchPayload.confirmCurrencyOverride,
-      });
+      }, { applyDefaults: false });
 
       const validatedData: Partial<InsertPurchaseOrder> = {};
       (

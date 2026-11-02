@@ -15,6 +15,7 @@ import { ApApprovalsPanel } from "./ap-approvals-panel";
 import { ApExceptionsPanel } from "./ap-exceptions-panel";
 import { ApPaymentsPanel } from "./ap-payments-panel";
 import { ApAgingPanel } from "./ap-aging-panel";
+import { ApOpeningBaselinesPanel } from "./ap-opening-baselines-panel";
 import { ApOverviewHeader } from "./ap-overview-header";
 import { useApWorkspaceQueries } from "./use-ap-workspace-queries";
 import { useApWorkspaceMutations } from "./use-ap-workspace-mutations";
@@ -257,6 +258,7 @@ export default function AccountsPayableWorkspace() {
       ) : null}
 
       {overview ? <ApOverviewHeader stats={overview} formatMoney={formatMoney} /> : null}
+      <ApAgingPanel showDetails={activeTab==="aging"}/>
 
       {partialWorkspaceDataError ? (
         <Alert>
@@ -419,7 +421,7 @@ export default function AccountsPayableWorkspace() {
         </TabsContent>
 
         <TabsContent value="aging" className="space-y-4">
-          <ApAgingPanel />
+          <ApOpeningBaselinesPanel />
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-4">

@@ -22,7 +22,7 @@ import { SettingsAuthorityState } from "./settings-authority-state";
 // Define schema for form validation
 const forecastingSettingsSchema = z.object({
   forecastingEnabled: z.boolean().default(true),
-  forecastDays: z.coerce.number().int().min(1, "Forecast period must be at least 1 day").max(365, "Forecast period cannot exceed 365 days"),
+  forecastDays: z.coerce.number<number>().int().min(1, "Forecast period must be at least 1 day").max(365, "Forecast period cannot exceed 365 days"),
   seasonalAdjustmentEnabled: z.boolean().default(true),
 });
 
@@ -33,7 +33,7 @@ export function ForecastingSettingsForm() {
   const { settings, isLoading, error, refetch, updateSettings } = useSettings();
 
   // Create form
-  const form = useForm<ForecastingSettingsFormType>({
+  const form = useForm<z.input<typeof forecastingSettingsSchema>,unknown,ForecastingSettingsFormType>({
     resolver: zodResolver(forecastingSettingsSchema),
     defaultValues: {
       forecastingEnabled: settings?.forecastingEnabled ?? false,

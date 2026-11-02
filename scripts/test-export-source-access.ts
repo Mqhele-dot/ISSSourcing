@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import {exportSourceResources} from "../shared/export-source-access";
+import {reportTypeEnum} from "../shared/schema";
+import {EXPORT_DATASET_REGISTRY} from "../server/services/export-registry";
+for(const dataset of [...reportTypeEnum,...EXPORT_DATASET_REGISTRY.map(row=>row.key)])assert.ok(exportSourceResources(dataset)?.length,`Missing source mapping: ${dataset}`);
+for(const unknown of ["__proto__","constructor","unknown"])assert.equal(exportSourceResources(unknown),null);
+assert.equal(exportSourceResources("financial_measure",{measure:"unknown"}),null);
+assert.deepEqual(exportSourceResources("financial_measure",{measure:"ordered"}),["purchases"]);
+assert.deepEqual(exportSourceResources("financial_measure",{measure:"ap_outstanding"}),["finance"]);
+assert.deepEqual(exportSourceResources("invoices"),["finance","invoices"]);
+console.log("Export source mappings passed: every registered/legacy dataset, financial measures and fail-closed unknown/prototype keys.");

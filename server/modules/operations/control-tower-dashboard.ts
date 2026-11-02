@@ -3,7 +3,8 @@
  */
 import { normalizePurchaseOrderStatus } from "@shared/purchase-order-status";
 import { pool } from "../../db";
-import { INVENTORY_BASE_SQL } from "../v2/register-inventory-v2-routes";
+import { shipmentOrderLinkSql } from "./shipment-order-link";
+import { INVENTORY_BASE_SQL } from "../inventory/operational-stock-query";
 import { listOperationalActivity } from "./operations-core";
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -15,13 +16,6 @@ function mediumSev(n: number): "low" | "medium" | "high" {
   if (n >= 20) return "high";
   if (n >= 5) return "medium";
   return "low";
-}
-
-function orgInventoryWhere(alias: string, orgId: number, paramIndex: number): string {
-  if (orgId === 1) {
-    return `(${alias}.organization_id = $${paramIndex} OR ${alias}.organization_id IS NULL)`;
-  }
-  return `${alias}.organization_id = $${paramIndex}`;
 }
 
 function orgPoWhere(paramIndex: number): string {
@@ -63,7 +57,7 @@ export type ControlTowerDashboardPayload = {
     delayedShipments: number;
     inTransitShipments: number;
     apInvoicesDueOrOverdue: number;
-    operationalExceptions: number;
+    operationalExceptions: number | null;
     supplierRiskAlerts: number;
   };
   procurementPipeline: Array<{
@@ -275,11 +269,13 @@ export async function getControlTowerDashboard(
   organizationId: number,
   opts: { trendDays: number; businessArea: string },
 ): Promise<ControlTowerDashboardPayload> {
-  const orgId = Number.isFinite(organizationId) ? organizationId : 1;
+  if(!Number.isSafeInteger(organizationId)||organizationId<=0)throw new Error('An active organization is required for this dashboard.');
+  const orgId = organizationId;
   const trendDays = [7, 30, 90].includes(opts.trendDays) ? opts.trendDays : 7;
   const businessArea = opts.businessArea || "all";
   const base: ControlTowerDashboardPayload = {
-    ...EMPTY,
+    // Nested defaults must never be shared across overlapping tenant requests.
+    ...structuredClone(EMPTY),
     generatedAt: new Date().toISOString(),
     meta: {
       ...EMPTY.meta,
@@ -295,21 +291,28 @@ export async function getControlTowerDashboard(
   /* ── inventory rollups (SKU-level available, threshold, value) ── */
   let invRows: {
     sku: string;
-    available: number;
-    threshold: number;
+    available: string;
+    threshold: string;
     value_proxy: number;
     expiry: Date | null;
+    is_low_stock: boolean;
+    is_negative: boolean;
+    is_zero: boolean;
   }[] = [];
   try {
     const invRes = await pool.query<{
       sku: string;
-      available: number;
-      threshold: number;
+      available: string;
+      threshold: string;
       value_proxy: number;
       expiry: Date | null;
+      is_low_stock: boolean;
+      is_negative: boolean;
+      is_zero: boolean;
     }>(
       `${INVENTORY_BASE_SQL}
-       SELECT sku, available::real AS available, low_stock_threshold::real AS threshold,
+       SELECT sku, available::text AS available, low_stock_threshold::text AS threshold,
+              available <= low_stock_threshold AS is_low_stock, available < 0 AS is_negative, available = 0 AS is_zero,
               (available * valuation_rate)::real AS value_proxy, expiry_date AS expiry
        FROM base`,
       [orgId],
@@ -337,21 +340,20 @@ export async function getControlTowerDashboard(
 
   for (const row of invRows) {
     const av = toNumber(row.available, 0);
-    const th = toNumber(row.threshold, 0);
     const vp = toNumber(row.value_proxy, 0);
     inventoryValue += vp;
 
     // Keep this definition identical to /api/v2/inventory?low=1. Negative and
     // zero availability intentionally overlap the low-stock KPI.
-    if (av <= th) {
+    if (row.is_low_stock) {
       lowStock += 1;
     }
 
-    if (av < 0) {
+    if (row.is_negative) {
       negative += 1;
       continue;
     }
-    if (av === 0) {
+    if (row.is_zero) {
       zeroStock += 1;
       continue;
     }
@@ -361,7 +363,7 @@ export async function getControlTowerDashboard(
         expiringSoon += 1;
       }
     }
-    if (av > 0 && av <= th) {
+    if (row.is_low_stock) {
       // Already counted above; keep this branch from classifying low stock as healthy.
     } else {
       healthy += 1;
@@ -383,17 +385,11 @@ export async function getControlTowerDashboard(
   try {
     const catRes2 = await pool.query<{ name: string; value: number }>(
       `
-      WITH stock AS (
-        SELECT
-          i.id,
-          COALESCE(NULLIF(trim(c.name), ''), 'Uncategorized') AS name,
-          (CASE WHEN COALESCE((to_jsonb(i)->>'safety_hold')::boolean,false) THEN 0 ELSE COALESCE(SUM(p.on_hand), COALESCE(i.quantity, 0)) - COALESCE(SUM(p.allocated), 0) END)::double precision AS available,
-          COALESCE(i.cost, i.price, 0)::double precision AS unit
-        FROM inventory_items i
-        LEFT JOIN inventory_positions p ON p.sku = i.sku
-        LEFT JOIN categories c ON c.id = i.category_id
-        WHERE ${orgInventoryWhere("i", orgId, 1)}
-        GROUP BY i.id, c.name, i.quantity, i.cost, i.price
+      ${INVENTORY_BASE_SQL}, stock AS (
+        SELECT i.id,COALESCE(NULLIF(trim(c.name), ''), 'Uncategorized') AS name,
+          i.available, i.valuation_rate AS unit
+        FROM base i
+        LEFT JOIN categories c ON c.id=i.category_id AND c.organization_id=$1
       )
       SELECT name, SUM(available * unit)::real AS value
       FROM stock
@@ -486,11 +482,11 @@ export async function getControlTowerDashboard(
       `
       SELECT count(*)::int AS count
       FROM shipments s
-      INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
+      INNER JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND ${orgPoWhere(1)}
       WHERE s.eta IS NOT NULL
         AND s.eta < now()
         AND lower(s.status) NOT IN ('delivered', 'cancelled')
-        AND COALESCE(s.organization_id, po.organization_id) = $1
+        AND s.organization_id = $1
       `,
       [orgId],
     );
@@ -520,9 +516,9 @@ export async function getControlTowerDashboard(
         END AS bucket,
         count(*)::int AS count
       FROM shipments s
-      INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
+      INNER JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND ${orgPoWhere(1)}
       WHERE lower(s.status) <> 'delivered'
-        AND COALESCE(s.organization_id, po.organization_id) = $1
+        AND s.organization_id = $1
       GROUP BY 1
       `,
       [orgId],
@@ -556,9 +552,9 @@ export async function getControlTowerDashboard(
     const transit = await pool.query<{ count: number }>(
       `SELECT count(*)::int AS count
        FROM shipments s
-       INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
+       INNER JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND ${orgPoWhere(1)}
        WHERE lower(s.status) = 'in_transit'
-         AND COALESCE(s.organization_id, po.organization_id) = $1`,
+         AND s.organization_id = $1`,
       [orgId],
     );
     base.kpis.inTransitShipments = toNumber(transit.rows[0]?.count, 0);
@@ -638,14 +634,16 @@ export async function getControlTowerDashboard(
     base.kpis.apInvoicesDueOrOverdue = 0;
   }
 
-  /* exceptions (global table — count open) */
+  /* Exceptions are tenant-owned, including legacy rows with unresolved owners. */
   try {
     const ex = await pool.query<{ count: number }>(
-      `SELECT count(*)::int AS count FROM operational_exceptions WHERE status IN ('open', 'in_progress')`,
+      `SELECT count(*)::int AS count FROM operational_exceptions WHERE organization_id=$1 AND status IN ('open', 'in_progress')`,
+      [orgId],
     );
     base.kpis.operationalExceptions = toNumber(ex.rows[0]?.count, 0);
   } catch {
-    base.kpis.operationalExceptions = 0;
+    base.kpis.operationalExceptions = null;
+    base.meta.partialFailures!.push({area:"exceptions",code:"QUERY_FAILED",message:"Exception count is temporarily unavailable. Retry or open System Diagnostics.",fallbackUsed:true});
   }
 
   /* supplier risk snapshot */
@@ -654,12 +652,12 @@ export async function getControlTowerDashboard(
       `
       SELECT po.supplier_id, sup.name, count(*)::int AS late
       FROM shipments s
-      INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
-      INNER JOIN suppliers sup ON sup.id = po.supplier_id
+      INNER JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND ${orgPoWhere(1)}
+      INNER JOIN suppliers sup ON sup.id = po.supplier_id AND sup.organization_id = $1
       WHERE s.eta IS NOT NULL
         AND s.eta < now()
         AND lower(s.status) NOT IN ('delivered', 'cancelled')
-        AND COALESCE(s.organization_id, po.organization_id) = $1
+        AND s.organization_id = $1
       GROUP BY po.supplier_id, sup.name
       ORDER BY late DESC
       LIMIT 5
@@ -713,11 +711,11 @@ export async function getControlTowerDashboard(
         count(*) FILTER (WHERE lower(entity_type) LIKE '%invoice%')::int AS invoices,
         count(*) FILTER (WHERE lower(entity_type) LIKE '%exception%')::int AS exceptions
       FROM ops_activity
-      WHERE created_at >= (now() - ($1::int * interval '1 day'))
+      WHERE organization_id=$2 AND created_at >= (now() - ($1::int * interval '1 day'))
       GROUP BY 1
       ORDER BY 1 ASC
       `,
-      [trendDays],
+      [trendDays,orgId],
     );
     base.operationsTrend = trRes.rows.map((r) => ({
       date: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day),
@@ -729,6 +727,7 @@ export async function getControlTowerDashboard(
     }));
   } catch {
     base.operationsTrend = [];
+    base.meta.partialFailures!.push({area:"activity",code:"QUERY_FAILED",message:"Operational activity trend is temporarily unavailable. Retry or open System Diagnostics.",fallbackUsed:true});
   }
 
   /* needs attention (lightweight caps) */
@@ -793,7 +792,7 @@ export async function getControlTowerDashboard(
       area: "finance",
     });
   }
-  if (base.kpis.operationalExceptions > 0) {
+  if ((base.kpis.operationalExceptions ?? 0) > 0) {
     na.push({
       id: "ex-open",
       title: "Operational exceptions",
@@ -861,11 +860,11 @@ export async function getControlTowerDashboard(
       SELECT s.id, s.po_number, s.carrier, s.eta,
         (EXTRACT(EPOCH FROM (now() - s.eta)) / 60.0)::text AS drift
       FROM shipments s
-      INNER JOIN purchase_orders po ON po.order_number = s.po_number AND ${orgPoWhere(1)}
+      INNER JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')} AND ${orgPoWhere(1)}
       WHERE s.eta IS NOT NULL
         AND s.eta < now()
         AND lower(s.status) NOT IN ('delivered', 'cancelled')
-        AND COALESCE(s.organization_id, po.organization_id) = $1
+        AND s.organization_id = $1
       ORDER BY s.eta ASC
       LIMIT 8
       `,
@@ -901,10 +900,11 @@ export async function getControlTowerDashboard(
       SELECT id, type, title, severity,
         (EXTRACT(EPOCH FROM (now() - created_at)) / 3600.0)::text AS aged
       FROM operational_exceptions
-      WHERE lower(status) IN ('open', 'in_progress')
-      ORDER BY created_at ASC
+      WHERE organization_id=$1 AND lower(status) IN ('open', 'in_progress')
+      ORDER BY created_at ASC,id ASC
       LIMIT 8
       `,
+      [orgId],
     );
     base.spotlight.oldestOpenExceptions = ox.rows.map((r) => ({
       id: r.id,

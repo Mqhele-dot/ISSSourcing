@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { FxRevisionHistory } from "@/components/fx-revision-history";
+import { ReportingFxWorkspace } from "@/components/reporting-fx-workspace";
 import { Link, useLocation } from "wouter";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -244,6 +245,7 @@ const MASTER_SECTIONS: MasterSectionConfig[] = [
     usedBy: ["Procurement", "Inventory", "Finance", "Logistics", "Analytics"],
     risk: "Unreviewed Master Data changes can affect every downstream transaction.",
   },
+  {slug:"exchangeRates",label:"Reporting Exchange Rates",shortLabel:"Reporting FX",icon:Coins,group:"Finance",description:"Independently approved direct rates and immutable reporting revisions.",usedBy:["Procurement reporting","AP aging","Analytics"],risk:"Only successfully applied approved revisions may translate reporting values."},
   {
     slug: "units",
     label: "Units of Measure",
@@ -1448,6 +1450,13 @@ function ControlCentreGovernancePanel({
     },
     onSuccess: async (_data, variables) => {
       await refreshChangeRequests();
+      if(variables.action==='apply' && selectedRequest?.domain==='exchange-rates') {
+        await queryClient.invalidateQueries({queryKey:['/api/v2/analytics/financial-measures']});
+        await queryClient.invalidateQueries({queryKey:['/api/v2/ap/aging']});
+        await queryClient.invalidateQueries({queryKey:['/api/mdm/fx/revisions']});
+        await queryClient.invalidateQueries({queryKey:['/api/mdm/fx/rates']});
+        await queryClient.invalidateQueries({queryKey:['/api/mdm/exchange-rates']});
+      }
       toast({ title: `MDM change request ${variables.action}d` });
     },
     onError: (error) => {
@@ -1588,6 +1597,7 @@ function ControlCentreGovernancePanel({
                 </div>
               </div>
               <div data-testid="mdm-step-timeline">
+                {selectedRequest.domain==='exchange-rates'?<div className="mb-3 space-y-2"><p className="text-sm">Independent approval is required. Approval alone does not publish a rate; successful application refreshes live reports without changing saved reports.</p>{selectedRequest.entityId?<FxRevisionHistory key={selectedRequest.entityId} rateId={selectedRequest.entityId}/>:null}</div>:null}
                 <p className="text-xs font-medium uppercase text-muted-foreground">Step timeline</p>
                 <div className="mt-1 space-y-1">
                   {(selectedRequest.steps ?? []).length === 0 ? (
@@ -1660,7 +1670,7 @@ function ControlCentreGovernancePanel({
                       Apply approved change
                     </Button>
                   ) : null}
-                  {canAdminOverride ? (
+                  {canAdminOverride && selectedRequest.domain !== 'exchange-rates' ? (
                     <Button
                       size="sm"
                       variant="destructive"
@@ -1758,7 +1768,7 @@ function NewChangeRequestComposer({ registry, onClose, onCreated }: { registry: 
   const [action,setAction] = useState<"create"|"update"|"deactivate"|"archive">("update");
   const [field,setField] = useState(""); const [value,setValue] = useState(""); const [reason,setReason] = useState("");
   const submit = useMutation({ mutationFn: () => {
-    const proposedPatch: Record<string, unknown> = action === "deactivate" ? { active:false, status:"inactive" } : action === "archive" ? { active:false, status:"archived" } : field.trim() ? { [field.trim()]: value } : {};
+    const proposedPatch: Record<string, unknown> = action === "deactivate" ? { active:false, ...(domain==='exchange-rates'?{}:{status:"inactive"}) } : action === "archive" ? { active:false, ...(domain==='exchange-rates'?{}:{status:"archived"}) } : field.trim() ? { [field.trim()]: value } : {};
     if (!domain || reason.trim().length < 5 || ((action === "update" || action === "create") && !field.trim())) throw new Error("Choose a domain, enter the changed field, and explain the business reason.");
     return requestJson("POST","/api/mdm/change-requests",{domain,entityId:entityId?Number(entityId):null,action,proposedPatch,reason:reason.trim()});
   }, onSuccess:()=>{toast({title:"Master Data change request submitted",description:"The proposal is now visible in the maker-checker queue."});onCreated();onClose();}, onError:(error)=>toast({title:"Change request could not be submitted",description:error instanceof Error?error.message:String(error),variant:"destructive"}) });
@@ -1778,7 +1788,6 @@ export default function MasterDataPage() {
   const [showGovernance, setShowGovernance] = useState(false);
   const [showChangeRequest, setShowChangeRequest] = useState(false);
   const [createSignal, setCreateSignal] = useState(0);
-  const isLgUp = useMediaQuery("(min-width: 1024px)");
   const activeSection = asSectionSlug(location.split("/")[3], MASTER_DATA_SECTION_SLUGS, "overview");
   const activeConfig = sectionBySlug(activeSection);
 
@@ -1901,18 +1910,8 @@ export default function MasterDataPage() {
     window.setTimeout(() => document.getElementById("mdm-approval-queue")?.scrollIntoView({ behavior:"smooth", block:"start" }), 100);
   }
 
-  if (!isLgUp) {
-    return (
-      <div className="mx-auto max-w-lg p-6 text-center text-sm text-muted-foreground">
-        Master data is available on large screens (1024px and wider). Use a desktop browser or resize the window.
-        Your current page is preserved; no changes have been made.
-        <a href="/m/home" className="mt-4 block underline">Open mobile hub</a>
-      </div>
-    );
-  }
-
   return (
-    <div className="mx-auto w-full max-w-[min(100%,88rem)] space-y-6" data-testid="master-data-page">
+    <div className="mx-auto min-w-0 w-full max-w-[min(100%,88rem)] space-y-6" data-testid="master-data-page">
       <PageHeader
         title="Master Data Governance"
         subtitle="Manage the controlled business data used across procurement, inventory, suppliers, logistics, finance, analytics, and approvals."
@@ -2010,6 +2009,8 @@ export default function MasterDataPage() {
             <TabsContent key={section.slug} value={section.slug} className="m-0">
               {section.slug === "overview" ? (
                 <GovernanceOverviewPanel overview={overview} onReviewApprovals={openApprovalQueue} onScan={()=>scanDataQuality.mutate()} />
+              ) : section.slug === "exchangeRates" ? (
+                <ReportingFxWorkspace onProposed={openApprovalQueue}/>
               ) : section.slug === "warehouses" ? (
                 <WarehouseMasterPanel />
               ) : section.slug === "approvalPolicies" ? (

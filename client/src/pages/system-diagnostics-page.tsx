@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery,useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
+import { PersistentDiagnosticHistory } from "@/components/diagnostics/persistent-history";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { ReadinessStatus, SetupStatusPayload } from "@/lib/setup-readiness-queries";
@@ -25,7 +26,6 @@ import {
 import {
   fetchDiagnosticsScan,
   fetchDiagnosticsSnapshot,
-  fixDiagnostics,
   type DiagnosticsScanResult,
   type DiagnosticsSnapshotResult,
 } from "@/api/client";
@@ -40,6 +40,7 @@ import {
 } from "@/lib/diagnostics/diagnostics-store";
 import {
   copyDiagnosticsSummary,
+  buildDiagnosticsReportMarkdown,
   downloadDiagnosticsJson,
   downloadDiagnosticsMarkdown,
 type DiagnosticsReportContext,
@@ -214,6 +215,8 @@ function DiagnosticsWorkspacePanel({
               <span className="text-xs text-muted-foreground">Last seen {new Date(row.lastSeen).toLocaleString()}</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>
+            {row.businessImpact?<p className="text-sm"><strong>What this affects:</strong> {row.businessImpact}</p>:null}
+            {row.technicalDetails?<details className="mt-2 text-xs"><summary>Technical details</summary><p>Rule {row.technicalDetails.rule} · Request {row.technicalDetails.requestId??'not recorded'}</p><p>{row.technicalDetails.message}</p><p>{row.technicalDetails.remediation}</p><p>Scope: {JSON.stringify(row.evidence??{})}</p></details>:null}
             {row.affectedRoute || row.affectedAction ? <p className="mt-1 text-xs text-muted-foreground">{row.affectedAction ?? "Action"} {row.affectedRoute ?? ""}</p> : null}
             {row.requestId ? <p className="mt-1 text-xs text-muted-foreground">Request ID: {row.requestId}</p> : null}
             {row.remediation ? <p className="mt-2 text-sm"><span className="font-medium">Next step:</span> {row.remediation}</p> : null}
@@ -231,7 +234,8 @@ function DiagnosticsWorkspacePanel({
           <div key={`client-${event.id}`} className="rounded-md border p-3">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={event.severity === "critical" || event.severity === "error" ? "destructive" : "outline"}>{event.severity}</Badge>
-              <Badge variant="secondary">observed in browser</Badge>
+              <Badge variant="secondary">browser observation — not a verified current incident</Badge>
+              <span className="text-xs text-muted-foreground">Observed {new Date(event.timestamp).toLocaleString()}{event.resolved?" · resolved locally":" · recovery not verified"}</span>
               <span className="font-medium">{event.title}</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">{event.message}</p>
@@ -253,9 +257,9 @@ type DiagnosticsGuidance = {
 
 const DIAGNOSTICS_GUIDANCE: Record<ScanCategory, DiagnosticsGuidance> = {
   database: {
-    title: "Database repair guidance",
-    description: "Checks the app settings record and core inventory indexes used by the live inventory screens.",
-    automatic: ["Initialize missing app settings.", "Create safe inventory indexes when PostgreSQL allows it."],
+    title: "Database review guidance",
+    description: "An administrator must review connection and setup problems through the approved process.",
+    automatic: ["No settings or database changes are made here."],
     manual: ["If this still reports issues, confirm the database connection settings and run the migration/check scripts in Codespaces."],
     links: [
       { label: "Open setup", href: "/admin/settings" },
@@ -276,13 +280,13 @@ const DIAGNOSTICS_GUIDANCE: Record<ScanCategory, DiagnosticsGuidance> = {
     ],
   },
   data: {
-    title: "Data consistency repair guidance",
+    title: "Data consistency review guidance",
     description:
-      "Repairs safe setup drift first, then leaves locked commercial documents unchanged for review.",
+      "Review unreliable records in their authorized workspace. No automatic business corrections are made.",
     automatic: [
-      "Rename duplicate SKUs and reset negative stock when negative inventory is disabled.",
-      "Set missing supplier default currencies from the active Master Data currency list.",
-      "Apply supplier default carriers to active inbound shipments that do not already have a carrier.",
+      "Preserve stock quantities and item identities for controlled reconciliation.",
+      "Leave missing supplier values visible for authorized review.",
+      "Preserve shipment evidence until an authorized correction is made.",
     ],
     manual: [
       "Review supplier currency mismatches on locked POs, invoices, and receipts before changing historical records.",
@@ -339,15 +343,18 @@ function formatPathLine(
 }
 
 export default function SystemDiagnosticsPage() {
+  const diagnosticQueryClient=useQueryClient();
   const { toast } = useToast();
   const [events, setEvents] = useState<DiagnosticEvent[]>(() => getDiagnosticEvents());
+  const [manualCopy,setManualCopy]=useState<string|null>(null);
+  const [includeBrowserHistory,setIncludeBrowserHistory]=useState(false);
+  const [browserSessionStartedAt]=useState(()=>performance.timeOrigin);
   const [activeWorkspace, setActiveWorkspace] = useState<DiagnosticCategory>(diagnosticsWorkspaceFromUrl);
   const [scan, setScan] = useState<DiagnosticsScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanRunning, setScanRunning] = useState(false);
   const [snapshot, setSnapshot] = useState<DiagnosticsSnapshotResult | null>(null);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
-  const [fixingCategory, setFixingCategory] = useState<string | null>(null);
   const [pendingFixCategory, setPendingFixCategory] = useState<string | null>(null);
   const findingsQuery = useQuery({
     queryKey: ["/api/diagnostics/findings", activeWorkspace],
@@ -368,7 +375,7 @@ export default function SystemDiagnosticsPage() {
     mutationFn: () => requestJson<{ summary: DiagnosticsSummary; findings: DiagnosticFinding[] }>("POST", "/api/diagnostics/probes/run", {}),
     onSuccess: async (result) => {
       toast({ title: "Safe probes complete", description: `${result.summary.total} finding(s); ${result.summary.openCount} require attention.` });
-      await Promise.all([findingsQuery.refetch(), summaryQuery.refetch()]);
+      await Promise.all([findingsQuery.refetch(), summaryQuery.refetch(),diagnosticQueryClient.invalidateQueries({queryKey:["/api/diagnostics/history"]}),diagnosticQueryClient.invalidateQueries({queryKey:["/api/diagnostics/daily-summaries"]})]);
     },
     onError: (error: Error) => toast({ title: "Safe probes failed", description: error.message, variant: "destructive" }),
   });
@@ -400,13 +407,14 @@ export default function SystemDiagnosticsPage() {
   const refetchSetup = () => void retrySetupStatus();
 
   const copyDiagnosticsBundle = async () => {
+    setManualCopy(buildDiagnosticsReportMarkdown(reportContext));
     try {
       await copyDiagnosticsSummary(reportContext);
       toast({ title: "Copied", description: "Diagnostics summary is on the clipboard." });
     } catch {
       toast({
         title: "Copy failed",
-        description: "Your browser blocked clipboard access.",
+        description: "Select and copy the report in the Diagnostics summary text box, or download JSON.",
         variant: "destructive",
       });
     }
@@ -449,28 +457,6 @@ export default function SystemDiagnosticsPage() {
     }
   };
 
-  const runFix = async (category: string) => {
-    setPendingFixCategory(null);
-    setFixingCategory(category);
-    try {
-      const result = await fixDiagnostics(category);
-      addDiagnosticEvent({
-        severity: result.success ? "info" : "warning",
-        source: "diagnostics",
-        title: `Diagnostics fix: ${category}`,
-        message: result.message ?? (result.success ? "Fix completed." : "No automatic fix was applied."),
-        details: result,
-      });
-      toast({ title: `Fix ${result.success ? "complete" : "reported"}`, description: result.message ?? result.fixed?.join(", ") });
-      await runScan();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      addDiagnosticEvent({ severity: "error", source: "diagnostics", title: "Diagnostics fix failed", message, details: error });
-      toast({ title: "Diagnostics fix failed", description: message, variant: "destructive" });
-    } finally {
-      setFixingCategory(null);
-    }
-  };
 
   const deploymentMode = setup?.deploymentMode ?? ready?.build?.deploymentMode ?? ready?.deploymentMode;
   const build = setup?.build ?? ready?.build;
@@ -483,27 +469,28 @@ export default function SystemDiagnosticsPage() {
 
   const clientSnap = getReadinessClientSnapshot();
   const selfChecks = useMemo(() => runDiagnosticsSelfChecks(), []);
-  const recentCutoff = Date.now() - 10 * 60 * 1000;
+  // Age and successful scans do not establish recovery for an unrelated failure.
   const latestCompletedScan = events.reduce((latest, event) => {
     if (event.source !== "diagnostics" || event.title !== "Diagnostics scan completed") return latest;
     return Math.max(latest, new Date(event.timestamp).getTime());
   }, 0);
-  const operationalWindowStart = Math.max(recentCutoff, latestCompletedScan);
+  const operationalWindowStart = latestCompletedScan;
   const operationalEvents = events.filter(
-    (event) => !event.resolved && new Date(event.timestamp).getTime() >= operationalWindowStart,
+    (event) => !event.resolved && (event.severity!=="info" || new Date(event.timestamp).getTime() >= operationalWindowStart),
   );
   const workspaceLocalEvents = useMemo(() => {
+    const observed=includeBrowserHistory?events:events.filter(event=>new Date(event.timestamp).getTime()>=browserSessionStartedAt);
     if (activeWorkspace === "frontend") {
-      return events.filter((event) => ["react", "route", "network", "console"].includes(event.source)).slice(0, 50);
+      return observed.filter((event) => ["react", "route", "network", "console"].includes(event.source)).slice(0, 50);
     }
     if (activeWorkspace === "user-errors") {
-      return events.filter((event) => !event.resolved && (event.source === "api" || event.source === "auth") && (event.severity === "error" || Number(event.status ?? 0) >= 400)).slice(0, 50);
+      return observed.filter((event) => !event.resolved && (event.source === "api" || event.source === "auth") && (event.severity === "error" || Number(event.status ?? 0) >= 400)).slice(0, 50);
     }
     if (activeWorkspace === "integrations") {
-      return events.filter((event) => /export|email|stripe|websocket|camera/i.test(`${event.title} ${event.endpoint ?? ""}`)).slice(0, 30);
+      return observed.filter((event) => /export|email|stripe|websocket|camera/i.test(`${event.title} ${event.endpoint ?? ""}`)).slice(0, 30);
     }
     return [];
-  }, [activeWorkspace, events]);
+  }, [activeWorkspace, events,includeBrowserHistory,browserSessionStartedAt]);
   const scanIssueCount = scan
     ? Object.values(scan).reduce((sum, rows) => sum + (Array.isArray(rows) ? rows.length : 0), 0)
     : 0;
@@ -514,7 +501,7 @@ export default function SystemDiagnosticsPage() {
   const healthLevel: "Healthy" | "Needs attention" | "Critical" =
     critical > 0 || ready?.dbReady === false || ready?.schemaReady === false
       ? "Critical"
-      : errors > 0 || warnings > 0 || slowRequests > 0 || scanIssueCount > 0 || selfChecks.failed > 0
+      : summaryQuery.isPending || summaryQuery.isError || (summaryQuery.data?.openCount??0)>0 || errors > 0 || warnings > 0 || slowRequests > 0 || scanIssueCount > 0 || selfChecks.failed > 0
         ? "Needs attention"
         : "Healthy";
   const reportContext: DiagnosticsReportContext = {
@@ -528,12 +515,6 @@ export default function SystemDiagnosticsPage() {
   const pendingCategory = pendingFixCategory as ScanCategory | null;
   const pendingGuidance = pendingCategory ? DIAGNOSTICS_GUIDANCE[pendingCategory] : null;
   const pendingIssues = pendingCategory ? scan?.[pendingCategory] ?? [] : [];
-  const pendingFixDescription =
-    pendingFixCategory === "data"
-      ? "This safe repair can clean inventory drift, supplier default currencies, and active inbound shipment carrier defaults."
-      : pendingFixCategory
-        ? `Run safe diagnostics guidance for ${pendingFixCategory}.`
-        : "";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6" data-testid="system-diagnostics-page">
@@ -585,6 +566,7 @@ export default function SystemDiagnosticsPage() {
       <ModuleTrainingPanel moduleId="system-diagnostics" />
 
       <Tabs value={activeWorkspace} onValueChange={(value) => setActiveWorkspace(value as DiagnosticCategory)} className="space-y-4" data-testid="diagnostics-tabs">
+        <div className="space-y-2 text-sm"><p>Browser observations: {includeBrowserHistory?"including saved history":"current page session only"}. Server findings and persistent incidents are not hidden by this browser filter.</p><Button variant="outline" onClick={()=>setIncludeBrowserHistory(value=>!value)}>{includeBrowserHistory?"Show current browser session":"Include historical browser observations"}</Button></div>
         <TabsList className="grid h-auto grid-cols-2 gap-1 md:grid-cols-5">
           {diagnosticCategories.map((category) => (
             <TabsTrigger key={category} value={category} data-testid={`diagnostics-tab-${category}`}>
@@ -663,6 +645,8 @@ export default function SystemDiagnosticsPage() {
         </CardContent>
       </Card>
 
+      <PersistentDiagnosticHistory />
+      {manualCopy!==null?<section aria-label="Copyable diagnostics summary" className="space-y-2 rounded border p-4"><label htmlFor="diagnostics-manual-copy">Diagnostics summary — select the text and press Ctrl+C if automatic copying is unavailable.</label><textarea id="diagnostics-manual-copy" className="w-full min-h-48 rounded border p-2" readOnly value={manualCopy} onFocus={event=>event.currentTarget.select()}/><Button variant="outline" onClick={()=>setManualCopy(null)}>Close copy preview</Button></section>:null}
       <Card data-testid="diagnostics-capability-coverage">
         <CardHeader>
           <CardTitle className="text-base">ERP capability completion</CardTitle>
@@ -710,7 +694,7 @@ export default function SystemDiagnosticsPage() {
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">
-                Showing current unresolved events since the latest successful scan. Earlier evidence remains available in exported history.
+                Unresolved browser observations remain visible until explicitly reviewed. Age or a successful scan does not prove recovery. These observations are separate from verified server findings.
               </p>
               <div className="max-h-[420px] space-y-2 overflow-auto">
               {operationalEvents.slice(0, 20).map((event) => (
@@ -776,10 +760,10 @@ export default function SystemDiagnosticsPage() {
                     variant="outline"
                     className="mt-3"
                     data-testid="diagnostics-fix-button"
-                    disabled={fixingCategory === category || !scan}
+                    disabled={!scan}
                     onClick={() => setPendingFixCategory(category)}
                   >
-                    {fixingCategory === category ? "Fixing…" : "Fix / guidance"}
+                    Review issue
                   </Button>
                 </div>
               );
@@ -990,7 +974,7 @@ export default function SystemDiagnosticsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{pendingGuidance?.title ?? "Run diagnostics fix?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingGuidance?.description ?? pendingFixDescription} The result will be logged in diagnostics and the scan will refresh afterward.
+              Review the findings below. No changes are made by Diagnostics. Use the authorized workspace to request corrections.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {pendingGuidance ? (
@@ -1009,9 +993,9 @@ export default function SystemDiagnosticsPage() {
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-lg border p-3">
-                  <h3 className="font-medium text-foreground">Automatic repair</h3>
+                  <h3 className="font-medium text-foreground">What Diagnostics does</h3>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
-                    {pendingGuidance.automatic.map((step) => (
+                    {["Explains recorded issues without changing business records or database structure."].map((step) => (
                       <li key={step}>{step}</li>
                     ))}
                   </ul>
@@ -1045,10 +1029,10 @@ export default function SystemDiagnosticsPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (pendingFixCategory) void runFix(pendingFixCategory);
+                if (pendingGuidance?.links[0]) window.location.assign(pendingIssues.some(issue=>issue.includes("AP balance"))?"/finance/accounts-payable/aging#opening-baselines":pendingGuidance.links[0].href);
               }}
             >
-              Run fix
+              Open required workflow
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

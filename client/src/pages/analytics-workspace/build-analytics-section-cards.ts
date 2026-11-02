@@ -83,27 +83,22 @@ export function buildAnalyticsSectionCards(
         },
         {
           title: "Top supplier spend",
-          value:
-            health.spendAnalytics && spendAnalytics?.spendBySupplier?.[0]
-              ? `${spendAnalytics.spendBySupplier[0].supplierName} (${formatMoney(spendAnalytics.spendBySupplier[0].totalSpend)})`
-              : health.spendAnalytics
-                ? "No spend data"
-                : "—",
-          description: "Largest supplier in current spend model.",
+          value:"Unavailable",
+          description: "Supplier spend requires dated reporting-currency evidence; legacy document totals are not used.",
           href: APP_ROUTES.analytics.reports,
           sourceWarning: warn(health, "spendAnalytics"),
-          valueState: !health.spendAnalytics ? "unavailable" : spendAnalytics?.spendBySupplier?.[0] ? "ok" : "empty",
+          valueState: "unavailable",
         },
       ];
     case "finance":
       return [
         {
           title: "Outstanding AP",
-          value: health.apOverview ? formatMoney(Number(apOverview?.outstandingAmount ?? 0)) : "—",
-          description: "Unpaid AP exposure.",
-          href: APP_ROUTES.finance.accountsPayableIntake,
+          value: "Unavailable",
+          description: "Review approved outstanding obligations and historical coverage in shared AP reporting. Missing evidence is not zero.",
+          href: "/finance/accounts-payable/aging",
           sourceWarning: warn(health, "apOverview"),
-          valueState: health.apOverview ? "ok" : "unavailable",
+          valueState: "unavailable",
         },
         {
           title: "Pending AP approvals",
@@ -179,11 +174,11 @@ export function buildAnalyticsSectionCards(
         },
         {
           title: "Finance exposure",
-          value: health.apOverview ? formatMoney(Number(apOverview?.outstandingAmount ?? 0)) : "—",
-          description: "Unpaid accounts payable.",
-          href: APP_ROUTES.analytics.finance,
+          value: "Unavailable",
+          description: "Use shared AP reporting for approved outstanding obligations; legacy exposure is not a verified balance.",
+          href: "/finance/accounts-payable/aging",
           sourceWarning: warn(health, "apOverview"),
-          valueState: health.apOverview ? "ok" : "unavailable",
+          valueState: "unavailable",
         },
         {
           title: "Network execution",

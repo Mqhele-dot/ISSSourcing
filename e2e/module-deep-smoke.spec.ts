@@ -102,18 +102,17 @@ const DEEP_ROUTES = [
 ] as const;
 
 test.describe("Module deep smoke (partial + one action)", () => {
-  test("all listed modules", async ({ page }) => {
-    await gotoAuthed(page, "/");
-    for (const { path, label, interact } of DEEP_ROUTES) {
-      await test.step(label, async () => {
-        await page.goto(path, { waitUntil: "domcontentloaded" });
-        await page.waitForLoadState("load");
+  // Independent tests retain a per-route deadline and identify the exact failed
+  // module. Fourteen navigations must not share a single 30-second budget.
+  for (const { path, label, interact } of DEEP_ROUTES) {
+    test(label, async ({ page }) => {
+        await gotoAuthed(page, path);
         await expect(page).not.toHaveURL(/\/auth(\/|\?|$)/);
+        await expect(page.locator("#bootstrap-recovery")).toHaveCount(0);
         const h1 = page.locator("h1").first();
         const titled = page.getByTestId("page-title");
         await expect(h1.or(titled)).toBeVisible({ timeout: 25_000 });
         await interact(page);
-      });
-    }
-  });
+    });
+  }
 });

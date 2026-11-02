@@ -51,10 +51,11 @@ test.describe("diagnostics workspace browser evidence", () => {
        ) VALUES (1, $1, 'active', 'Runtime Test', $2, 'ZAR', NOW())`,
       [`Runtime Supplier browser ${suffix}`, `w7-browser-${suffix}@example.test`],
     );
-    unauthorizedUserId = await seedCustomPermissionUser({
+    const unauthorizedUser = await seedCustomPermissionUser({
       username: `w7_diagnostics_denied_${suffix}`,
       permissions: [{ resource: "reports", actions: ["read"] }],
     });
+    unauthorizedUserId = unauthorizedUser.userId;
   });
 
   for (const workspace of workspaces) {

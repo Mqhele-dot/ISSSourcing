@@ -4,9 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, formatMessages } from "esbuild";
 import ts from "typescript";
+import {acquireE2eWorkspaceLock} from "./e2e-workspace-lock.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
+const releaseBuildLock=acquireE2eWorkspaceLock(path.join(projectRoot,"test-results"));
+process.once("exit",releaseBuildLock);
 const distDir = path.resolve(projectRoot, "dist");
 const runtimeDir = path.resolve(distDir, "runtime");
 const MIRRORABLE_BUILD_INPUTS = ["package.json", "tsconfig.json", "server", "shared"];
@@ -171,7 +174,7 @@ async function rewriteModuleSpecifiers(code, sourceRelativePath) {
 
 async function writeRuntimeFallback() {
   const sourceRoots = [path.resolve(projectRoot, "server"), path.resolve(projectRoot, "shared")];
-  await fs.rm(runtimeDir, { recursive: true, force: true });
+  await fs.rm(runtimeDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   await fs.mkdir(runtimeDir, { recursive: true });
 
   for (const root of sourceRoots) {
@@ -211,12 +214,16 @@ async function writeRuntimeFallback() {
     ].join("\n"),
     "utf8",
   );
+  // Stable private entry for production-mode integration tests and controlled
+  // worker hosts. This is not a public route or automatic generation switch.
+  await fs.writeFile(path.join(distDir,"compact-operational-controller.js"),
+    'export * from "./runtime/server/modules/exports/compact-operational-controller.js";\n',"utf8");
 }
 
 function createBuildOptions(rootDir, outputDir) {
   return {
     absWorkingDir: rootDir,
-    entryPoints: ["./server/index.ts"],
+    entryPoints: {index:"./server/index.ts","compact-export-child":"./server/modules/exports/compact-export-child.ts","compact-operational-controller":"./server/modules/exports/compact-operational-controller.ts"},
     platform: "node",
     packages: "external",
     bundle: true,

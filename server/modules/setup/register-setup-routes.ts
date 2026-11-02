@@ -152,7 +152,7 @@ async function ensureStarterApprovalPolicies(organizationId: number): Promise<vo
 
 const checkpointBodySchema = z.object({
   step: z.string().min(1).max(64),
-  draft: z.record(z.unknown()).optional(),
+  draft: z.record(z.string(),z.unknown()).optional(),
 });
 
 const completeBodySchema = z.object({

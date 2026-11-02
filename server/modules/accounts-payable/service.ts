@@ -1602,12 +1602,6 @@ export async function getOverview() {
     db.select().from(apPaymentBatches).where(eq(apPaymentBatches.organizationId, orgId)),
   ]);
 
-  const outstandingAmount = allInvoices.reduce((sum, invoice) => {
-    const dueRaw = invoice.dueAmount;
-    const useDue = dueRaw != null && Number.isFinite(Number(dueRaw));
-    const part = useDue ? toNumber(dueRaw, 0) : toNumber(invoice.total, 0);
-    return sum + part;
-  }, 0);
   return {
     invoiceCount: allInvoices.length,
     pendingApprovalCount: allInvoices.filter((row) => row.status === "PENDING_APPROVAL").length,
@@ -1619,7 +1613,8 @@ export async function getOverview() {
     exceptionCount: exceptionMatches.length,
     paymentBatchCount: batches.length,
     pendingPaymentBatchCount: batches.filter((row) => row.status === "PENDING_APPROVAL").length,
-    outstandingAmount: Number(outstandingAmount.toFixed(2)),
+    outstandingAmount: null,
+    outstandingBasis: "Deprecated mixed-currency total. Use the shared approved AP balance report.",
   };
 }
 
@@ -1836,6 +1831,7 @@ export async function releasePaymentBatch(
 ) {
   const orgId = getActiveOrganizationId();
   return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.ap_reporting_actor',${String(userId)},true)`);
     await tx.execute(
       sql`SELECT id FROM ap_payment_batches WHERE id = ${batchId} AND organization_id = ${orgId} FOR UPDATE`,
     );

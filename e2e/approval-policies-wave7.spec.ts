@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { pool } from "../server/db";
 import { seedCustomPermissionUser } from "../scripts/runtime-fixtures/expanded-security-fixtures";
-import { loginAsSeededUser, requireDisposableE2eDatabase } from "./wave7-helpers";
+import { loginAsSeededUser, requireDisposableE2eDatabase, verifyCompactDesktopGuidance } from "./wave7-helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -24,15 +24,17 @@ test.describe("approval policy browser evidence", () => {
       [`Wave 7 UI Base ${suffix}`, `Wave 7 UI Overlap ${suffix}`, entityType],
     );
     policyId = base.rows[0].id;
-    viewerUserId = await seedCustomPermissionUser({
+    const viewer = await seedCustomPermissionUser({
       username: `w7_policy_viewer_${suffix}`,
       permissions: [{ resource: "approvals", actions: ["read"] }],
     });
+    viewerUserId = viewer.userId;
   });
 
   test("overlap filter and ambiguous create expose controlled guidance", async ({ page }) => {
     await loginAsSeededUser(page, "admin", 1);
     await page.goto("/finance/approval-policies", { waitUntil: "domcontentloaded" });
+    if (await verifyCompactDesktopGuidance(page,"Approval policies")) return;
     await page.getByPlaceholder("Search policy name or entity").fill(entityType);
     await page.getByTestId("approval-policy-overlap-filter").click();
     await expect(page.getByTestId("approval-policy-overlap-warning")).toBeVisible();
@@ -49,6 +51,7 @@ test.describe("approval policy browser evidence", () => {
   test("stale edit offers reload and a valid edit increments the version", async ({ page }) => {
     await loginAsSeededUser(page, "admin", 1);
     await page.goto("/finance/approval-policies", { waitUntil: "domcontentloaded" });
+    if (await verifyCompactDesktopGuidance(page,"Approval policies")) return;
     await page.getByPlaceholder("Search policy name or entity").fill(`Wave 7 UI Base ${suffix}`);
     await page.getByTestId(`approval-policy-edit-${policyId}`).click();
     await expect(page.getByTestId("approval-policy-edit-sheet")).toBeVisible();
@@ -80,6 +83,7 @@ test.describe("approval policy browser evidence", () => {
   test("read-only policy user cannot mutate controls", async ({ page }) => {
     await loginAsSeededUser(page, `w7_policy_viewer_${suffix}`, viewerUserId);
     await page.goto("/finance/approval-policies", { waitUntil: "domcontentloaded" });
+    if (await verifyCompactDesktopGuidance(page,"Approval policies")) return;
     await expect(page.getByTestId("approval-policies-denied")).toBeVisible();
     await expect(page.getByTestId("approval-policy-save")).toBeDisabled();
     await expect(page.getByTestId(`approval-policy-edit-${policyId}`)).toBeDisabled();

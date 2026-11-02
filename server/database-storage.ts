@@ -55,8 +55,12 @@ import connectPgSimple from "connect-pg-simple";
 import memorystore from "memorystore";
 import * as crypto from "node:crypto";
 import { db, pool } from "./db";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { appendAuditEventWithClient } from "./services/audit-chain-service";
+import {queryRolePermission,queryUserCustomRoleId,queryCustomRolePermission} from "./services/permission-query-service";
+import { addReportingDecimals,parseReportingDecimal,formatReportingDecimal } from "./lib/exact-reporting-decimal";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql, getTableColumns } from "drizzle-orm";
-import { getActiveOrganizationId } from "./organization-context";
+import { getActiveOrganizationId, getOptionalTenantContext } from "./organization-context";
 import { appEnv } from "./config/env";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
@@ -73,6 +77,22 @@ import { buildISSSourcingNotificationEmailHtml, sendEmail } from "./services/ema
 
 const PostgresSessionStore = connectPgSimple(session);
 const MemorySessionStore = memorystore(session);
+type InvoiceTransaction = Pick<Parameters<Parameters<typeof db.transaction>[0]>[0],"select"|"insert"|"update"|"delete"|"execute">;
+async function withInvoiceReportingContext<T>(work:(tx:InvoiceTransaction)=>Promise<T>):Promise<T> {
+  const client=await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const context=getOptionalTenantContext(),actor=context?.userId;
+    await client.query("SELECT set_config('app.ap_reporting_actor',$1,true)",[actor&&actor>0?String(actor):""]);
+    const result=await work(drizzle(client));
+    const installed=(await client.query("SELECT to_regclass('public.ap_balance_events') IS NOT NULL AS ready")).rows[0].ready;
+    if(installed&&context) {
+      const events=await client.query("SELECT id::text,invoice_id FROM ap_balance_events WHERE organization_id=$1 AND source_transaction_id=txid_current() ORDER BY id",[context.organizationId]);
+      if(events.rowCount) await appendAuditEventWithClient(client,{organizationId:context.organizationId,actor:{userId:actor&&actor>0?actor:null,systemActor:actor&&actor>0?null:"invoice-storage"},action:"AP_BALANCE_SOURCE_CAPTURED",resourceType:"invoice",after:{balanceEvents:events.rows},requestId:context.correlationId});
+    }
+    await client.query("COMMIT");return result;
+  }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
+}
 
 // DatabaseStorage implementation with PostgreSQL
 export class DatabaseStorage implements IStorage {
@@ -87,18 +107,18 @@ export class DatabaseStorage implements IStorage {
         });
   }
 
-  private async reconcileInvoicePayments(invoiceId: number): Promise<void> {
-    const invoice = await this.getInvoice(invoiceId);
+  private async reconcileInvoicePayments(invoiceId: number, tx: InvoiceTransaction, previousPayment: number, nextPayment: number): Promise<void> {
+    const [invoice] = await tx.select().from(invoices).where(and(eq(invoices.id,invoiceId),eq(invoices.organizationId,getActiveOrganizationId()))).for("update");
     if (!invoice) return;
 
-    const paymentRows = await db
-      .select({ amount: payments.amount })
-      .from(payments)
-      .where(eq(payments.invoiceId, invoiceId));
-
-    const totalPaid = paymentRows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
-    const invoiceTotal = Number(invoice.total ?? 0);
-    const dueAmount = Math.max(invoiceTotal - totalPaid, 0);
+    // Preserve verified opening balances: legacy paid amounts need not have
+    // synthetic historical payment rows. Apply this command's delta once.
+    if(invoice.paidAmount==null||!Number.isFinite(Number(invoice.paidAmount))) throw new Error("Recorded payment balance is missing. Reconcile this invoice before recording another payment.");
+    const previous=parseReportingDecimal(String(previousPayment));
+    const paid=addReportingDecimals(addReportingDecimals(parseReportingDecimal(String(invoice.paidAmount)),parseReportingDecimal(String(nextPayment))),{...previous,coefficient:-previous.coefficient});
+    const due=addReportingDecimals(parseReportingDecimal(String(invoice.total)),{...paid,coefficient:-paid.coefficient});
+    if(paid.coefficient<0n||due.coefficient<0n) throw new Error("The payment change exceeds the invoice's remaining balance. Review the amount and retry.");
+    const totalPaid=Number(formatReportingDecimal(paid,paid.scale)),dueAmount=Number(formatReportingDecimal(due,due.scale));
     const nextStatus =
       totalPaid <= 0
         ? invoice.status === "PAID" || invoice.status === "PARTIALLY_PAID"
@@ -108,7 +128,7 @@ export class DatabaseStorage implements IStorage {
           ? "PAID"
           : "PARTIALLY_PAID";
 
-    await db
+    await tx
       .update(invoices)
       .set({
         paidAmount: totalPaid,
@@ -398,29 +418,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getUserCustomRoleId(userId: number): Promise<number | null> {
-    const [user] = await db
-      .select({ preferences: users.preferences })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (!user) return null;
-    const prefs = user.preferences && typeof user.preferences === "object"
-      ? (user.preferences as { customRoleId?: unknown })
-      : null;
-    const customRoleId = Number(prefs?.customRoleId);
-    if (Number.isFinite(customRoleId) && customRoleId > 0) {
-      const [activeRole] = await db
-        .select({ id: customRoles.id })
-        .from(customRoles)
-        .where(and(
-          eq(customRoles.id, customRoleId),
-          eq(customRoles.organizationId, getActiveOrganizationId()),
-          eq(customRoles.isActive, true),
-        ))
-        .limit(1);
-      return activeRole?.id ?? null;
-    }
-    return null;
+    return queryUserCustomRoleId(pool,getActiveOrganizationId(),userId);
   }
   
   async getUserPreferences(userId: number): Promise<UserPreference | undefined> {
@@ -436,42 +434,11 @@ export class DatabaseStorage implements IStorage {
   }
   
   async checkPermission(role: string, resource: string, permissionType: string): Promise<boolean> {
-    if (String(role).toLowerCase() === "admin") return true;
-    const [permission] = await db
-      .select({ id: permissions.id })
-      .from(permissions)
-      .where(
-        and(
-          eq(permissions.role, role as typeof permissions.$inferSelect.role),
-          eq(permissions.resource, resource as typeof permissions.$inferSelect.resource),
-          eq(permissions.permissionType, permissionType as typeof permissions.$inferSelect.permissionType),
-        ),
-      )
-      .limit(1);
-    return Boolean(permission);
+    return queryRolePermission(pool,role,resource,permissionType);
   }
   
   async checkCustomRolePermission(roleId: number, resource: keyof typeof ResourceEnum, permissionType: keyof typeof PermissionTypeEnum): Promise<boolean> {
-    const [permission] = await db
-      .select({ id: customRolePermissions.id })
-      .from(customRolePermissions)
-      .innerJoin(
-        customRoles,
-        and(
-          eq(customRoles.id, customRolePermissions.roleId),
-          eq(customRoles.organizationId, getActiveOrganizationId()),
-          eq(customRoles.isActive, true),
-        ),
-      )
-      .where(
-        and(
-          eq(customRolePermissions.roleId, roleId),
-          eq(customRolePermissions.resource, resource as typeof customRolePermissions.$inferSelect.resource),
-          eq(customRolePermissions.permissionType, permissionType as typeof customRolePermissions.$inferSelect.permissionType),
-        ),
-      )
-      .limit(1);
-    return Boolean(permission);
+    return queryCustomRolePermission(pool,getActiveOrganizationId(),roleId,resource,permissionType);
   }
   
   async getSystemRoles(): Promise<string[]> {
@@ -3323,11 +3290,12 @@ export class DatabaseStorage implements IStorage {
   
   async createInvoice(invoice: InsertInvoice, items: InsertInvoiceItem[]): Promise<Invoice> {
     const orgId = getActiveOrganizationId();
+    if(invoice.organizationId!=null&&invoice.organizationId!==orgId) throw new Error("Invoice organization must match the active organization.");
     const createdBy = Number(invoice.createdBy);
     if (!Number.isFinite(createdBy) || createdBy <= 0) {
       throw new Error("Invoice createdBy is required.");
     }
-    return db.transaction(async (tx) => {
+    return withInvoiceReportingContext(async (tx) => {
       const total = Number(invoice.total ?? 0);
       const payload = {
         organizationId: invoice.organizationId ?? orgId,
@@ -3377,7 +3345,9 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
-    const [updated] = await db
+    if(invoice.organizationId!=null&&invoice.organizationId!==getActiveOrganizationId()) throw new Error("Invoice organization ownership cannot be changed.");
+    return withInvoiceReportingContext(async tx=>{
+    const [updated] = await tx
       .update(invoices)
       .set({ ...invoice, updatedAt: new Date() })
       .where(
@@ -3388,14 +3358,17 @@ export class DatabaseStorage implements IStorage {
       )
       .returning();
     return updated;
+    });
   }
   
   async deleteInvoice(id: number): Promise<boolean> {
     const inv = await this.getInvoice(id);
     if (!inv) return false;
-    await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id));
-    await db.delete(payments).where(eq(payments.invoiceId, id));
-    const result = await db
+    return withInvoiceReportingContext(async tx=>{
+    await tx.select({id:invoices.id}).from(invoices).where(and(eq(invoices.id,id),eq(invoices.organizationId,getActiveOrganizationId()))).for("update");
+    await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id));
+    await tx.delete(payments).where(eq(payments.invoiceId, id));
+    const result = await tx
       .delete(invoices)
       .where(
         and(
@@ -3404,6 +3377,7 @@ export class DatabaseStorage implements IStorage {
         ),
       );
     return (result.rowCount ?? 0) > 0;
+    });
   }
   
   async getInvoicesByCustomerId(customerId: number): Promise<Invoice[]> {
@@ -3568,6 +3542,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createPayment(payment: InsertPayment): Promise<Payment> {
+    if(!Number.isFinite(Number(payment.amount))||Number(payment.amount)<=0) throw new Error("Enter a positive payment amount.");
     const invoice = await this.getInvoice(Number(payment.invoiceId));
     if (!invoice) {
       throw new Error("Invoice not found");
@@ -3577,7 +3552,10 @@ export class DatabaseStorage implements IStorage {
     if (!Number.isFinite(receivedBy) || receivedBy <= 0) {
       throw new Error("Payment receivedBy is required.");
     }
-    const [created] = await db
+    return withInvoiceReportingContext(async tx=>{
+    const locked=await tx.select({id:invoices.id}).from(invoices).where(and(eq(invoices.id,invoice.id),eq(invoices.organizationId,getActiveOrganizationId()))).for("update");
+    if(!locked.length) throw new Error("The invoice is no longer available in the active organization.");
+    const [created] = await tx
       .insert(payments)
       .values({
         invoiceId: Number(payment.invoiceId),
@@ -3590,15 +3568,22 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
 
-    await this.reconcileInvoicePayments(created.invoiceId);
+    await this.reconcileInvoicePayments(created.invoiceId,tx,0,Number(created.amount));
     return created;
+    });
   }
   
   async updatePayment(id: number, payment: Partial<InsertPayment>): Promise<Payment | undefined> {
+    if(payment.amount!=null&&(!Number.isFinite(Number(payment.amount))||Number(payment.amount)<=0)) throw new Error("Enter a positive payment amount.");
     const existing = await this.getPayment(id);
     if (!existing) return undefined;
+    if(payment.invoiceId!=null&&Number(payment.invoiceId)!==Number(existing.invoiceId)) throw new Error("A recorded payment cannot be moved to another invoice. Use a linked correction.");
 
-    const [updated] = await db
+    return withInvoiceReportingContext(async tx=>{
+    await tx.select({id:invoices.id}).from(invoices).where(and(eq(invoices.id,existing.invoiceId),eq(invoices.organizationId,getActiveOrganizationId()))).for("update");
+    const [currentPayment]=await tx.select().from(payments).where(eq(payments.id,id));
+    if(!currentPayment) return undefined;
+    const [updated] = await tx
       .update(payments)
       .set({
         ...payment,
@@ -3609,16 +3594,23 @@ export class DatabaseStorage implements IStorage {
       .where(eq(payments.id, id))
       .returning();
 
-    await this.reconcileInvoicePayments(updated.invoiceId);
+    if(!updated) return undefined;
+    await this.reconcileInvoicePayments(updated.invoiceId,tx,Number(currentPayment.amount),Number(updated.amount));
     return updated;
+    });
   }
   
   async deletePayment(id: number): Promise<boolean> {
     const existing = await this.getPayment(id);
     if (!existing) return false;
-    const result = await db.delete(payments).where(eq(payments.id, id));
-    await this.reconcileInvoicePayments(existing.invoiceId);
+    return withInvoiceReportingContext(async tx=>{
+    await tx.select({id:invoices.id}).from(invoices).where(and(eq(invoices.id,existing.invoiceId),eq(invoices.organizationId,getActiveOrganizationId()))).for("update");
+    const [currentPayment]=await tx.select().from(payments).where(eq(payments.id,id));
+    if(!currentPayment) return false;
+    const result = await tx.delete(payments).where(eq(payments.id, id));
+    await this.reconcileInvoicePayments(existing.invoiceId,tx,Number(currentPayment.amount),0);
     return (result.rowCount ?? 0) > 0;
+    });
   }
   
   async recordInvoicePayment(invoiceId: number, amount: number, method: string, receivedBy: number, reference?: string, notes?: string): Promise<Payment> {

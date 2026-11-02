@@ -27,11 +27,12 @@ export type ControlTowerDashboard = {
 };
 
 export type ApOverview = {
-  outstandingAmount?: number;
+  outstandingAmount?: number|null;
   pendingApprovalCount?: number;
 };
 
 export type SpendAnalytics = {
+  financialMeasures?:{state:"unavailable";reason:string;summaryEndpoint:string;deprecatedFields:string[]};
   spendBySupplier?: Array<{ supplierName: string; totalSpend: number }>;
   supplierPerformance?: Array<{ supplierName: string; onTimeDeliveryRate: number }>;
 };

@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { storage } from "../storage";
 import { getActiveOrganizationId } from "../organization-context";
 import { notificationPreferences, notifications, organizationMembers, users } from "@shared/schema";
@@ -17,7 +17,15 @@ export type EmitNotificationPayload = {
   findingCode?: string;
   dueAt?: Date;
   priority?: "low" | "normal" | "high" | "urgent";
+  /** Stable event identity for retry-safe in-app delivery. */
+  deliveryKey?: string;
 };
+
+export function notificationEmailOptedIn(type:string,prefs?:{emailEnabled?:boolean|null;dailyDigestEnabled?:boolean|null}|null):boolean {
+  const kind=type.toLowerCase();
+  if(!kind.startsWith("diagnostic_"))return prefs?.emailEnabled!==false;
+  return prefs?.emailEnabled===true && (kind!=="diagnostic_daily_summary" || prefs.dailyDigestEnabled===true);
+}
 
 /** Match the workspace a recipient must be able to open; custom roles can receive role broadcasts too. */
 export function requiredNotificationAccess(payload: Omit<EmitNotificationPayload, "userId">): { resource: string; permission: string } | null {
@@ -43,6 +51,29 @@ function safeInternalTargetPath(value: string | undefined): string | null {
 
 async function upsertInAppNotification(payload: EmitNotificationPayload): Promise<{ created: boolean }> {
   const organizationId = getActiveOrganizationId();
+  if (payload.deliveryKey) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const claim = await client.query(`INSERT INTO notification_delivery_keys(organization_id,user_id,delivery_key)
+        VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING delivery_key`, [organizationId,payload.userId,payload.deliveryKey]);
+      if (!claim.rowCount) { await client.query("COMMIT"); return { created:false }; }
+      const inserted = await client.query(`INSERT INTO notifications
+        (organization_id,user_id,type,title,body,entity_type,entity_id,target_path,finding_code,due_at,priority,occurrence_count,last_occurred_at)
+        SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,now()
+        WHERE EXISTS(SELECT 1 FROM organization_members WHERE organization_id=$1 AND user_id=$2
+          AND active=true AND status='active' AND ($12::boolean=false OR application_role='admin')) RETURNING id`,
+      [organizationId,payload.userId,payload.type,payload.title,payload.body??null,payload.entityType??null,
+        payload.entityId??null,safeInternalTargetPath(payload.targetPath),payload.findingCode??null,payload.dueAt??null,
+        payload.priority??"normal",payload.type.startsWith("diagnostic_")]);
+      if (!inserted.rowCount) { await client.query("ROLLBACK"); return {created:false}; }
+      await client.query(`UPDATE notification_delivery_keys SET completed_at=now()
+        WHERE organization_id=$1 AND user_id=$2 AND delivery_key=$3`,[organizationId,payload.userId,payload.deliveryKey]);
+      await client.query("COMMIT");
+      return {created:true};
+    } catch(error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
   const bodyCondition = payload.body == null ? isNull(notifications.body) : eq(notifications.body, payload.body);
   const entityTypeCondition =
     payload.entityType == null ? isNull(notifications.entityType) : eq(notifications.entityType, payload.entityType);
@@ -123,7 +154,7 @@ export async function emitNotification(payload: EmitNotificationPayload): Promis
       || (kind.includes("shipment_delay") && prefs?.shipmentDelay === false)) return;
   const result = await upsertInAppNotification(payload);
 
-  if (result.created && prefs?.emailEnabled !== false && process.env.DISABLE_NOTIFICATION_EMAIL !== "true"
+  if (result.created && notificationEmailOptedIn(kind,prefs) && process.env.DISABLE_NOTIFICATION_EMAIL !== "true"
       && process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     try {
       const rows = await db
@@ -146,7 +177,7 @@ export async function emitNotification(payload: EmitNotificationPayload): Promis
     }
   }
 
-  if (result.created && prefs?.smsEnabled === true && process.env.DISABLE_NOTIFICATION_SMS !== "true") {
+  if (result.created && !kind.startsWith("diagnostic_") && prefs?.smsEnabled === true && process.env.DISABLE_NOTIFICATION_SMS !== "true") {
     try {
       const u = await storage.getUser(payload.userId);
       const phone = u?.phone?.trim();

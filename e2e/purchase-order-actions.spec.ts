@@ -126,8 +126,14 @@ test.describe("Purchase order actions (FQA)", () => {
     await page.waitForLoadState("load");
     await expect(page.getByTestId("po-detail-page")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("po-commercial-save-button")).toBeEnabled({ timeout: 15_000 });
+    await expect(page.getByRole("combobox", { name: "Contract reference" })).toContainText("None");
+    const commercialResponse = page.waitForResponse((response) => response.request().method() === "PATCH" &&
+      /\/commercial$/.test(new URL(response.url()).pathname));
     await page.getByTestId("po-commercial-save-button").click();
+    const commercialResult = await commercialResponse;
+    expect(commercialResult.status(), `Commercial save: ${await commercialResult.text()}`).toBe(200);
     await expect(page.getByTestId("po-commercial-error")).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByRole("combobox", { name: "Contract reference" })).toContainText("None");
 
     await page.goto("/procurement/orders/PO-FQA-003", { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("load");

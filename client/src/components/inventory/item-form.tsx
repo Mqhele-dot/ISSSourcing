@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import type {z} from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   Dialog, 
@@ -34,7 +35,7 @@ export default function ItemForm({ open, setOpen, initialData = null }: ItemForm
   const [loading, setLoading] = useState(false);
 
   // Form setup
-  const form = useForm<InventoryItemForm>({
+  const form = useForm<z.input<typeof inventoryItemFormSchema>,unknown,InventoryItemForm>({
     resolver: zodResolver(inventoryItemFormSchema),
     defaultValues: {
       name: initialData?.name || "",

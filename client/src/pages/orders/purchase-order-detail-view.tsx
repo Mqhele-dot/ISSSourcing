@@ -119,6 +119,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
   const [incotermId, setIncotermId] = useState<string>("none");
   const [taxCodeId, setTaxCodeId] = useState<string>("none");
   const [currencyCode, setCurrencyCode] = useState("ZAR");
+  const [commercialHydratedId, setCommercialHydratedId] = useState<number | null>(null);
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [receiveLineIssues, setReceiveLineIssues] = useState<ReceiveLineFieldError[]>([]);
   const [approvalReason, setApprovalReason] = useState("");
@@ -393,6 +394,7 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
     setCurrencyCode(
       typeof rawCc === "string" && /^[A-Za-z]{3}$/.test(rawCc) ? rawCc.toUpperCase() : "ZAR",
     );
+    setCommercialHydratedId(Number(purchaseOrderRecord.id));
   }, [purchaseOrderRecord]);
 
   useEffect(() => {
@@ -996,8 +998,13 @@ export function PurchaseOrderDetailView({ po }: { po: string }) {
                       paymentTerms={paymentTerms}
                       incoterms={incoterms}
                       saveCommercialTerms={saveCommercialTerms}
-                      canSaveCommercial={canUpdatePurchaseOrder(detail.status)}
-                      commercialLockedReason="Commercial terms can only be updated before the PO is sent."
+                      canSaveCommercial={canUpdatePurchaseOrder(detail.status) && commercialHydratedId === data?.id &&
+                        String(purchaseOrderRecord?.approvalStatus).toUpperCase() === "DRAFT"}
+                      commercialLockedReason={commercialHydratedId !== data?.id
+                        ? "Wait for the current commercial terms to load before editing. If loading fails, reload this page."
+                        : String(purchaseOrderRecord?.approvalStatus).toUpperCase() !== "DRAFT"
+                          ? "Commercial terms are locked after submission. Approved changes require a controlled revision and fresh approval."
+                          : "Commercial terms can only be updated before the PO is sent."}
                       commercialSaveError={commercialSaveError}
                       onClearContract={clearSelectedContract}
                       onUseContractCurrency={useSelectedContractCurrency}

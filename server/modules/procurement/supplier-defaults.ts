@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
+import { shipmentOrderLinkSql } from "../operations/shipment-order-link";
 import { getActiveOrganizationId } from "../../organization-context";
 import {
   currencies,
@@ -138,6 +139,7 @@ async function resolveSupplierCommercialDefaultsForOrg(
   supplierId: number,
   contractId: number | null,
   transactionLabel: string,
+  useDefaultContract = true,
 ): Promise<SupplierCommercialDefaults> {
   const [supplier] = await db
     .select({
@@ -176,7 +178,7 @@ async function resolveSupplierCommercialDefaultsForOrg(
   );
 
   const supplierDefaultContractId = numberOrNull(supplier.defaultContractId);
-  const effectiveContractId = contractId ?? supplierDefaultContractId;
+  const effectiveContractId = contractId ?? (useDefaultContract ? supplierDefaultContractId : null);
   const [contract] =
     effectiveContractId != null
       ? await db
@@ -238,6 +240,7 @@ export async function resolveSupplierCommercialDefaults(
   options?: {
     contractId?: unknown;
     transactionLabel?: string;
+    useDefaultContract?: boolean;
   },
 ): Promise<SupplierCommercialDefaults | null> {
   const resolvedSupplierId = numberOrNull(supplierId);
@@ -249,13 +252,17 @@ export async function resolveSupplierCommercialDefaults(
     resolvedSupplierId,
     numberOrNull(options?.contractId),
     options?.transactionLabel ?? "new purchase orders",
+    options?.useDefaultContract !== false,
   );
 }
 
-export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDefaultsInput>(input: T): Promise<T> {
+export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDefaultsInput>(input: T,
+  options: { applyDefaults?: boolean } = {}): Promise<T> {
+  const applyDefaults = options.applyDefaults !== false;
   const defaults = await resolveSupplierCommercialDefaults(input.supplierId, {
     contractId: input.contractId,
     transactionLabel: "new purchase orders",
+    useDefaultContract: applyDefaults,
   });
   if (!defaults) return input;
   const requestedCurrency = normalizeCurrency(input.currencyCode);
@@ -285,6 +292,9 @@ export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDef
     resolvedCurrency = requestedCurrency;
   }
 
+  // Existing documents validate their selected terms; editing must not silently
+  // reattach a default agreement or refill fields the user explicitly cleared.
+  if (!applyDefaults) return input;
   if (resolvedCurrency) input.currencyCode = resolvedCurrency;
   if (input.departmentId == null && defaults.departmentId != null) input.departmentId = defaults.departmentId;
   if (input.paymentTermsId == null && defaults.paymentTermsId != null) input.paymentTermsId = defaults.paymentTermsId;
@@ -372,7 +382,7 @@ export async function detectSupplierDocumentMismatches(orgId: number, supplierId
       COALESCE(s.direction, 'inbound') AS direction
     FROM shipments s
     INNER JOIN purchase_orders po
-      ON po.order_number = s.po_number
+      ON ${sql.raw(shipmentOrderLinkSql('s','po'))}
      AND po.organization_id = ${orgId}
     WHERE po.organization_id = ${orgId}
       ${supplierId == null ? sql`` : sql`AND po.supplier_id = ${supplierId}`}

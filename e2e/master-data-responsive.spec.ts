@@ -1,0 +1,32 @@
+import {expect,test} from '@playwright/test';
+import {gotoAuthed} from './test-helpers';
+import {requireDisposableE2eDatabase} from './wave7-helpers';
+
+test('Master Data supports compact editing and governed request preparation',async({page})=>{
+  test.setTimeout(60000);requireDisposableE2eDatabase();
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await gotoAuthed(page,'/admin/master-data/units');
+  await expect(page.getByTestId('master-data-page')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Master Data Governance',exact:true})).toBeVisible();
+  const code=`RESP-${Date.now()}`;
+  await page.getByRole('button',{name:'Add record',exact:true}).click();
+  await page.getByLabel('Code',{exact:true}).fill(code);
+  await page.getByLabel('Name',{exact:true}).fill(`Responsive unit ${code}`);
+  await page.getByLabel('Symbol',{exact:true}).fill('ru');
+  await expect(page.getByLabel('Code',{exact:true})).toHaveValue(code);
+  const saved=page.waitForResponse(response=>response.url().endsWith('/api/units-of-measure')&&response.request().method()==='POST');
+  await page.getByRole('button',{name:'Add record',exact:true}).last().click();
+  expect((await saved).ok()).toBe(true);
+  await page.getByPlaceholder('Search units...').fill(code);
+  await expect(page.getByRole('cell',{name:code,exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await page.getByTestId('master-data-new-change-request-button').click();
+  const composer=page.getByTestId('master-data-new-change-request');
+  await expect(composer).toBeVisible();
+  await composer.getByLabel('Business reason',{exact:true}).fill('Review-only preparation of a controlled change; do not apply automatically.');
+  await expect(composer.getByRole('button',{name:'Submit for governance'})).toBeEnabled();
+  await composer.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(composer).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(errors).toEqual([]);
+});

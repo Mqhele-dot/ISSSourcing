@@ -162,6 +162,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.analytics.exportCenter} component={ExportCenterPage} />
 
         <ProtectedRoute path={APP_ROUTES.operations.actionInbox} component={ActionInboxPage} />
+        <ProtectedRoute path="/action-inbox" component={ActionInboxPage} />
         <ProtectedRoute path={APP_ROUTES.operations.mobileWorkflows} component={MobileWorkflowsLauncherPage} />
         <ProtectedRoute path={APP_ROUTES.operations.root} component={ProductionOperationsOverviewPage} />
         <ProtectedRoute path={APP_ROUTES.operations.controlTower} component={ProductionControlTowerPage} />

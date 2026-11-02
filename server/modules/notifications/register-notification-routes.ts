@@ -27,7 +27,7 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
   const allowedEntityTypes = async (organizationId: number, userId: number): Promise<string[] | null> => {
     const [member] = await db.select({ role: organizationMembers.applicationRole }).from(organizationMembers)
-      .where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId), eq(organizationMembers.active, true))).limit(1);
+      .where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId), eq(organizationMembers.active, true), eq(organizationMembers.status, "active"))).limit(1);
     if (!member) return [];
     const role = String(member.role).toLowerCase();
     if (role === "admin") return null;
@@ -53,10 +53,14 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
     try {
       const entityTypes = await allowedEntityTypes(org, userId);
       const canReadInventory = entityTypes === null || entityTypes.includes("inventory");
+      const diagnosticStorage=(await pool.query("SELECT to_regclass('public.diagnostic_persistent_findings') IS NOT NULL AS ready")).rows[0]?.ready===true;
       const base = `WITH inbox AS (SELECT ('notification:'||n.id) AS id,n.title,n.body,n.type,n.entity_type AS "entityType",n.entity_id AS "entityId",
         n.target_path AS "targetPath",n.priority,n.due_at AS "dueAt",n.read_at AS "readAt",n.archived_at AS "archivedAt",
         n.last_occurred_at AS "lastOccurredAt",n.occurrence_count AS "occurrenceCount",
-        CASE WHEN n.entity_type IN ('purchase_requisition','inventory_item') AND n.entity_id IS NULL THEN 'information'
+        CASE WHEN n.type IN ('diagnostic_daily_summary','diagnostic_recovery') THEN 'information'
+          WHEN n.type='diagnostic_transition' AND n.title LIKE 'Recovered:%' THEN 'information'
+          ${diagnosticStorage?"WHEN n.entity_type='diagnostic_finding' AND diagnostic_finding.lifecycle='resolved' THEN 'completed'":""}
+          WHEN n.entity_type IN ('purchase_requisition','inventory_item') AND n.entity_id IS NULL THEN 'information'
           WHEN n.type='approval_request' AND n.title ILIKE '%approved%' THEN 'information'
           WHEN n.entity_type='requisition' AND r.id IS NOT NULL AND upper(r.status) NOT IN ('PENDING','PENDING_APPROVAL','SUBMITTED') THEN 'completed'
           WHEN n.entity_type='purchase_order' AND po.id IS NOT NULL AND upper(po.approval_status) NOT IN ('PENDING','PENDING_APPROVAL','SUBMITTED') AND lower(n.type) LIKE '%approval%' THEN 'completed'
@@ -68,6 +72,7 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
           WHEN n.archived_at IS NOT NULL AND n.entity_type IS NULL THEN 'cleared'
           ELSE 'open' END AS state
         FROM notifications n
+        ${diagnosticStorage?"LEFT JOIN diagnostic_persistent_findings diagnostic_finding ON n.entity_type='diagnostic_finding' AND diagnostic_finding.organization_id=n.organization_id AND diagnostic_finding.finding_key=n.finding_code":""}
         LEFT JOIN purchase_requisitions r ON n.entity_type='requisition' AND r.organization_id=n.organization_id AND r.id=n.entity_id
         LEFT JOIN purchase_orders po ON n.entity_type='purchase_order' AND po.organization_id=n.organization_id AND po.id=n.entity_id
         LEFT JOIN invoices inv ON n.entity_type='invoice' AND inv.organization_id=n.organization_id AND inv.id=n.entity_id
@@ -103,8 +108,10 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
       if (!userId) return sendError(res, 401, "AUTHENTICATION_REQUIRED", "Authentication is required.");
       const organizationId = getActiveOrganizationId();
       const entityTypes = await allowedEntityTypes(organizationId, userId);
-      const page = Math.max(1, Number(req.query.page) || 1);
-      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+      const page = Number(req.query.page ?? 1);
+      const pageSize = Number(req.query.pageSize ?? 25);
+      if (!Number.isSafeInteger(page) || page<1 || !Number.isSafeInteger(pageSize) || pageSize<1 || pageSize>100)
+        return sendError(res,400,"NOTIFICATION_QUERY_INVALID","Choose a valid page and page size.");
       const offset = (page - 1) * pageSize;
       const [preferences] = await db.select({ inAppEnabled: notificationPreferences.inAppEnabled })
         .from(notificationPreferences).where(eq(notificationPreferences.userId, userId)).limit(1);

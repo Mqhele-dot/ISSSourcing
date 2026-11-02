@@ -26,7 +26,11 @@ export function buildExportFilePath(
 export function removeExportFile(filePath: string | null | undefined): void {
   if (!filePath) return;
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
-  if (fs.existsSync(absolutePath)) {
-    fs.unlinkSync(absolutePath);
+  try{fs.unlinkSync(absolutePath);}
+  catch(error){
+    // existsSync also returns false for inaccessible paths. Only verified
+    // absence may release retained metadata/quota; permission/I/O failures must
+    // propagate so the exact file can be retried by a later retention cycle.
+    if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;
   }
 }

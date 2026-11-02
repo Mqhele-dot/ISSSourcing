@@ -15,6 +15,8 @@ vite.config.ts.*
 # Playwright (local reports; do not commit)
 playwright-report/
 test-results/
+/.playwright-browsers/
+/uploads/documents/*-playwright-doc-*.txt
 
 # Locally generated CycloneDX SBOM (`npm run security:sbom`); CI uploads artifact instead.
 sbom.cdx.json
@@ -29,6 +31,7 @@ audit-high*.txt
 .electron-builder-cache-local/
 
 # Local runtime artifacts from diagnostics, smoke tests, and generated exports.
+/artifacts/
 .control-tower-*.log
 .local-app-*.log
 output/

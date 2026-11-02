@@ -23,6 +23,7 @@ import {
 import { requestJson } from "@/lib/queryClient";
 import { downloadCsv } from "@/lib/csv-download";
 import { Download } from "lucide-react";
+import {GovernedAuditEvents} from '@/components/governed-audit-events';
 
 type ActivityLog = {
   id: number;
@@ -72,6 +73,7 @@ const ENTITY_TYPE_PRESETS = [
 ];
 
 export default function AuditLogsPage() {
+  const [auditView,setAuditView]=useState(()=>new URLSearchParams(location.search).get('view')==='governed'?'governed':'operational');
   const [entityType, setEntityType] = useState("");
   const [entityId, setEntityId] = useState("");
   const [actor, setActor] = useState("");
@@ -134,9 +136,11 @@ export default function AuditLogsPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Audit Logs"
-        subtitle="Operational activity stream (ops_activity): filter by entity, actor, action substring, and date range. Export CSV."
+        subtitle="Operational activity and governed audit evidence are separate views."
       />
 
+      <nav aria-label="Audit views" className="flex gap-2"><Button variant={auditView==='operational'?'default':'outline'} onClick={()=>setAuditView('operational')}>Operational activity</Button><Button variant={auditView==='governed'?'default':'outline'} onClick={()=>setAuditView('governed')}>Governed audit</Button></nav>
+      {auditView==='governed'?<GovernedAuditEvents/>:<>
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
@@ -320,6 +324,7 @@ export default function AuditLogsPage() {
           )}
         </CardContent>
       </Card>
+      </>}
     </div>
   );
 }

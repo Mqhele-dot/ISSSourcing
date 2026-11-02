@@ -8,6 +8,7 @@ import { z } from "zod";
 import { getActiveOrganizationId } from "../../organization-context";
 import { buildAnalyticsInsights } from "./analytics-insights-service";
 import { registerFinancialMeasureRoutes } from "./register-financial-measure-routes";
+import {resolveAnalyticsReadAccess} from './analytics-read-access';
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -23,7 +24,10 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
   const masterRead = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
   const masterWrite = [auth.ensureAuthenticated, auth.ensurePermission("reports", "update")];
 
-  const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+  const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{
+    const date=new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value;
+  });
   const analyticsQuerySchema = z.object({
     dateFrom: dateString.optional(),
     dateTo: dateString.optional(),
@@ -35,7 +39,7 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
     departmentId: z.coerce.number().int().positive().optional(),
     risk: z.enum(["low", "medium", "high", "critical"]).optional(),
     status: z.string().trim().min(1).max(80).optional(),
-  }).superRefine((value, context) => {
+  }).strict().superRefine((value, context) => {
     if (value.dateFrom && value.dateTo && value.dateFrom > value.dateTo) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["dateTo"], message: "Date to must be on or after date from." });
     }
@@ -60,29 +64,28 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
           dateTo: parsed.data.dateTo ? new Date(`${parsed.data.dateTo}T23:59:59.999Z`).toISOString() : undefined,
         };
         res.setHeader("Cache-Control", "private, no-store");
-        return sendOk(res, await buildAnalyticsInsights(getActiveOrganizationId(), area, filters));
-      } catch (error) {
+        return sendOk(res, await buildAnalyticsInsights(getActiveOrganizationId(), area, filters,await resolveAnalyticsReadAccess()));
+      } catch {
         return sendError(res, 500, "ANALYTICS_INSIGHTS_FAILED", "Analytics could not be generated.", {
-          details: error instanceof Error ? error.message : String(error),
           hint: "Retry the view. If the problem continues, open System Diagnostics with the request ID.",
         });
       }
     });
   }
 
-  app.get("/api/reports/analytics", ...masterRead, async (req: Request, res: Response) => {
+  const legacyScopeSchema=z.object({from:z.union([dateString,z.string().datetime({offset:true})]).optional(),to:z.union([dateString,z.string().datetime({offset:true})]).optional(),departmentId:z.coerce.number().int().positive().optional()}).strict()
+    .refine(q=>!q.from||!q.to||Date.parse(q.from)<=Date.parse(q.to),"Start date must not follow end date.");
+  app.get("/api/reports/analytics", ...masterRead,auth.ensurePermission("inventory","read"),auth.ensurePermission("purchases","read"),auth.ensurePermission("suppliers","read"), async (req: Request, res: Response) => {
+    const scope=legacyScopeSchema.safeParse(req.query);
+    if(!scope.success)return sendError(res,400,"INVALID_ANALYTICS_QUERY","Use valid from/to dates and a department. Other filters are unsupported on this compatibility report; use shared financial reporting.");
     try {
       const supplierList = await storage.getAllSuppliers();
       const poList = await storage.getAllPurchaseOrders();
       const inventoryList = await storage.getAllInventoryItems();
       const movementList = await storage.getAllStockMovements();
-      const warehouseList = await storage.getAllWarehouses();
-      const fromDate = typeof req.query.from === "string" && req.query.from ? new Date(req.query.from) : null;
-      const toDate = typeof req.query.to === "string" && req.query.to ? new Date(req.query.to) : null;
-      const departmentId =
-        typeof req.query.departmentId === "string" && req.query.departmentId
-          ? Number(req.query.departmentId)
-          : null;
+      const fromDate = scope.data.from ? new Date(scope.data.from) : null;
+      const toDate = scope.data.to ? new Date(scope.data.to) : null;
+      const departmentId = scope.data.departmentId??null;
       const filteredPoList = poList.filter((po) => {
         const createdAt = po.createdAt ? new Date(po.createdAt) : null;
         if (fromDate && createdAt && createdAt < fromDate) return false;
@@ -90,19 +93,10 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
         if (departmentId && Number(po.departmentId ?? 0) !== departmentId) return false;
         return true;
       });
-      const warehouseInventoryGroups = await Promise.all(
-        warehouseList.map(async (warehouse) => ({
-          warehouseId: warehouse.id,
-          records: await storage.getWarehouseInventory(warehouse.id),
-        })),
-      );
 
-      const spendBySupplier = supplierList.map((supplier) => ({
-        supplierName: supplier.name,
-        totalSpend: filteredPoList
-          .filter((po) => po.supplierId === supplier.id)
-          .reduce((sum, po) => sum + Number(po.totalAmount ?? 0), 0),
-      }));
+      // No financial aggregation is valid here: these are mutable document
+      // values in potentially different currencies, not reporting evidence.
+      const spendBySupplier: never[] = [];
 
       const inventoryTurnover = inventoryList.map((item) => {
         const issued = movementList
@@ -119,15 +113,8 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
         };
       });
 
-      const warehouseUtilization = warehouseList.map((warehouse) => {
-        const records = warehouseInventoryGroups.find((group) => group.warehouseId === warehouse.id)?.records ?? [];
-        const used = records.reduce((sum, wi) => sum + Number(wi.quantity ?? 0), 0);
-        const capacity = Math.max(used * 1.25, 1);
-        return {
-          warehouseName: warehouse.name,
-          utilization: Number(((used / capacity) * 100).toFixed(1)),
-        };
-      });
+      // A stock quantity is not evidence of configured physical bin capacity.
+      const warehouseUtilization:never[]=[];
       const supplierPerformance = supplierList.map((supplier) => {
         const supplierOrders = filteredPoList.filter((po) => po.supplierId === supplier.id);
         let onTimeCount = 0;
@@ -162,9 +149,10 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
         const exceptionRows = await pool.query(
           `SELECT type, COUNT(*)::int AS open_count
            FROM operational_exceptions
-           WHERE status IN ('open', 'in_progress')
+           WHERE organization_id=$1 AND status IN ('open', 'in_progress')
            GROUP BY type
            ORDER BY open_count DESC`,
+          [getActiveOrganizationId()],
         );
         exceptionSummary = (exceptionRows.rows ?? []).map((row: any) => ({
           type: String(row.type ?? "unknown"),
@@ -176,6 +164,9 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
 
       return sendOk(res, {
         spendBySupplier,
+        financialMeasures:{state:"unavailable",deprecatedFields:["spendBySupplier"],summaryEndpoint:"/api/v2/analytics/financial-measures",reason:"Supplier spend requires dated reporting-currency evidence. Legacy document-currency totals are no longer returned."},
+        unavailableMetrics:{warehouseUtilization:"Verified capacity evidence is required; capacity is never inferred from current stock."},
+        observationScope:{purchaseOrders:scope.data,inventory:"current snapshot",movements:"recorded movement history",exceptions:"current organization"},
         inventoryTurnover,
         warehouseUtilization,
         supplierPerformance,

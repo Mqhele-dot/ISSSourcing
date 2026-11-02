@@ -25,10 +25,13 @@ export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
-  forbidOnly: !!process.env.CI,
+  forbidOnly: !!process.env.CI || process.env.PLAYWRIGHT_REQUIRE_COMPLETE_GATE === "1",
   retries: process.env.CI ? 2 : 0,
   workers: 1,
-  reporter: "html",
+  reporter: process.env.PLAYWRIGHT_REQUIRE_COMPLETE_GATE === "1"
+    ? [["html"], ["./scripts/e2e-release-completeness-reporter.mjs"]]
+    : "html",
+  outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR || "test-results",
   use: {
     /* Prefer 127.0.0.1 because localhost can differ on some Windows setups. */
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000",
@@ -43,7 +46,12 @@ export default defineConfig({
     },
   },
   projects: [
-    ...(process.env.PLAYWRIGHT_MOBILE_GATE === "1"
+    ...(process.env.PLAYWRIGHT_BOTH_VIEWPORTS === "1"
+      ? [
+        { name: "chromium-desktop", use: { ...devices["Desktop Chrome"] } },
+        { name: "chromium-mobile-390", use: { ...devices["Pixel 5"], viewport: { width: 390, height: 844 } } },
+      ]
+      : process.env.PLAYWRIGHT_MOBILE_GATE === "1"
       ? [{ name: "chromium-mobile-390", use: { ...devices["Pixel 5"], viewport: { width: 390, height: 844 } } }]
       : [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }]),
   ],

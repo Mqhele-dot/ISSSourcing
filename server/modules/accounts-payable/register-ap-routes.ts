@@ -8,7 +8,7 @@ import {
   insertPaymentSchema,
 } from "@shared/schema";
 import { sendError, sendOk } from "../../api-response";
-import { getActiveOrganizationId } from "../../organization-context";
+import { getActiveOrganizationId,getTenantContext } from "../../organization-context";
 import { generateGenericPdf } from "../../services/document-generator-service";
 import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
 import { pool } from "../../db";
@@ -52,6 +52,9 @@ import {
   withdrawInvoiceFromApproval,
 } from "./service";
 import { trySendDbConstraintError } from "./ap-db-errors";
+import { registerApBalanceHistoryRoutes } from "../reports/register-ap-balance-history-routes";
+import {apAgingQuery,buildApAgingReport} from "../reports/ap-aging-report";
+const pendingApObservations=new Map<string,Promise<Awaited<ReturnType<typeof buildApAgingReport>>>>();
 import {
   apApprovalActionBodySchema,
   apInvoiceMatchBodySchema,
@@ -248,6 +251,7 @@ function paymentBatchReleaseHttpStatus(message: string): { status: 400 | 403 | 4
 }
 
 export function registerApRoutes(app: Express, auth: AuthBundle): void {
+  registerApBalanceHistoryRoutes(app,auth);
   const apRead = [auth.ensureAuthenticated];
   const apWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
   const apHighRiskWrite = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"])];
@@ -437,6 +441,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         });
       }
       const message=error instanceof Error?error.message:"";
+      if(message==="RECEIPT_PRICE_EVIDENCE_REQUIRED")return sendError(res,409,message,"The receipt cannot be saved because its purchase-order price or currency is missing or invalid.",{hint:"Ask a purchasing administrator to correct the order, then retry. No stock changes were saved."});
       if(message.startsWith("RECEIPT_"))return sendError(res,message.endsWith("DENIED")?403:409,message,message.replaceAll("_"," "));
       if(message==="po_not_found")return sendError(res,404,"RECEIPT_PO_NOT_FOUND","Purchase order not found.");
       if(message==="invalid_receive_state"||message.startsWith("receive_exceeds_remaining"))return sendError(res,409,"RECEIPT_STATE_CONFLICT","Refresh the PO and check its remaining quantity and approval status.");
@@ -533,7 +538,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         page: query.page,
         pageSize: query.pageSize,
         hasNext: query.page * query.pageSize < total,
-        summary: { outstandingAmount: Number(countResult.rows[0]?.outstanding ?? 0) },
+        summary: { outstandingAmount: null, outstandingBasis: "Deprecated mixed-currency subtotal. Use the shared approved AP outstanding measure and its coverage evidence." },
       });
     } catch (error) {
       return sendError(res, 500, "AP_INVOICES_FETCH_FAILED", "Failed to fetch paginated invoices", { details: String(error) });
@@ -1256,40 +1261,20 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/v2/ap/aging", ...apRead, async (req: Request, res: Response) => {
-    const orgId = getActiveOrganizationId();
-    const bucket = String(req.query.bucket ?? "");
-    const supplierId = req.query.supplierId ? Number(req.query.supplierId) : null;
-    const validBuckets = ["", "not_due", "due_7", "due_30", "od_1_30", "od_31_60", "od_60p"];
-    if (!validBuckets.includes(bucket) || (supplierId != null && (!Number.isInteger(supplierId) || supplierId < 1))) {
-      return sendError(res, 400, "INVALID_QUERY", "Aging bucket or supplier filter is invalid.");
-    }
+  app.get("/api/v2/ap/aging", ...apRead,auth.ensurePermission("finance","read"),auth.ensurePermission("reports","read"), async (req: Request, res: Response) => {
+    const parsed=apAgingQuery.safeParse(req.query);
+    if(!parsed.success) return sendError(res,400,"INVALID_AP_REPORT_SCOPE","Choose valid AP reporting filters and a page size of 25, 50 or 100. Unsupported filters cannot be used.");
+    const scope=getTenantContext();
+    const key=JSON.stringify([scope.organizationId,scope.userId,scope.membershipId,scope.userRole,[...(scope.effectivePermissions??[])].sort(),parsed.data]);
+    const execute=async()=>{const client=await pool.connect();try{await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");const result=await buildApAgingReport(client,scope.organizationId,scope.userId,parsed.data);await client.query('COMMIT');return result;}catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}};
     try {
-      const result = await pool.query(`
-        WITH open_invoices AS (
-          SELECT i.id, i.invoice_number, i.supplier_id, s.name supplier_name, i.status::text,
-                 i.due_date::date, coalesce(i.due_amount,i.total,0)::numeric(18,2) amount,
-                 CASE WHEN i.due_date::date > current_date + 30 THEN 'not_due'
-                      WHEN i.due_date::date > current_date + 7 THEN 'due_30'
-                      WHEN i.due_date::date >= current_date THEN 'due_7'
-                      WHEN current_date-i.due_date::date <= 30 THEN 'od_1_30'
-                      WHEN current_date-i.due_date::date <= 60 THEN 'od_31_60' ELSE 'od_60p' END bucket
-          FROM invoices i JOIN suppliers s ON s.id=i.supplier_id AND s.organization_id=i.organization_id
-          WHERE i.organization_id=$1 AND lower(i.status::text) NOT IN ('paid','cancelled','void')
-            AND coalesce(i.due_amount,i.total,0)>0.01 AND ($2::int IS NULL OR i.supplier_id=$2)
-        ) SELECT id,invoice_number AS "invoiceNumber",supplier_id AS "supplierId",supplier_name AS "supplierName",
-                 status,due_date AS "dueDate",amount::text,bucket
-          FROM open_invoices WHERE ($3='' OR bucket=$3) ORDER BY due_date,id`, [orgId, supplierId, bucket]);
-      const summary = await pool.query(`
-        WITH x AS (SELECT coalesce(due_amount,total,0)::numeric amount,
-          CASE WHEN due_date::date > current_date + 30 THEN 'not_due' WHEN due_date::date > current_date + 7 THEN 'due_30'
-          WHEN due_date::date >= current_date THEN 'due_7' WHEN current_date-due_date::date <=30 THEN 'od_1_30'
-          WHEN current_date-due_date::date <=60 THEN 'od_31_60' ELSE 'od_60p' END bucket
-          FROM invoices WHERE organization_id=$1 AND supplier_id IS NOT NULL AND lower(status::text) NOT IN ('paid','cancelled','void') AND coalesce(due_amount,total,0)>0.01)
-        SELECT bucket,count(*)::int count,coalesce(sum(amount),0)::text amount FROM x GROUP BY bucket`, [orgId]);
-      return sendOk(res, { items: result.rows, buckets: summary.rows, total: result.rowCount ?? 0, asOf: new Date().toISOString() });
-    } catch (error) {
-      return sendError(res, 500, "AP_AGING_FAILED", "AP aging could not be calculated.", { details: String(error) });
+      let pending=parsed.data.runId?undefined:pendingApObservations.get(key);
+      if(!pending){pending=execute();if(!parsed.data.runId){pendingApObservations.set(key,pending);void pending.finally(()=>{if(pendingApObservations.get(key)===pending)pendingApObservations.delete(key);}).catch(()=>undefined);}}
+      const result=await pending;res.setHeader("Cache-Control","private, no-store");return sendOk(res,result);
+    }catch(error) {
+      const e=error as {code?:string;status?:number;message?:string};
+      if(e.code?.startsWith("AP_")&&[400,403,404,409].includes(e.status??0)) return sendError(res,e.status!,e.code,e.message??"Review the AP reporting scope.");
+      return sendError(res,503,"AP_AGING_UNAVAILABLE","AP reporting could not be prepared. Verify the reporting and AP history prerequisites, then retry.");
     }
   });
 

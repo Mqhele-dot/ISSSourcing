@@ -63,15 +63,15 @@ export function StockMovementForm({ open, onClose, type, itemId, warehouseId }: 
   const formSchema = z.object({
     itemId: z.number().positive({ message: "Item is required" }),
     warehouseId: z.number().positive({ message: "Warehouse is required" }),
-    quantity: z.coerce.number().positive({ message: "Quantity must be positive" }),
+    quantity: z.coerce.number<number>().positive({ message: "Quantity must be positive" }),
     notes: z.string().nullable().optional(),
     referenceType: z.string().nullable().optional(),
     referenceId: z.string().nullable().optional(),
-    unitCost: z.coerce.number().nullable().optional(),
+    unitCost: z.coerce.number<number>().nullable().optional(),
   });
   
   // Create the form
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<z.input<typeof formSchema>,unknown,z.output<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       itemId: itemId || 0,

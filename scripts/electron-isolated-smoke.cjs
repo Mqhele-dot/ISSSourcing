@@ -1,0 +1,25 @@
+const {app,BrowserWindow,ipcMain,session}=require('electron');
+const fs=require('node:fs');
+const path=require('node:path');
+const os=require('node:os');
+const root=path.resolve(process.env.ISSS_ELECTRON_SMOKE_ROOT||'');
+if(path.dirname(root)!==path.resolve(os.tmpdir())||!path.basename(root).startsWith('iss_electron_smoke_'))throw new Error('A test-owned temporary user-data directory is required.');
+app.setPath('userData',path.join(root,'user-data'));
+app.setPath('sessionData',path.join(root,'session-data'));
+app.disableHardwareAcceleration();
+const resultPath=path.join(root,'result.json');
+const timer=setTimeout(()=>app.exit(2),25000);
+app.whenReady().then(async()=>{
+  session.defaultSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
+  session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*']},(_details,callback)=>callback({cancel:true}));
+  ipcMain.handle('app:get-version',()=> 'test-only');
+  ipcMain.on('app:get-system-info',event=>{event.returnValue={testOnly:true};});
+  const win=new BrowserWindow({show:false,width:390,height:844,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,preload:path.resolve(__dirname,'../electron/preload.js')}});
+  win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+  await win.loadURL('data:text/html,<html><body>Isolated runtime probe</body></html>');
+  const result=await win.webContents.executeJavaScript(`(async()=>({nodeUnavailable:typeof require==='undefined',bridgeAvailable:typeof window.electron==='object',version:await window.electron.invoke('app:get-version'),systemInfo:window.electron.system.getInfo(),unauthorizedDenied:await window.electron.invoke('not-an-allowed-channel').then(()=>false,()=>true)}))()`);
+  const preferences=win.webContents.getLastWebPreferences();
+  if(!result.nodeUnavailable||!result.bridgeAvailable||result.version!=='test-only'||!result.systemInfo?.testOnly||!result.unauthorizedDenied||!preferences.contextIsolation||!preferences.sandbox)throw new Error('Desktop isolation or real preload bridge failed.');
+  fs.writeFileSync(resultPath,JSON.stringify({status:'passed',electron:process.versions.electron,checks:result,contextIsolation:preferences.contextIsolation,sandbox:preferences.sandbox,scope:'Real preload in a hidden isolated window; no application services, database or network loaded.'}));
+  clearTimeout(timer);win.destroy();app.quit();
+}).catch(()=>{clearTimeout(timer);app.exit(1);});

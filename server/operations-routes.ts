@@ -1,4 +1,5 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import { analyticsResources } from "../shared/analytics-source-access";
 import { z } from "zod";
 import {
   addOperationalExceptionComment,
@@ -899,7 +900,10 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
             const raw = req.body?.shipment_id ?? req.body?.shipmentId;
             if (raw == null || raw === "") return undefined;
             const n = Number(raw);
-            return Number.isFinite(n) && n > 0 ? n : undefined;
+            if (!["number","string"].includes(typeof raw) || !Number.isSafeInteger(n) || n <= 0) {
+              throw contractError(400,"INVALID_SHIPMENT","Choose a valid shipment, or leave the shipment empty for manual receiving.");
+            }
+            return n;
           })(),
           grn_number:
             typeof (req.body?.grn_number ?? req.body?.grnNumber) === "string"
@@ -940,6 +944,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/logistics/shipments/:id/delivery-note.pdf",
     auth.ensureAuthenticated,
+    auth.ensurePermission("inventory", "read"),
     async (req: Request, res: Response) => {
       try {
         const id = Number(req.params.id);
@@ -956,7 +961,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
         }>(
           `SELECT id, po_number, carrier, status, eta, tracking_number FROM shipments s
            WHERE s.id = $1
-             AND COALESCE(s.organization_id, (SELECT po.organization_id FROM purchase_orders po WHERE po.order_number = s.po_number AND po.organization_id = $2 LIMIT 1)) = $2
+             AND s.organization_id = $2
            LIMIT 1`,
           [id, getActiveOrganizationId()],
         );
@@ -1339,7 +1344,7 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
       if (!Number.isFinite(id)) {
         throw contractError(400, "INVALID_ID", "shipment id is invalid");
       }
-      const deleted = await pool.query(`DELETE FROM shipments s WHERE s.id = $1 AND COALESCE(s.organization_id, (SELECT po.organization_id FROM purchase_orders po WHERE po.order_number = s.po_number AND po.organization_id = $2 LIMIT 1)) = $2 RETURNING id`, [id, getActiveOrganizationId()]);
+      const deleted = await pool.query(`DELETE FROM shipments s WHERE s.id = $1 AND s.organization_id = $2 RETURNING id`, [id, getActiveOrganizationId()]);
       if (!deleted.rows[0]) {
         throw contractError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
       }
@@ -1697,6 +1702,11 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
 
   app.get(
     "/api/control-tower/overview",
+    auth.ensureAuthenticated,
+    // This legacy contract combines all sources. Until a granular contract is
+    // available, deny it before querying if any source is outside current access.
+    auth.ensurePermission("reports", "read"),
+    ...analyticsResources.map(resource=>auth.ensurePermission(resource,"read")),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
@@ -1733,13 +1743,12 @@ export function registerOperationalRoutes(app: Express, auth: AuthGuards) {
   app.get(
     "/api/dashboard/control-tower",
     auth.ensureAuthenticated,
+    auth.ensurePermission("reports", "read"),
+    ...analyticsResources.map(resource=>auth.ensurePermission(resource,"read")),
     withApiContract(async (req: Request, res: Response) => {
       const start = Date.now();
       setEndpointHeader(res, req.path);
-      const orgId =
-        typeof res.locals.organizationId === "number" && Number.isFinite(res.locals.organizationId)
-          ? res.locals.organizationId
-          : 1;
+      const orgId = getActiveOrganizationId();
       const daysRaw = Number(req.query.days);
       const trendDays = [7, 30, 90].includes(daysRaw) ? daysRaw : 7;
       const businessArea =

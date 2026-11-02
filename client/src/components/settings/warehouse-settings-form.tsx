@@ -44,7 +44,7 @@ import { APP_ROUTES } from "@/lib/routes/app-routes";
 
 // Define schema for form validation
 const warehouseSettingsSchema = z.object({
-  defaultWarehouseId: z.coerce.number().int().positive().nullable().optional(),
+  defaultWarehouseId: z.coerce.number<number>().int().positive().nullable().optional(),
   requireLocationForItems: z.boolean().default(true),
   allowTransfersBetweenWarehouses: z.boolean().default(true),
   autoUpdateStockLevels: z.boolean().default(true),
@@ -76,7 +76,7 @@ export function WarehouseSettingsForm() {
   });
 
   // Create form
-  const form = useForm<WarehouseSettingsFormType>({
+  const form = useForm<z.input<typeof warehouseSettingsSchema>,unknown,WarehouseSettingsFormType>({
     resolver: zodResolver(warehouseSettingsSchema),
     defaultValues: {
       defaultWarehouseId: settings?.defaultWarehouseId ?? null,

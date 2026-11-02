@@ -98,7 +98,7 @@ const inspectionSchema = z.object({
   tankId: id.optional().nullable(),
   inspectionType: z.enum(["daily_forecourt", "tank_integrity", "lpg_safety", "fire_equipment", "environmental"]),
   result: z.enum(["pass", "conditional", "fail"]),
-  checklist: z.record(z.boolean()).default({}),
+  checklist: z.record(z.string(),z.boolean()).default({}),
   notes: z.string().trim().max(2000).optional().nullable(),
   nextDueAt: optionalDate,
   inspectedAt: optionalDate,

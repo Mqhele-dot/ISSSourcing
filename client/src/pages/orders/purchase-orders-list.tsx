@@ -41,6 +41,7 @@ import { formatDate } from "./purchase-order-shared";
 import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { useReportingMoney } from "@/hooks/use-reporting-money";
 import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
+import { FinancialMeasuresPanel } from "@/components/financial-measures-panel";
 
 type PoSort =
   | "requested-desc"
@@ -385,7 +386,6 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
             const kpis = {
               total: pageData?.total ?? sorted.length,
               open: statusCount("open"), approved: statusCount("approved"), sent: statusCount("sent"), received: statusCount("received"),
-              totalValue: pageData?.summary?.totalAmount ?? 0,
             };
             return (
               <div className="space-y-4">
@@ -395,8 +395,9 @@ export function PurchaseOrdersList({ embedded }: { embedded?: boolean }) {
                   <Card data-testid="po-kpi-approved"><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Approved / ready to send</CardTitle></CardHeader><CardContent className="text-2xl font-semibold tabular-nums">{kpis.approved}</CardContent></Card>
                   <Card data-testid="po-kpi-sent"><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Sent / awaiting receipt</CardTitle></CardHeader><CardContent className="text-2xl font-semibold tabular-nums">{kpis.sent}</CardContent></Card>
                   <Card data-testid="po-kpi-received"><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Received</CardTitle></CardHeader><CardContent className="text-2xl font-semibold tabular-nums">{kpis.received}</CardContent></Card>
-                  <Card data-testid="po-kpi-total-value"><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total order value</CardTitle></CardHeader><CardContent className="text-2xl font-semibold tabular-nums">{formatMoney(kpis.totalValue)}</CardContent></Card>
+                  <Card data-testid="po-kpi-total-value"><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Financial totals</CardTitle></CardHeader><CardContent className="text-sm">Use the approved-value evidence below. Draft, cancelled and mixed-currency document totals are not added together.</CardContent></Card>
                 </div>
+                {hasActiveFilters?<p role="status" className="text-sm text-muted-foreground">Financial totals are hidden while list search, supplier-name or status filters are active. Clear these filters for approved values, or open a supplier profile for supplier-specific financial evidence.</p>:<FinancialMeasuresPanel measures={["ordered","open_commitment"]}/>}
               <div className="overflow-x-auto">
                 <Table className="min-w-[72rem]" data-testid="po-table">
                   <TableHeader>

@@ -4,42 +4,59 @@ import { readFile } from "node:fs/promises";
 import type { Pool } from "pg";
 export async function testGoodsReceipts(pool:Pool) {
   await pool.query(`
-    CREATE TABLE purchase_orders(id integer PRIMARY KEY,organization_id integer,order_number text,supplier_id integer,status text,approval_status text,updated_at timestamp);
-    CREATE TABLE purchase_order_items(id integer PRIMARY KEY,order_id integer,item_id integer,quantity integer,received_quantity integer,line_type text);
+    CREATE TABLE purchase_orders(id integer PRIMARY KEY,organization_id integer,order_number text,supplier_id integer,status text,approval_status text,updated_at timestamp,currency_code text DEFAULT 'ZAR',revision_number integer DEFAULT 1);
+    CREATE TABLE purchase_order_items(id integer PRIMARY KEY,order_id integer,item_id integer,quantity integer,received_quantity integer,line_type text,unit_price numeric DEFAULT 12.50);
     CREATE TABLE ap_receipts(id serial PRIMARY KEY,organization_id integer,receipt_number text,purchase_order_id integer,supplier_id integer,status text,received_date timestamp,received_by integer,notes text,UNIQUE(organization_id,receipt_number));
     CREATE TABLE ap_receipt_items(id serial PRIMARY KEY,receipt_id integer,purchase_order_item_id integer,item_id integer,quantity real,accepted_quantity real,rejected_quantity real);
     CREATE TABLE inventory_putaway_tasks(id serial PRIMARY KEY,organization_id integer,task_number text,receipt_id integer,receipt_item_id integer,warehouse_id integer,item_id integer,quantity numeric,from_location text,created_by integer);
     CREATE TABLE inventory_batches(id serial PRIMARY KEY,organization_id integer,item_id integer,warehouse_id integer,batch_number text,quantity_received integer,quantity_on_hand integer,updated_at timestamp);
     CREATE TABLE inventory_serials(id serial PRIMARY KEY,organization_id integer,item_id integer,warehouse_id integer,serial_number text,status text,current_location text,UNIQUE(organization_id,serial_number));
-    CREATE TABLE shipments(id integer PRIMARY KEY,organization_id integer,po_number text,status text,grn_number text,updated_at timestamp);
+    CREATE TABLE shipments(id integer PRIMARY KEY,organization_id integer,po_number text,status text,grn_number text,updated_at timestamp,purchase_order_id integer);
     INSERT INTO purchase_orders VALUES(1,1,'PO-TEST',1,'SENT','APPROVED',now()),(2,2,'PO-FOREIGN',2,'SENT','APPROVED',now());
     INSERT INTO purchase_order_items VALUES(1,1,90001,5,0,'CATALOG');
-    INSERT INTO shipments VALUES(1,1,'PO-TEST','in_transit',null,now()),(2,1,'PO-TEST','in_transit',null,now());
+    INSERT INTO shipments VALUES(1,1,'CANONICAL-ID-WINS','in_transit',null,now(),1),(2,1,'PO-TEST','in_transit',null,now(),null);
+    INSERT INTO purchase_orders VALUES(8,1,'PO-OTHER',1,'SENT','APPROVED',now()),(9,2,'PO-TEST',2,'SENT','APPROVED',now());
+    INSERT INTO shipments VALUES(3,1,'PO-TEST','in_transit',null,now(),8),(4,2,'PO-TEST','in_transit',null,now(),1),
+      (5,NULL,'PO-TEST','in_transit',null,now(),1),(6,1,'PO-TEST','in_transit',null,now(),null),(7,1,'PO-TEST','cancelled',null,now(),1);
   `);
   const inspectionMigration=await readFile("migrations/20260917190000_receipt_inspection_rules.sql","utf8");
   await pool.query(inspectionMigration);await pool.query(inspectionMigration);
+  await pool.query(await readFile("migrations/20261013090000_financial_reporting_evidence.sql","utf8"));
+  await pool.query(await readFile("migrations/20261016090000_receipt_reversal_value_evidence.sql","utf8"));
+  await pool.query(await readFile("migrations/20261017090000_reporting_fx_publication.sql","utf8"));
   const {postGoodsReceipt:run}=await import("../server/modules/inventory/goods-receipt-service");
   const request={orderId:1,warehouseId:1,key:randomUUID(),lines:[{sku:"HOLD-TEST",qty_received_now:2,batch_number:"LOT-A",serial_numbers:["SN-1","SN-2"]}],location:"Receiving",shipmentId:1};
   await assert.rejects(run(2,3,request),/po_not_found/);
   await assert.rejects(run(1,3,request),/WAREHOUSE_DENIED/);
   await assert.rejects(run(1,1,{...request,lines:[{sku:"HOLD-TEST",qty_received_now:1.5}]}));
+  for(const shipmentId of [3,4,5,6,7]){
+    await assert.rejects(run(1,1,{...request,key:randomUUID(),shipmentId}),/shipment_not_found_for_po/);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM ap_receipts')).rows[0].n,0);
+    assert.equal((await pool.query('SELECT received_quantity FROM purchase_order_items WHERE id=1')).rows[0].received_quantity,0);
+  }
+  assert.equal((await pool.query('SELECT count(*)::int n FROM receipt_value_evidence')).rows[0].n,0);
+  await pool.query('DELETE FROM purchase_orders WHERE id=9'); // Exact synthetic ambiguity fixture only.
   const first=await run(1,1,request),replay=await run(1,1,request);
   assert.equal(first.receiptId,replay.receiptId);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM receipt_value_evidence')).rows[0].n,1);
+  assert.equal((await pool.query('SELECT (quantity*unit_price)::text value FROM receipt_value_evidence')).rows[0].value,'25.00');
   assert.equal(Number((await pool.query("SELECT quantity FROM inventory_items WHERE id=90001")).rows[0].quantity),14);
   assert.equal(Number((await pool.query("SELECT quantity FROM warehouse_inventory WHERE item_id=90001 AND warehouse_id=1")).rows[0].quantity),11);
   assert.equal((await pool.query("SELECT count(*)::int n FROM stock_movements WHERE reference_type='ap_receipt'")).rows[0].n,1);
   assert.equal((await pool.query("SELECT count(*)::int n FROM inventory_putaway_tasks")).rows[0].n,1);
   assert.equal((await pool.query("SELECT status FROM purchase_orders WHERE id=1")).rows[0].status,"PARTIALLY_RECEIVED");
-  assert.ok((await pool.query("SELECT status FROM shipments")).rows.every(r=>r.status==="in_transit"));
+  assert.ok((await pool.query("SELECT status FROM shipments WHERE id IN(1,2)")).rows.every(r=>r.status==="in_transit"));
+  assert.equal((await pool.query('SELECT status FROM shipments WHERE id=7')).rows[0].status,'cancelled');
   await assert.rejects(run(1,1,{...request,key:randomUUID()}),/duplicate key/);
   assert.equal((await pool.query("SELECT count(*)::int n FROM ap_receipts")).rows[0].n,1);
   assert.equal((await pool.query("SELECT received_quantity FROM purchase_order_items WHERE id=1")).rows[0].received_quantity,2);
-  const second={...request,key:randomUUID(),lines:[{sku:"HOLD-TEST",qty_received_now:2}]};
+  const second={...request,shipmentId:2,key:randomUUID(),lines:[{sku:"HOLD-TEST",qty_received_now:2}]};
   await run(1,1,second);
   assert.equal((await pool.query("SELECT count(*)::int n FROM ap_receipts")).rows[0].n,2,"Equal successive partial receipts must remain separate");
   await pool.query(`CREATE FUNCTION fail_receipt_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='GOODS_RECEIPT_POSTED' THEN RAISE EXCEPTION 'receipt audit failed'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_receipt_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_receipt_audit();`);
   const last={...request,key:randomUUID(),lines:[{sku:"HOLD-TEST",qty_received_now:1}]};
   await assert.rejects(run(1,1,last),/receipt audit failed/);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM receipt_value_evidence')).rows[0].n,2,"Failed receipt rolls back valuation evidence too");
   assert.equal((await pool.query("SELECT received_quantity FROM purchase_order_items WHERE id=1")).rows[0].received_quantity,4);
   assert.equal((await pool.query("SELECT count(*)::int n FROM ap_receipts")).rows[0].n,2);
   await pool.query("DROP TRIGGER fail_receipt_audit ON audit_logs");

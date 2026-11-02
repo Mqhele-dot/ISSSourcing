@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { apiJsonRequest, loginForTests } from "../scripts/test-http.ts";
 import { gotoAuthed } from "./test-helpers";
+import { verifyCompactDesktopGuidance } from "./wave7-helpers";
 
 test.describe("button and action smoke", () => {
   test("contracts route navigation loads the real page marker", async ({ page }) => {
@@ -183,6 +184,7 @@ test.describe("button and action smoke", () => {
 
   test("approval policy save action validates missing policy name", async ({ page }) => {
     await gotoAuthed(page, "/finance/approval-policies");
+    if (await verifyCompactDesktopGuidance(page,"Approval policies")) return;
     await expect(page.getByTestId("approval-policies-page")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("approval-policy-name").fill("");
     await page.getByTestId("approval-policy-save").click();

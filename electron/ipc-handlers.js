@@ -50,6 +50,19 @@ function handleWindowControls() {
 
 // Application Handlers
 function handleAppControls() {
+  ipcMain.on('app:get-system-info', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    let trusted = false;
+    try {
+      const source = new URL(event.senderFrame.url);
+      const fileRoot = path.resolve(__dirname, '../dist') + path.sep;
+      trusted = Boolean(win) && event.senderFrame === event.sender.mainFrame &&
+        ((source.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(source.hostname) && source.port === '5000') ||
+          (source.protocol === 'file:' && require('url').fileURLToPath(source).startsWith(fileRoot)));
+    } catch { /* Unknown origins never receive host metadata. */ }
+    event.returnValue = trusted ? { platform:process.platform,arch:process.arch,version:os.release(),hostname:os.hostname(),
+      cpus:os.cpus().length,memory:{total:os.totalmem(),free:os.freemem()} } : null;
+  });
   // Get application version
   ipcMain.handle('app:get-version', () => {
     return app.getVersion();

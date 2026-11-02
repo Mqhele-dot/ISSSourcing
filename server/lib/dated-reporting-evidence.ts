@@ -25,17 +25,20 @@ export function buildDatedReportingEvidence(input: {
     const sameCurrency = configured && source.currencyCode === input.currencyCode;
     const candidates = input.rates.filter(rate => rate.organizationId === input.organizationId
       && rate.fromCurrencyCode === source.currencyCode && rate.toCurrencyCode === input.currencyCode
-      && Date.parse(rate.approvedAt) <= now && (!rate.supersededAt || Date.parse(rate.supersededAt) > now)
-      && Date.parse(rate.effectiveAt) <= date && (!rate.expiresAt || Date.parse(rate.expiresAt) > date))
+      && Date.parse(rate.appliedAt ?? rate.approvedAt) <= now && (!rate.supersededAt || Date.parse(rate.supersededAt) > now)
+      && Date.parse(rate.effectiveAt) <= date)
       .sort((a, b) => Date.parse(b.effectiveAt) - Date.parse(a.effectiveAt) || b.version - a.version || b.id.localeCompare(a.id));
-    const rate = sameCurrency ? null : candidates[0] ?? null;
+    const selected = candidates[0];
+    const rate = sameCurrency || selected?.withdrawn || (selected?.expiresAt && Date.parse(selected.expiresAt)<=date)
+      ? null : selected ?? null;
     let multiplier: ReturnType<typeof parseReportingDecimal> | null = null;
     try { multiplier = sameCurrency ? parseReportingDecimal("1") : rate ? parseReportingDecimal(rate.rate) : null; } catch { /* invalid rate is unavailable */ }
     if (!exclusion && configured && (!multiplier || multiplier.coefficient <= 0n)) exclusion = "missing_approved_fx";
     const reportingAmount = configured && !exclusion && amount && multiplier
       ? formatReportingDecimal(multiplyReportingDecimals(amount, multiplier), input.decimalPlaces) : null;
     return { ...source, exclusion, reportingAmount, rateId: rate?.id ?? null, rateVersion: rate?.version ?? null,
-      rate: sameCurrency ? "1" : rate?.rate ?? null, rateEffectiveAt: rate?.effectiveAt ?? null };
+      rate: sameCurrency ? "1" : rate?.rate ?? null, rateEffectiveAt: rate?.effectiveAt ?? null,
+      rateAppliedAt:rate?.appliedAt ?? null,ratePublicationProvenance:rate?.publicationProvenance ?? null };
   });
   const included = evidence.filter(row => row.reportingAmount !== null);
   const excluded = evidence.filter(row => row.reportingAmount === null);

@@ -121,7 +121,7 @@ export function AnalyticsWorkspaceCharts({ section, bundle, health, formatMoney,
           </CardHeader>
           <CardContent className="h-72 pt-2">
             {spendSeries.chart.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No supplier spend rows for this view.</p>
+              <p className="text-sm text-muted-foreground">Unavailable until this supplier breakdown uses dated reporting-currency evidence. Mixed-currency totals are not displayed.</p>
             ) : (
               <>
                 <p className="mb-2 text-xs text-muted-foreground">

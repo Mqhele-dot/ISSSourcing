@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { captureReceiptReversalValue } from "../reports/receipt-value-capture";
 import { wholeStockQuantity } from "../inventory-flow/whole-stock-quantity";
 import type { Express, Request, Response } from "express";
 import type { PoolClient } from "pg";
@@ -121,6 +122,8 @@ function handleError(res: Response, error: unknown) {
     });
   }
   const message = error instanceof Error ? error.message : String(error);
+  if(message==="IDEMPOTENCY_CONFLICT") return sendError(res,409,message,"This retry reference was already used for a different reversal. Refresh the receipt before trying again.");
+  if(message==="RECEIPT_LINE_ORDER_MISMATCH") return sendError(res,409,message,"A receipt line does not belong to its purchase order. Ask an administrator to review the record. No changes were saved.");
   if (message === "INVALID_PAGE_SIZE") return sendError(res, 400, "INVALID_PAGE_SIZE", "pageSize must be 25, 50, or 100");
   if (message === "NOT_FOUND") return sendError(res, 404, "NOT_FOUND", "The requested procurement record was not found.");
   if (message === "exception_not_found") return sendError(res, 404, "PROCUREMENT_EXCEPTION_NOT_FOUND", "Procurement exception not found.");
@@ -341,17 +344,17 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
            (SELECT count(*) FROM po WHERE upper(status::text)='PARTIALLY_RECEIVED')::int AS "partiallyReceived",
            (SELECT count(*) FROM po WHERE expected_delivery_date < now() AND upper(status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED'))::int AS "lateDeliveries",
            (SELECT count(*) FROM operational_exceptions WHERE organization_id=$1 AND status IN ('open','in_progress') AND (related_refs->>'area'='procurement' OR type ILIKE ANY(ARRAY['%purchase%','%supplier%','%invoice%','%receipt%','%rfq%'])))::int AS "exceptions",
-           COALESCE((SELECT sum(total_amount) FROM po WHERE date_trunc('month',order_date)=date_trunc('month',now())),0)::numeric::text AS "spendThisPeriod",
+           NULL::text AS "spendThisPeriod",
            (SELECT count(*) FROM invoices i WHERE i.organization_id=$1 AND i.purchase_order_id IS NOT NULL AND upper(i.status::text) IN ('DRAFT','DISPUTED','PENDING_APPROVAL'))::int AS "unmatchedInvoices")
          SELECT row_to_json(kpis.*) AS kpis,
-           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT id,requisition_number AS number,status,total_amount::numeric::text AS amount,updated_at AS "updatedAt" FROM req WHERE upper(status) IN ('SUBMITTED','PENDING_APPROVAL','NEEDS_INFO') ORDER BY updated_at DESC,id DESC LIMIT 10) x) AS "needsAttention",
-           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT id,order_number AS number,status,expected_delivery_date AS "expectedDeliveryDate",total_amount::numeric::text AS amount FROM po WHERE expected_delivery_date < now() AND upper(status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED') ORDER BY expected_delivery_date,id LIMIT 10) x) AS "lateOrders",
-           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT status AS label,count(*)::int AS value FROM po GROUP BY status ORDER BY status) x) AS "poStatus",
-           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT s.name AS label,sum(po.total_amount)::numeric::text AS value FROM po JOIN suppliers s ON s.id=po.supplier_id AND s.organization_id=$1 GROUP BY s.id,s.name ORDER BY sum(po.total_amount) DESC LIMIT 8) x) AS "spendBySupplier"
+           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT id,requisition_number AS number,status,total_amount::numeric::text AS amount,currency_code AS "currencyCode",updated_at AS "updatedAt" FROM req WHERE upper(status) IN ('SUBMITTED','PENDING_APPROVAL','NEEDS_INFO') ORDER BY updated_at DESC,id DESC LIMIT 10) x) AS "needsAttention",
+           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT id,order_number AS number,status,expected_delivery_date AS "expectedDeliveryDate",total_amount::numeric::text AS amount,currency_code AS "currencyCode" FROM po WHERE expected_delivery_date < now() AND upper(status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED') ORDER BY expected_delivery_date,id LIMIT 10) x) AS "lateOrders",
+           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT lower(trim(status)) AS label,count(*)::int AS value FROM po GROUP BY lower(trim(status)) ORDER BY lower(trim(status))) x) AS "poStatus",
+           '[]'::json AS "spendBySupplier"
          FROM kpis`,
         [org, supplierId, departmentId, from, to],
       );
-      return sendOk(res, { ...result.rows[0], generatedAt: new Date().toISOString(), filters: { supplierId, departmentId, from, to } });
+      return sendOk(res, { ...result.rows[0], financialMeasures:{state:"unavailable",deprecatedFields:["kpis.spendThisPeriod","spendBySupplier"],summaryEndpoint:"/api/v2/analytics/financial-measures",reason:"Use shared dated reporting-currency measures; operational document amounts are not financial totals."}, generatedAt: new Date().toISOString(), filters: { supplierId, departmentId, from, to } });
     } catch (error) { return handleError(res, error); }
   });
 
@@ -632,11 +635,18 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
       const org = getActiveOrganizationId(), receiptId = positiveInt(req.params.id, 0), userId = Number((req as any).user?.id ?? 0);
       await assertPhaseEnabled(org, 2);
       const result = await withTransaction(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`${org}:receipt-reversal:${receiptId}`]);
         const existing = await client.query(`SELECT * FROM goods_receipt_reversals WHERE organization_id=$1 AND idempotency_key=$2`, [org, key]);
-        if (existing.rows[0]) return existing.rows[0];
+        if (existing.rows[0]) {
+          if(Number(existing.rows[0].receipt_id)!==receiptId || existing.rows[0].reason!==reason) throw new Error("IDEMPOTENCY_CONFLICT");
+          return existing.rows[0];
+        }
         const receipt = await client.query(`SELECT * FROM ap_receipts WHERE organization_id=$1 AND id=$2 FOR UPDATE`, [org, receiptId]);
         if (!receipt.rows[0]) throw new Error("NOT_FOUND");
         if (String(receipt.rows[0].status) !== "POSTED") throw new Error("STATE_RECEIPT_NOT_POSTED");
+        const ownedOrder=await client.query("SELECT id FROM purchase_orders WHERE id=$1 AND organization_id=$2 FOR UPDATE",
+          [receipt.rows[0].purchase_order_id,org]);
+        if(!ownedOrder.rowCount) throw new Error("NOT_FOUND");
         const items = await client.query(`SELECT * FROM ap_receipt_items WHERE receipt_id=$1 ORDER BY id FOR UPDATE`, [receiptId]);
         for (const line of items.rows) {
           const acceptedQuantity = Number(line.accepted_quantity ?? 0);
@@ -651,20 +661,19 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
             await client.query(`UPDATE inventory_items SET quantity=quantity-$1,updated_at=now() WHERE id=$2 AND organization_id=$3`, [quantity, line.item_id, org]);
             await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,timestamp) VALUES ($1,$2,$3,'RECEIPT_REVERSAL',$4,$5,'ap_receipt_reversal',$6,$7,$8,$9,now())`, [org, line.item_id, warehouseId, -quantity, receiptId, reason, userId || null, Number(stock.rows[0].quantity), Number(stock.rows[0].quantity) - quantity]);
           }
-          if (line.purchase_order_item_id) await client.query(`UPDATE purchase_order_items SET received_quantity=GREATEST(COALESCE(received_quantity,0)-$1,0) WHERE id=$2`, [Number(line.accepted_quantity ?? 0), line.purchase_order_item_id]);
+          if (line.purchase_order_item_id) {
+            const updated=await client.query(`UPDATE purchase_order_items SET received_quantity=GREATEST(COALESCE(received_quantity,0)-$1,0) WHERE id=$2 AND order_id=$3`, [Number(line.accepted_quantity ?? 0), line.purchase_order_item_id,receipt.rows[0].purchase_order_id]);
+            if(!updated.rowCount) throw new Error("RECEIPT_LINE_ORDER_MISMATCH");
+          }
         }
         await client.query(`UPDATE ap_receipts SET status='CANCELLED',updated_at=now() WHERE id=$1 AND organization_id=$2`, [receiptId, org]);
-        await client.query(
-          `UPDATE purchase_orders po SET status=CASE
-             WHEN COALESCE(x.received,0) <= 0 THEN 'SENT'::purchase_order_status
-             WHEN COALESCE(x.received,0) < COALESCE(x.ordered,0) THEN 'PARTIALLY_RECEIVED'::purchase_order_status
-             ELSE 'RECEIVED'::purchase_order_status END, updated_at=now()
-           FROM (SELECT purchase_order_id,sum(quantity)::numeric AS ordered,sum(COALESCE(received_quantity,0))::numeric AS received
-                 FROM purchase_order_items WHERE purchase_order_id=$1 GROUP BY purchase_order_id) x
-           WHERE po.id=x.purchase_order_id AND po.organization_id=$2`,
-          [receipt.rows[0].purchase_order_id, org],
-        );
+        const progress=await client.query(`SELECT CASE WHEN COALESCE(sum(received_quantity),0)<=0 THEN 'SENT'
+          WHEN COALESCE(sum(received_quantity),0)<COALESCE(sum(quantity),0) THEN 'PARTIALLY_RECEIVED'
+          ELSE 'RECEIVED' END AS status FROM purchase_order_items WHERE order_id=$1`,[receipt.rows[0].purchase_order_id]);
+        await client.query("UPDATE purchase_orders SET status=$1,updated_at=now() WHERE id=$2 AND organization_id=$3",
+          [progress.rows[0].status,receipt.rows[0].purchase_order_id,org]);
         const inserted = await client.query(`INSERT INTO goods_receipt_reversals (organization_id,receipt_id,reason,reversed_by,idempotency_key) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [org, receiptId, reason, userId || null, key]);
+        await captureReceiptReversalValue(client,org,Number(inserted.rows[0].id),userId);
         await recordActivity(client, org, "goods_receipt", receiptId, "GOODS_RECEIPT_REVERSED", { actorUserId: userId, reason });
         return inserted.rows[0];
       });

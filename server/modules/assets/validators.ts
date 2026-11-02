@@ -6,14 +6,14 @@ export const createTrackedAssetBodySchema = z.object({
   status: z.string().max(64).optional(),
   warehouseId: z.number().int().positive().optional().nullable(),
   siteId: z.number().int().positive().optional().nullable(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(),z.unknown()).optional(),
 });
 
 export const patchTrackedAssetBodySchema = createTrackedAssetBodySchema.partial();
 
 export const createAssetEventBodySchema = z.object({
   eventType: z.string().min(1).max(64),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(),z.unknown()).optional(),
 });
 
 export type CreateTrackedAssetBody = z.infer<typeof createTrackedAssetBodySchema>;

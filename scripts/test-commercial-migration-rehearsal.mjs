@@ -4,6 +4,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import pg from "pg";
+import { releaseMigrations } from "./release-migrations.mjs";
 
 const { Pool } = pg;
 function resolveDatabaseUrl() {
@@ -60,6 +61,7 @@ const requiredUniqueIndexes = [
 
 async function migrationFiles() {
   const files = [path.resolve("server/init-db.ts")];
+  for (const name of releaseMigrations) await readFile(path.resolve("migrations", name), "utf8");
   for (const name of await readdir(path.resolve("migrations"))) {
     if (name.endsWith(".sql")) files.push(path.resolve("migrations", name));
   }

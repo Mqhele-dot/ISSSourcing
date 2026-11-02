@@ -92,6 +92,11 @@ export interface AnalyticsResponse {
     filtersApplied: Record<string, unknown>;
     dataFreshness: Record<string, string | null>;
     partialFailures: AnalyticsPartialFailure[];
+    financialMeasureNotice?:string;
+    restrictedSources?:string[];
+    restrictedCharts?:string[];
+    unavailableCharts?:Record<string,string>;
+    sourceScopes?:Record<string,string>;
   };
   filterOptions: {
     suppliers: AnalyticsFilterOption[];

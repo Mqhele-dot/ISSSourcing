@@ -82,8 +82,10 @@ import {
   appSettings,
   organizations,
 } from "@shared/schema";
-import { appendAuditEvent } from "./services/audit-chain-service";
+import { appendAuditEvent, appendAuditEventWithClient } from "./services/audit-chain-service";
 import { getProcurementLineReportRows } from "./services/procurement-line-report-service";
+import {requireCompleteQuickExport,quickExportRowLimit,ExportScopeTooLargeError} from "./modules/exports/export-completeness";
+import {requireExportSource,assertCurrentExportActor} from "./modules/exports/export-source-access";
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -107,6 +109,9 @@ import { allowDevOnlyRoutes, areDeveloperToolsEnabled, isDemoModeEnabled, isDemo
 import { analyticsRateLimiter, exportRateLimiter, uploadRateLimiter } from "./services/security-service";
 import { getServerDiagnosticEvents, recordServerDiagnosticEvent } from "./diagnostics/server-diagnostics-store";
 import { collectDiagnosticFindings, summarizeDiagnosticFindings } from "./diagnostics/diagnostic-findings-service";
+import { acknowledgePersistentFinding, diagnosticStorageReady, readModuleHealth, readPersistentFindings } from "./diagnostics/persistent-findings";
+import { ingestClientDiagnosticEvent } from "./diagnostics/client-event-ingestion";
+import { readDiagnosticDailySummaries } from "./diagnostics/diagnostic-delivery";
 import { diagnosticCategories, type DiagnosticCategory } from "@shared/diagnostics/findings";
 
 function isInternalExportRequest(req: Request): boolean {
@@ -187,8 +192,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
   app.use("/api/reports/analytics", analyticsRateLimiter);
-  app.use("/api/export", exportRateLimiter);
-  app.use("/api/export-jobs", exportRateLimiter);
+  // Generation handlers below and in Export Center consume their quota once.
+  // Job polling and retained-file retrieval must not spend that same budget.
   app.use("/api/documents/upload", uploadRateLimiter);
   app.use("/api/settings/pdf-template", uploadRateLimiter);
   app.use("/api/document-extractor/upload", uploadRateLimiter);
@@ -250,8 +255,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     establishInternalExportTenantContext,
     async (req: Request, res: Response) => {
     try {
+      const sourceDataset=req.params.reportType.replace(/-/g,"_");
+      if(isInternalExportRequest(req)){
+        try{await assertCurrentExportActor(getActiveOrganizationId(),Number(req.get("x-internal-export-user-id")),sourceDataset);}
+        catch{return sendError(res,403,"EXPORT_SOURCE_ACCESS_DENIED","The requesting user no longer has access to this export's source records.");}
+      }
       if (!isInternalExportRequest(req)) {
-        const guarded = exportAccess as unknown as Array<(req: Request, res: Response, next: (err?: unknown) => void) => void>;
+        const guarded = [...exportAccess,requireExportSource(auth,sourceDataset)] as unknown as Array<(req: Request, res: Response, next: (err?: unknown) => void) => void>;
         let middlewareIndex = 0;
         await new Promise<void>((resolve, reject) => {
           const run = (err?: unknown) => {
@@ -575,21 +585,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
           
         case 'purchase_orders': {
-          data = await getProcurementLineReportRows({
+          data = requireCompleteQuickExport(await getProcurementLineReportRows({
             organizationId: getActiveOrganizationId(),
             dataset: "purchase_orders",
             filters: filter,
-          });
+            limit:quickExportRowLimit+1,
+          }));
           title = 'Purchase Orders Report' + filterText;
           break;
         }
           
         case 'purchase_requisitions': {
-          data = await getProcurementLineReportRows({
+          data = requireCompleteQuickExport(await getProcurementLineReportRows({
             organizationId: getActiveOrganizationId(),
             dataset: "purchase_requisitions",
             filters: filter,
-          });
+            limit:quickExportRowLimit+1,
+          }));
           title = 'Purchase Requisitions Report' + filterText;
           break;
         }
@@ -856,6 +868,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.send(buffer);
       
     } catch (error) {
+      if(error instanceof ExportScopeTooLargeError)return sendError(res,error.status,error.code,error.message,{hint:error.hint});
       console.error(`Error generating ${req.params.format} report for ${req.params.reportType}:`, error);
       return sendError(
         res,
@@ -971,6 +984,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/diagnostics/events", auth.ensureAuthenticated, ingestClientDiagnosticEvent);
+
   app.get("/api/diagnostics/findings", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const requested = String(req.query.category ?? "overview") as DiagnosticCategory;
@@ -1001,14 +1016,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/diagnostics/probes/run", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
     try {
-      const findings = await collectDiagnosticFindings(getActiveOrganizationId());
+      const findings = await collectDiagnosticFindings(getActiveOrganizationId(), {persist:true});
       const summary = summarizeDiagnosticFindings(findings);
-      recordServerDiagnosticEvent({ severity: summary.openCount ? "warning" : "info", source: "system", title: "Safe diagnostic probes completed", message: `${summary.total} finding(s) collected; ${summary.openCount} require attention.`, details: summary });
+      // Completion is not an incident. Individual findings already retain failures.
       return res.json({ summary, findings });
     } catch (error) {
       recordServerDiagnosticEvent({ severity: "error", source: "system", title: "Safe diagnostic probes failed", message: error instanceof Error ? error.message : String(error), details: error });
       return sendError(res, 500, "DIAGNOSTIC_PROBE_FAILED", "Safe diagnostic probes failed.", { hint: "Check readiness and schema status, then retry." });
     }
+  });
+
+  app.get("/api/diagnostics/history", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
+    const page=Number(req.query.page??1), pageSize=Number(req.query.pageSize??25);
+    if (Object.keys(req.query).some(key=>!["page","pageSize"].includes(key)) || !Number.isSafeInteger(page) || page<1 || page>1000000 || ![25,50,100].includes(pageSize))
+      return sendError(res,400,"INVALID_DIAGNOSTICS_PAGE","Choose a valid page and 25, 50 or 100 rows.");
+    const client=await pool.connect();
+    try {
+      if (!await diagnosticStorageReady(client)) return sendError(res,503,"DIAGNOSTIC_STORAGE_MISSING","Diagnostic history is not installed. Ask your administrator to review pending migrations.");
+      return res.json(await readPersistentFindings(client,getActiveOrganizationId(),page,pageSize));
+    } catch {
+      return sendError(res,503,"DIAGNOSTIC_HISTORY_UNAVAILABLE","Diagnostic history could not be loaded. Retry or contact your administrator.");
+    } finally {client.release();}
+  });
+
+  app.get("/api/diagnostics/module-health", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req:Request,res:Response)=>{
+    const client=await pool.connect();
+    try{return res.json(await readModuleHealth(client,getActiveOrganizationId()));}
+    catch{return sendError(res,503,"MODULE_HEALTH_UNAVAILABLE","Module health could not be loaded. Retry shortly.");}
+    finally{client.release();}
+  });
+
+  app.get("/api/diagnostics/daily-summaries", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (req:Request,res:Response)=>{
+    const page=Number(req.query.page??1),pageSize=Number(req.query.pageSize??25);
+    if(!Number.isSafeInteger(page)||page<1||![25,50,100].includes(pageSize))return sendError(res,400,"INVALID_DIAGNOSTICS_PAGE","Choose a valid page and 25, 50 or 100 rows.");
+    try{return res.json(await readDiagnosticDailySummaries(getActiveOrganizationId(),page,pageSize));}
+    catch{return sendError(res,503,"DAILY_SUMMARIES_UNAVAILABLE","Reliability summaries are not installed or could not be loaded.");}
+  });
+
+  app.post("/api/diagnostics/findings/acknowledge",auth.ensureAuthenticated,auth.ensureRole(["admin"]),async(req:Request,res:Response)=>{
+    const parsed=z.object({findingKey:z.string().min(1).max(500)}).strict().safeParse(req.body);
+    if(!parsed.success)return sendError(res,400,"INVALID_FINDING","Choose a current diagnostic finding to acknowledge.");
+    const client=await pool.connect();
+    try{
+      await client.query("BEGIN");
+      const result=await acknowledgePersistentFinding(client,getActiveOrganizationId(),parsed.data.findingKey);
+      if(!result.rowCount){await client.query("ROLLBACK");return sendError(res,409,"FINDING_NOT_OPEN","This finding is not open or has already been acknowledged.");}
+      await appendAuditEventWithClient(client,{organizationId:getActiveOrganizationId(),actor:{userId:Number(req.user!.id)},action:"DIAGNOSTIC_FINDING_ACKNOWLEDGED",
+        resourceType:"diagnostic_finding",resourceId:null,details:{findingKey:parsed.data.findingKey,lifecycle:"acknowledged"},reason:"Administrator acknowledged the diagnostic finding",
+        requestId:String(res.locals.requestId??"unknown-request-id"),ipAddress:req.ip,userAgent:req.get("user-agent")??null});
+      await client.query("COMMIT");
+      return res.json({findingKey:parsed.data.findingKey,lifecycle:"acknowledged",healthChanged:false});
+    }catch{await client.query("ROLLBACK").catch(()=>undefined);return sendError(res,500,"ACKNOWLEDGMENT_FAILED","The finding could not be acknowledged. Retry shortly.");}
+    finally{client.release();}
   });
 
   app.get("/api/diagnostics/snapshot", auth.ensureAuthenticated, auth.ensureRole(["admin"]), async (_req: Request, res: Response) => {
@@ -1091,192 +1150,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Diagnostics: fix issues by category
+  // Compatibility only: Diagnostics never mutates business data or schema.
   app.post("/api/diagnostics/fix", auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"]), async (req: Request, res: Response) => {
-    const category = typeof req.body?.category === "string" ? req.body.category : "";
-    const result: { success: boolean; message?: string; fixed?: string[] } = { success: false };
-
-    try {
-      if (category === "database") {
-        const fixed: string[] = [];
-        try {
-          const settings = await storage.getAppSettings();
-          if (!settings) {
-            await storage.updateAppSettings({});
-            fixed.push("Initialized app settings");
-          }
-        } catch (e) {
-          result.message = "Could not repair settings. Check database connection and schema.";
-          return res.status(200).json(result);
-        }
-        try {
-          await pool.query(
-            "CREATE INDEX IF NOT EXISTS idx_inventory_items_sku ON inventory_items(sku)"
-          );
-          await pool.query(
-            "CREATE INDEX IF NOT EXISTS idx_inventory_items_quantity ON inventory_items(quantity)"
-          );
-          fixed.push("Ensured inventory indexes exist");
-        } catch {
-          // Ignore if not PostgreSQL or already exist
-        }
-        result.success = fixed.length > 0;
-        result.fixed = fixed;
-        return res.json(result);
-      }
-
-      if (category === "configuration") {
-        result.message =
-          "Set Stripe API key (STRIPE_SECRET_KEY) and email (EMAIL_HOST, EMAIL_USER, EMAIL_PASS) in environment or in Settings.";
-        return res.json(result);
-      }
-
-      if (category === "data") {
-        const fixed: string[] = [];
-        const items = await storage.getAllInventoryItems();
-        const bySku = new Map<string, { id: number; sku: string }[]>();
-        for (const item of items) {
-          const sku = String(item.sku ?? "").trim();
-          if (!sku) continue;
-          const list = bySku.get(sku) ?? [];
-          list.push({ id: item.id, sku });
-          bySku.set(sku, list);
-        }
-        for (const list of Array.from(bySku.values())) {
-          if (list.length <= 1) continue;
-          for (let i = 1; i < list.length; i++) {
-            const { id, sku } = list[i];
-            const newSku = `${sku}_dedup_${id}`;
-            await storage.updateInventoryItem(id, { sku: newSku });
-            fixed.push(`Renamed duplicate SKU to ${newSku}`);
-          }
-        }
-        const settings = await storage.getAppSettings();
-        const allowNegative = settings?.allowNegativeInventory ?? false;
-        if (!allowNegative) {
-          for (const item of items) {
-            if (Number(item.quantity) < 0) {
-              await storage.updateInventoryItem(item.id, { quantity: 0 });
-              fixed.push(`Set quantity to 0 for item ${item.sku} (id ${item.id})`);
-            }
-          }
-        }
-        const orgId = getActiveOrganizationId();
-        const defaultCurrency = await pool.query<{ code: string }>(
-          `
-          SELECT code
-          FROM currencies
-          WHERE active = true
-            AND (organization_id = $1 OR organization_id IS NULL)
-          ORDER BY CASE WHEN organization_id = $1 THEN 0 ELSE 1 END,
-                   CASE WHEN upper(code) = 'ZAR' THEN 0 ELSE 1 END,
-                   code ASC
-          LIMIT 1
-          `,
-          [orgId],
-        );
-        const fallbackCurrencyCode = defaultCurrency.rows[0]?.code?.trim();
-        let supplierCurrencyRepairCount = 0;
-        if (fallbackCurrencyCode) {
-          const supplierCurrencyRepairs = await pool.query<{ id: number; name: string; default_currency_code: string }>(
-            `
-            UPDATE suppliers
-            SET default_currency_code = $2,
-                updated_at = now()
-            WHERE organization_id = $1
-              AND (default_currency_code IS NULL OR trim(default_currency_code) = '')
-            RETURNING id, name, default_currency_code
-            `,
-            [orgId, fallbackCurrencyCode],
-          );
-          for (const supplier of supplierCurrencyRepairs.rows) {
-            fixed.push(
-              `Set supplier ${supplier.name} default currency to ${supplier.default_currency_code} from active Master Data currency.`,
-            );
-          }
-          supplierCurrencyRepairCount = supplierCurrencyRepairs.rowCount ?? supplierCurrencyRepairs.rows.length;
-        } else {
-          fixed.push("No active Master Data currency found; supplier default currencies need manual setup.");
-        }
-
-        const shipmentCarrierRepairs = await pool.query<{ id: number; po_number: string; carrier_id: number }>(
-          `
-          UPDATE shipments AS shipment
-          SET carrier_id = supplier.default_carrier_id,
-              carrier = COALESCE(carrier.name, shipment.carrier),
-              updated_at = now()
-          FROM purchase_orders AS po
-          INNER JOIN suppliers AS supplier
-            ON supplier.id = po.supplier_id
-           AND supplier.organization_id = po.organization_id
-          LEFT JOIN carriers AS carrier
-            ON carrier.id = supplier.default_carrier_id
-          WHERE po.organization_id = $1
-            AND po.order_number = shipment.po_number
-            AND COALESCE(shipment.direction, 'inbound') = 'inbound'
-            AND shipment.carrier_id IS NULL
-            AND supplier.default_carrier_id IS NOT NULL
-            AND lower(COALESCE(shipment.status, '')) NOT IN ('delivered', 'received', 'cancelled', 'canceled', 'closed')
-          RETURNING shipment.id, shipment.po_number, shipment.carrier_id
-          `,
-          [orgId],
-        );
-        for (const shipment of shipmentCarrierRepairs.rows) {
-          fixed.push(
-            `Set inbound shipment ${shipment.id} for PO ${shipment.po_number} to supplier default carrier #${shipment.carrier_id}.`,
-          );
-        }
-        if (supplierCurrencyRepairCount > 0 && req.user?.id) {
-          const findingCode = "SUPPLIER_DEFAULT_CURRENCY_MISSING";
-          const recentNotification = await pool.query<{ id: number }>(
-            `
-            SELECT id
-            FROM notifications
-            WHERE organization_id = $1
-              AND user_id = $2
-              AND finding_code = $3
-              AND created_at > now() - interval '2 hours'
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            `,
-            [orgId, req.user.id, findingCode],
-          );
-          if (recentNotification.rowCount === 0) {
-            await emitNotification({
-              userId: req.user.id,
-              type: "diagnostics_repair",
-              title: "Supplier currency defaults repaired",
-              body: `${supplierCurrencyRepairCount} supplier record${supplierCurrencyRepairCount === 1 ? "" : "s"} now use ${fallbackCurrencyCode}. Review the affected supplier records.`,
-              entityType: "supplier",
-              targetPath: "/procurement/suppliers",
-              findingCode,
-            });
-          }
-        }
-        result.success = fixed.length > 0;
-        result.fixed = fixed;
-        if (!result.success) {
-          result.message =
-            "No automatic data repair was available. Use Master Data to add currencies/carriers, then rerun diagnostics.";
-        }
-        return res.json(result);
-      }
-
-      if (category === "system") {
-        result.message =
-          "Camera: grant permission in browser. Local storage: clear site data or old keys in Application/Storage.";
-        return res.json(result);
-      }
-
-      result.message = "Unknown category. Use: database, configuration, data, or system.";
-      res.status(400).json(result);
-    } catch (err) {
-      console.error("Diagnostics fix error:", err);
-      result.message = err instanceof Error ? err.message : String(err);
-      res.status(500).json(result);
-    }
+    const targets:Record<string,string>={database:"/admin/system-diagnostics",configuration:"/admin/settings",data:"/inventory/warehouse-operations",system:"/admin/system-diagnostics"};
+    const category=String(req.body?.category??"");
+    if(!Object.hasOwn(targets,category))return sendError(res,400,"DIAGNOSTIC_CATEGORY_INVALID","Choose a valid issue category.");
+    return res.status(409).json({ok:false,success:false,code:"DIAGNOSTIC_REPAIR_REQUIRES_WORKFLOW",
+      message:"No changes were made. Review this issue in its authorized workspace; Diagnostics cannot change stock, suppliers, shipments or database structure.",
+      changesApplied:false,targetRoute:targets[category],fixed:[]});
   });
-
   /**
    * Issue quantity from a tracked batch: decrements batch on-hand, warehouse row (if any), master item qty, and records ISSUE movement.
    */

@@ -1,7 +1,9 @@
 import type { PoolClient } from "pg";
 import type { FinancialContribution, FinancialMeasure } from "../../../shared/financial-measures";
+import { isApBalanceMeasure } from "../../../shared/financial-measures";
+import {readApHistoricalContributions} from "./ap-historical-balances";
 
-export interface FinancialSourceFilters { from?: string; to?: string; supplierId?: number }
+export interface FinancialSourceFilters { from?: string; to?: string; supplierId?: number;asOf?:string }
 
 // Shared by summaries and their frozen contribution evidence. Unknown lifecycle states
 // are not silently interpreted as approval.
@@ -12,8 +14,14 @@ export const approvedInvoiceStates = ["APPROVED", "SENT", "OVERDUE", "PARTIALLY_
  * before arithmetic; this preserves their stored precision, not precision lost earlier. */
 export async function readFinancialSourceContributions(client: PoolClient, organizationId: number,
   measure: FinancialMeasure, filters: FinancialSourceFilters): Promise<FinancialContribution[]> {
+  if(isApBalanceMeasure(measure)) {
+    if(filters.from||filters.to) throw Object.assign(new Error("AP balances use an as-of date, not a lifecycle date range."),{code:"AP_INVALID_FILTERS",status:400});
+    return readApHistoricalContributions(client,organizationId,measure,filters);
+  }
+  if(filters.asOf) throw Object.assign(new Error("As-of dates apply only to AP balance measures."),{code:"AP_INVALID_FILTERS",status:400});
   let query: string;
   switch (measure) {
+    default: throw new Error("Unsupported financial source measure");
     case "ordered":
     case "open_commitment": {
       const open = measure === "open_commitment";
@@ -55,15 +63,17 @@ export async function readFinancialSourceContributions(client: PoolClient, organ
         CASE WHEN e.id IS NULL THEN 'missing_price_evidence' END AS exclusion
         FROM ap_receipts r JOIN ap_receipt_items l ON l.receipt_id=r.id
         LEFT JOIN receipt_value_evidence e ON e.organization_id=r.organization_id AND e.receipt_item_id=l.id
-        WHERE r.organization_id=$1 AND upper(r.status::text)='POSTED' AND l.accepted_quantity>0
+        WHERE r.organization_id=$1 AND (upper(r.status::text)='POSTED' OR EXISTS
+          (SELECT 1 FROM goods_receipt_reversals g WHERE g.organization_id=r.organization_id AND g.receipt_id=r.id)) AND l.accepted_quantity>0
         AND $5::text[] IS NOT NULL
         UNION ALL
         SELECT 'receipt_reversal',g.id::text||':'||l.id::text,g.created_at::text,g.created_at,
-        (-e.quantity*e.unit_price)::text,e.currency_code,r.supplier_id,
-        CASE WHEN e.id IS NULL THEN 'missing_price_evidence' END
+        (v.quantity*e.unit_price)::text,e.currency_code,r.supplier_id,
+        CASE WHEN e.id IS NULL OR v.id IS NULL THEN 'missing_price_evidence' END
         FROM goods_receipt_reversals g JOIN ap_receipts r ON r.id=g.receipt_id AND r.organization_id=g.organization_id
         JOIN ap_receipt_items l ON l.receipt_id=r.id
         LEFT JOIN receipt_value_evidence e ON e.organization_id=r.organization_id AND e.receipt_item_id=l.id
+        LEFT JOIN receipt_value_reversal_evidence v ON v.organization_id=g.organization_id AND v.reversal_id=g.id AND v.original_evidence_id=e.id
         WHERE g.organization_id=$1 AND l.accepted_quantity>0) x
         WHERE ($2::date IS NULL OR date >= $2::date)
         AND ($3::date IS NULL OR date < $3::date+interval '1 day')

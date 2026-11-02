@@ -16,6 +16,7 @@ import { useProductSetupComplete } from "@/hooks/use-product-setup-complete";
 import { PanelInlineError } from "@/components/panel-inline-error";
 import { useToast } from "@/hooks/use-toast";
 import { downloadExportJob } from "@/lib/export-job-download";
+import {userFacingError} from '@/lib/user-facing-error';
 
 type ExportHistoryRow = {
   id: number;
@@ -29,8 +30,10 @@ type ExportHistoryRow = {
   createdAt: string;
   downloadUrl: string | null;
   canRetry: boolean;
+  profile?: "standard" | "compact_excel";
   lastError?: string | null;
   retryOfJobId?: number | null;
+  artifacts?:Array<{kind:"summary"|"archive";fileName:string;fileSize:number;snapshotReference:string}>;
   error?: { code: string; message: string; hint?: string; requestId?: string | null } | null;
 };
 
@@ -142,8 +145,8 @@ export default function ExportCenterPage() {
     onError: (error) => toast({ title: "Retry failed", description: error instanceof Error ? error.message : String(error), variant: "destructive" }),
   });
   const downloadMutation = useMutation({
-    mutationFn: (row: ExportHistoryRow) => downloadExportJob(row.id, row.fileName || `export-${row.id}`),
-    onError: (error) => toast({ title: "Download failed", description: error instanceof Error ? error.message : String(error), variant: "destructive" }),
+    mutationFn: (row: ExportHistoryRow & {artifact?:"summary"|"archive"}) => downloadExportJob(row.id, row.fileName || `export-${row.id}`,row.artifact),
+    onError: (error) => toast({ title: "Download could not start", description: userFacingError(error), variant: "destructive" }),
   });
   const previewMutation = useMutation({
     mutationFn: () =>
@@ -380,7 +383,7 @@ export default function ExportCenterPage() {
             </div>
           ) : (
             history.map((row) => (
-              <div key={row.id} className="rounded-lg border p-4">
+              <div key={row.id} data-testid={`export-history-job-${row.id}`} className="rounded-lg border p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <div className="font-medium">
@@ -396,16 +399,24 @@ export default function ExportCenterPage() {
                       File: {row.fileName || "Generated on demand"}
                     </div>
                     {row.retryOfJobId ? <div className="text-xs text-muted-foreground">Retry of job #{row.retryOfJobId}</div> : null}
+                    {row.profile==='compact_excel' ? <p className="text-xs text-muted-foreground">Compact Excel is awaiting release verification. Downloads and retries are disabled.</p> : null}
                     {row.error ? (
                       <div className="space-y-1 text-xs text-destructive">
-                        <div>{row.error.code}: {row.error.message}</div>
+                        <div>{row.profile==='compact_excel'?'This Compact Excel attempt could not be completed. Ask your administrator to review its saved evidence; retries remain disabled.':'This export could not be completed. Retry it, or contact your administrator if it fails again.'}</div>
                         {row.error.hint ? <div>{row.error.hint}</div> : null}
-                        {row.error.requestId ? <div>Request ID: {row.error.requestId}</div> : null}
+                        <details><summary>Technical details</summary><div>{row.error.code}</div>
+                          {row.error.requestId ? <div>Request ID: {row.error.requestId}</div> : null}
+                        </details>
                       </div>
-                    ) : row.lastError ? <div className="text-xs text-destructive">Last error: {row.lastError}</div> : null}
+                    ) : row.lastError ? <div className="text-xs text-destructive">{row.profile==='compact_excel'?'This Compact Excel attempt previously failed. Ask your administrator to review its saved evidence; retries remain disabled.':'This export previously failed. Retry it, or ask your administrator to review the export history.'}</div> : null}
                   </div>
+                  {row.artifacts?.length===2? <p className="text-xs text-muted-foreground">The summary workbook is below 100 MB. The full-detail archive may be larger. Both files use the saved export snapshot.</p>:null}
                   <div className="flex flex-wrap gap-2">
-                    {row.status === "succeeded" ? (
+                    {row.profile!=='compact_excel'&&row.status === "succeeded"&&row.artifacts?.length===2 ? row.artifacts.map(file=>(
+                      <Button key={file.kind} size="sm" variant="outline" onClick={()=>downloadMutation.mutate({...row,artifact:file.kind})} disabled={downloadMutation.isPending}>
+                        <Download className="mr-2 h-4 w-4" />{file.kind==="summary"?"Summary workbook":"Full-detail archive"}
+                      </Button>
+                    )):row.profile!=='compact_excel'&&row.status === "succeeded" ? (
                       <Button size="sm" variant="outline" onClick={() => downloadMutation.mutate(row)} disabled={downloadMutation.isPending}>
                         <Download className="mr-2 h-4 w-4" />
                         Download

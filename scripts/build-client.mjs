@@ -3,9 +3,16 @@ import { fileURLToPath } from "node:url";
 import { build, defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import themePlugin from "@replit/vite-plugin-shadcn-theme-json";
+import {acquireE2eWorkspaceLock} from "./e2e-workspace-lock.mjs";
+
+// This command packages production assets even when a local runner loaded a
+// development .env first. Never ship React's development runtime by accident.
+process.env.NODE_ENV = "production";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
+const releaseBuildLock=acquireE2eWorkspaceLock(path.join(projectRoot,"test-results"));
+process.once("exit",releaseBuildLock);
 const isReplit = process.env.REPL_ID !== undefined;
 
 const plugins = [react(), themePlugin({ themeJsonPath: path.resolve(projectRoot, "theme.json") })];
@@ -48,6 +55,8 @@ if (process.env.NODE_ENV !== "production" && isReplit) {
 
 await build(
   defineConfig({
+    mode: "production",
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
     server: {
       fs: {
         allow: [projectRoot],

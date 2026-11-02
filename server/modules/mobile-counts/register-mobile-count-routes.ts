@@ -36,7 +36,7 @@ type Auth = {
 const syncEventSchema = z.object({
   deviceId: z.string().min(1).max(128),
   eventType: z.string().min(1).max(80),
-  body: z.record(z.unknown()).default({}),
+  body: z.record(z.string(),z.unknown()).default({}),
   idempotencyKey: z.string().min(8).max(128),
   retryCount: z.coerce.number().int().min(0).default(0),
 });

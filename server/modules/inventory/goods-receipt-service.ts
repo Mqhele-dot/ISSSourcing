@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { pool } from "../../db";
 import { appendAuditEventWithClient } from "../../services/audit-chain-service";
+import { captureReceiptValue } from "../reports/receipt-value-capture";
+import { shipmentOrderLinkSql } from "../operations/shipment-order-link";
 
 const lineSchema=z.object({sku:z.string().trim().min(1),purchaseOrderItemId:z.number().int().positive().optional(),qty_received_now:z.number().int().positive().max(2147483647),batch_number:z.string().trim().max(256).optional(),serial_numbers:z.array(z.string().trim().min(1).max(128)).max(200).optional()}).strict();
 export const goodsReceiptSchema=z.object({
@@ -40,7 +42,13 @@ export async function postGoodsReceipt(org:number,user:number,input:z.infer<type
       for(const serial of line.serial_numbers??[]){if(serials.has(serial))throw new Error("RECEIPT_DUPLICATE_SERIAL");serials.add(serial);}
       return {...line,row};
     }).sort((a,b)=>a.row.item_id-b.row.item_id);
-    if(data.shipmentId){const shipment=await client.query("SELECT id FROM shipments WHERE organization_id=$1 AND id=$2 AND po_number=$3 AND lower(status)<>'cancelled' FOR UPDATE",[org,data.shipmentId,po.order_number]);if(!shipment.rowCount)throw new Error("shipment_not_found_for_po");}
+    if(data.shipmentId){
+      // A matching document number cannot override a canonical PO identity.
+      // Lock the confirmed shipment in the same transaction as receipt posting.
+      const shipment=await client.query(`SELECT s.id FROM shipments s JOIN purchase_orders po ON ${shipmentOrderLinkSql('s','po')}
+        WHERE s.organization_id=$1 AND s.id=$2 AND po.id=$3 AND lower(s.status)<>'cancelled' FOR UPDATE OF s`,[org,data.shipmentId,po.id]);
+      if(!shipment.rowCount)throw new Error("shipment_not_found_for_po");
+    }
     const rec=await client.query("INSERT INTO ap_receipts(organization_id,receipt_number,purchase_order_id,supplier_id,status,received_date,received_by,notes) VALUES($1,$2,$3,$4,'POSTED',$5,$6,$7) RETURNING id",[org,data.grnNumber??`GRN-${data.orderId}-${createHash("sha256").update(data.key).digest("hex").slice(0,20)}`,data.orderId,po.supplier_id,data.receivedAt??new Date(),user,data.notes??"Canonical goods receipt"]);
     const receiptId=Number(rec.rows[0].id),changes:ReceiptResult["inventoryChanges"]=[];
     for(const line of selected){
@@ -53,6 +61,7 @@ export async function postGoodsReceipt(org:number,user:number,input:z.infer<type
       await client.query("UPDATE inventory_items SET quantity=quantity+$1,updated_at=now() WHERE organization_id=$2 AND id=$3",[line.qty_received_now,org,line.row.item_id]);
       await client.query("UPDATE purchase_order_items SET received_quantity=COALESCE(received_quantity,0)+$1 WHERE id=$2 AND order_id=$3",[line.qty_received_now,line.row.id,data.orderId]);
       const ri=await client.query("INSERT INTO ap_receipt_items(receipt_id,purchase_order_item_id,item_id,quantity,accepted_quantity,rejected_quantity) VALUES($1,$2,$3,$4,$4,0) RETURNING id",[receiptId,line.row.id,line.row.item_id,line.qty_received_now]);
+      await captureReceiptValue(client,org,Number(ri.rows[0].id),user);
       const rules=await client.query("SELECT subject_type,revision FROM inventory_inspection_rules WHERE organization_id=$1 AND required AND ((subject_type='item' AND subject_id=$2) OR (subject_type='supplier' AND subject_id=$3))",[org,line.row.item_id,po.supplier_id]);
       if(rules.rowCount) {
         const hold=await client.query("INSERT INTO inventory_safety_holds(organization_id,item_id,kind,reason,created_by,request_key) VALUES($1,$2,'INSPECTION',$3,$4,$5) RETURNING id",[org,line.row.item_id,`Receipt ${receiptId}, line ${ri.rows[0].id} requires inspection. Conservative item-wide hold.`,user,randomUUID()]);

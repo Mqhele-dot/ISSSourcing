@@ -47,6 +47,16 @@ export const erpCapabilityCatalog: readonly ErpCapability[]=[...unique.values()]
 export const erpCapabilitySummary = Object.freeze({ rawTotal:rawCapabilities.length, total:erpCapabilityCatalog.length, implemented:erpCapabilityCatalog.filter(x=>x.status==="implemented").length, partial:erpCapabilityCatalog.filter(x=>x.status==="partial").length, missing:erpCapabilityCatalog.filter(x=>x.status==="missing").length });
 
 /** Feature enablement is not verification; preserve the actual evidence timestamp. */
+export function configuredProcurementCapabilityEnabled(flag:string,flags:Record<string,unknown>):boolean {
+  switch(flag){
+    case "procurement.phase1Enabled":return flags.phase1Enabled===true;
+    case "procurement.phase2Enabled":return flags.phase2Enabled===true;
+    case "procurement.phase3Enabled":return flags.phase3Enabled===true;
+    case "procurement.phase4Enabled":return flags.phase4Enabled===true;
+    default:return false;
+  }
+}
+
 export function resolveCapabilityAvailability(
   catalog: readonly ErpCapability[],
   isEnabled: (flag: string) => boolean,

@@ -13,13 +13,15 @@ export async function loginAsAdmin(page: Page) {
   }
 
   await page.goto("/auth", { waitUntil: "load" });
-  await page.waitForTimeout(800);
+  const usernameInput = page.getByPlaceholder("Enter your username");
+  // Auth may redirect an already established test session after the shell loads.
+  // Wait for the actual outcome instead of assuming it settles within 800ms.
+  await expect.poll(async () => !new URL(page.url()).pathname.startsWith("/auth") || await usernameInput.isVisible(), {timeout:25_000}).toBe(true);
 
   if (!page.url().includes("/auth")) {
     return;
   }
 
-  const usernameInput = page.getByPlaceholder("Enter your username");
   await expect(usernameInput).toBeVisible({ timeout: 25_000 });
   await usernameInput.fill("admin");
   await page.getByPlaceholder("Enter your password").fill("Admin123!");

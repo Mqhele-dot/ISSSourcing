@@ -32,3 +32,7 @@ assert.equal(run([source],corrected).amount,"1851.85");
 assert.equal(run([source],corrected,"ZAR","2026-04-01T00:00:00Z").amount,"1901.90");
 assert.equal(run([source, {...source,sourceId:"2",amount:"-100.10"}]).amount,"0.00");
 console.log("Dated reporting evidence checks passed.");
+const successor={...rate,id:'3',effectiveAt:'2026-01-05T00:00:00Z',expiresAt:'2026-01-09T00:00:00Z'};
+assert.equal(run([source],[rate,successor]).state,'unavailable','Expired successor must not revive older rate');
+assert.equal(run([source],[rate,{...successor,expiresAt:null,withdrawn:true}]).state,'unavailable');
+assert.equal(run([source],[{...rate,appliedAt:'2026-03-01T00:00:00Z'}]).state,'unavailable','Approval is not publication');

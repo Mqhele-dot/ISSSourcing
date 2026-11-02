@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import {mkdtemp,readdir,readFile,writeFile,rm} from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import {captureCompactSpool,readCompactSpool} from "../server/modules/exports/compact-capture-spool";
+import {writeCompactFullDetail} from "../server/modules/exports/compact-full-detail-writer";
+import {captureCompactDataset} from "../server/modules/exports/capture-compact-dataset";
+import {runCompactIsolatedWorker} from "../server/modules/exports/compact-isolated-worker";
+import ExcelJS from "exceljs";
+const root=await mkdtemp(path.join(os.tmpdir(),"iss-capture-test-"));
+const scope={organizationId:7,actorId:9,observationReference:"frozen-test-capture",dataset:"synthetic",schemaVersion:"test-v1",columns:["id","amount","note"],normalizedFilters:{from:"2016-01-01",to:"2025-12-31"}};
+async function* source(){for(let id=0;id<5000;id++)yield {id:String(id).padStart(10,"0"),amount:"123456789012345.000001",note:`Ω漢字😀-${id}`,excluded:"not selected"};}
+try{
+  await writeFile(path.join(root,"unrelated.txt"),"preserve");
+  const capture=await captureCompactSpool({...scope,root,rows:source()});
+  assert.equal(capture.manifest.rowCount,5000);assert.match(capture.manifest.sha256,/^[a-f0-9]{64}$/);
+  let count=0;
+  const replay=await readCompactSpool(capture.directory,scope);
+  for await(const row of replay.rows){assert.equal(row.id,String(count++).padStart(10,"0"));assert.equal(row.amount,"123456789012345.000001");assert.equal(Object.hasOwn(row,"excluded"),false);}
+  assert.equal(count,5000);
+  assert.equal((await readCompactSpool(capture.directory,{...scope,normalizedFilters:{to:scope.normalizedFilters.to,from:scope.normalizedFilters.from}})).manifest.rowCount,5000);
+  for(const change of [{organizationId:8},{actorId:10},{observationReference:"wrong"},{columns:["id"]},{columns:["amount","id","note"]},{normalizedFilters:{from:"2025-01-01"}}])await assert.rejects(readCompactSpool(capture.directory,{...scope,...change}),/authorized request/);
+  const captured=await readCompactSpool(capture.directory,scope);
+  const workbook=await writeCompactFullDetail({outputDirectory:root,jobId:51,dataset:scope.dataset,observationReference:scope.observationReference,schemaVersion:scope.schemaVersion,normalizedFilters:scope.normalizedFilters,expectedRows:captured.manifest.rowCount,columns:[{key:"id",label:"ID",kind:"identifier"},{key:"amount",label:"Amount",kind:"decimal"},{key:"note",label:"Note",kind:"text"}],rows:captured.rows});
+  assert.equal(workbook.processedRows,5000);assert.equal(workbook.validationState,"pending_independent_validation");
+  const dataPath=path.join(capture.directory,"rows.jsonl"),original=await readFile(dataPath);
+  const tampered=Buffer.from(original);tampered[10]^=1;await writeFile(dataPath,tampered);
+  await assert.rejects(readCompactSpool(capture.directory,scope),/integrity/);await writeFile(dataPath,original);
+  const late=await readCompactSpool(capture.directory,scope);await writeFile(dataPath,original.subarray(0,original.length-10));
+  await assert.rejects(async()=>{for await(const row of late.rows)void row;});await writeFile(dataPath,original);
+  const before=(await readdir(root)).sort();
+  await assert.rejects(captureCompactSpool({...scope,root,quotaBytes:100,rows:source()}));
+  await assert.rejects(captureCompactSpool({...scope,root,rows:(async function*(){yield {id:"1",amount:"2",note:undefined as never};})()}),/serializable/);
+  await assert.rejects(captureCompactSpool({...scope,root,rows:(async function*(){throw new Error("Injected read failure");})()}),/Injected/);
+  const abort=new AbortController();
+  await assert.rejects(captureCompactSpool({...scope,root,signal:abort.signal,rows:(async function*(){abort.abort();yield {id:"1",amount:"2",note:"abort"};})()}));
+  assert.deepEqual((await readdir(root)).sort(),before);assert.equal(await readFile(path.join(root,"unrelated.txt"),"utf8"),"preserve");
+  const empty=await captureCompactSpool({...scope,root,rows:(async function*(){})()});let emptyCount=0;for await(const row of (await readCompactSpool(empty.directory,scope)).rows){void row;emptyCount++;}assert.equal(emptyCount,0);
+  const information={summary:JSON.stringify({state:"unavailable",amount:null,exclusions:5}),notice:"Recorded payments are not proof of bank settlement.",cutoff:null};
+  const emptyReader={dataset:"financial_measure",schemaVersion:"test-v1",observationReference:"saved-empty-run",normalizedFilters:{runId:"saved"},expectedRows:0,columns:[{key:"amount",label:"Amount",kind:"decimal" as const}],information,rows:(async function*(){})()};
+  const capturedSource=await captureCompactDataset(emptyReader,{root,organizationId:7,actorId:9});
+  assert.deepEqual(capturedSource.manifest.sourceInformation,information);
+  await readCompactSpool(capturedSource.directory,{...capturedSource.scope,sourceInformation:{cutoff:information.cutoff,notice:information.notice,summary:information.summary}});
+  await assert.rejects(readCompactSpool(capturedSource.directory,{...capturedSource.scope,sourceInformation:{...information,summary:"changed"}}),/authorized request/);
+  const generated=await runCompactIsolatedWorker({captureDirectory:capturedSource.directory,outputRoot:root,jobId:41,scope:capturedSource.scope,columns:capturedSource.columns});
+  const book=new ExcelJS.Workbook();await book.xlsx.readFile(generated.filePath);
+  const literal=(value:ExcelJS.CellValue)=>value&&typeof value==='object'&&'richText'in value?value.richText.map(run=>run.text).join(''):value;
+  const savedInfo=new Map();book.getWorksheet('Export information')!.eachRow(row=>savedInfo.set(literal(row.getCell(1).value),literal(row.getCell(2).value)));
+  assert.equal(savedInfo.get('Source information: summary'),information.summary);
+  assert.equal(savedInfo.get('Source information: notice'),information.notice);
+  assert.equal(savedInfo.get('Source information: cutoff'),null);
+  assert.equal(book.getWorksheet('Data 1')!.rowCount,1);
+  const beforeMismatch=(await readdir(root)).sort();
+  await assert.rejects(captureCompactDataset({...emptyReader,expectedRows:1,rows:(async function*(){})()},{root,organizationId:7,actorId:9}),/source count/);
+  assert.deepEqual((await readdir(root)).sort(),beforeMismatch);
+  console.log(JSON.stringify({status:"passed",captureRows:count,captureBytes:capture.manifest.bytes,workbookBytes:workbook.actualBytes,checks:["selected columns only","exact scalar replay","scope mismatch denial","capture to workbook","pre-replay corruption","mid-replay truncation","quota refusal","source failure and abort cleanup","empty capture"],limitations:"No production database adapter, job authorization, isolated child, lease or publication gate is enabled."}));
+}finally{await rm(root,{recursive:true,force:true});console.log("Removed exact test-owned capture directory.");}

@@ -107,6 +107,8 @@ export const approvalWorkflowCatalog = [
   { entityType: "inventory_transfer", label: "Inventory transfers", amountBased: true, active: true },
   { entityType: "inventory_adjustment", label: "Inventory adjustments", amountBased: true, active: true },
   { entityType: "invoice", label: "Supplier invoices", amountBased: true, active: true },
+  { entityType: "ap_balance_baseline", label: "AP reporting opening baselines", amountBased: false, active: true },
+  { entityType: "ap_balance_correction", label: "AP reporting historical corrections", amountBased: false, active: true },
   { entityType: "payment_batch", label: "Payment batches", amountBased: true, active: true },
   { entityType: "master_data_change", label: "Master Data changes", amountBased: false, active: true },
 ] as const satisfies readonly ApprovalWorkflowCatalogItem[];

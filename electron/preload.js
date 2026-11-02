@@ -7,7 +7,6 @@
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
-const os = require('os');
 
 /**
  * Expose selected APIs from Electron to the renderer process.
@@ -106,16 +105,8 @@ contextBridge.exposeInMainWorld('electron', {
      * Get information about the system
      * @returns {Object} - Object containing system information
      */
-    getInfo: () => ({
-      platform: process.platform,
-      arch: process.arch,
-      version: process.getSystemVersion(),
-      hostname: os.hostname(),
-      cpus: os.cpus().length,
-      memory: {
-        total: os.totalmem(),
-        free: os.freemem()
-      }
-    })
+    // Sandboxed preloads cannot load Node's os module. Preserve the existing
+    // synchronous API through one narrowly scoped main-process handler.
+    getInfo: () => ipcRenderer.sendSync('app:get-system-info')
   }
 });

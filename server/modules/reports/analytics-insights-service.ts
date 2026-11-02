@@ -1,5 +1,6 @@
 import type { QueryResultRow } from "pg";
 import { pool } from "../../db";
+import { shipmentOrderLinkSql } from "../operations/shipment-order-link";
 import type {
   AnalyticsFilters,
   AnalyticsPartialFailure,
@@ -9,6 +10,11 @@ import type {
   TableData,
   TrendDatum,
 } from "../../../shared/analytics-types";
+import { operationalStockBaseSql } from "../inventory/operational-stock-query";
+import {excludeLegacyMixedCurrencyTotals} from '../../../shared/analytics-financial-safety';
+import {canReadAnalyticsSource,restrictAnalyticsOutputs,markUnavailableAnalyticsSources,unsupportedAnalyticsSourceFilters,type AnalyticsReadAccess} from '../../../shared/analytics-source-access';
+import {recordServerDiagnosticEvent} from '../../diagnostics/server-diagnostics-store';
+import {getOptionalTenantContext} from '../../organization-context';
 
 type AnalyticsArea = "overview" | "procurement" | "inventory" | "logistics" | "suppliers" | "finance" | "exceptions" | "diagnostics" | "reports";
 
@@ -34,9 +40,11 @@ export async function buildAnalyticsInsights(
   organizationId: number,
   area: AnalyticsArea,
   filters: AnalyticsFilters,
+  access:AnalyticsReadAccess,
 ): Promise<AnalyticsResponse> {
   const started = Date.now();
   const partialFailures: AnalyticsPartialFailure[] = [];
+  const deniedSources=new Set<string>();
   const params = [
     organizationId,
     filters.dateFrom ?? null,
@@ -53,6 +61,15 @@ export async function buildAnalyticsInsights(
   ];
 
   async function query<T extends QueryResultRow>(source: string, sql: string): Promise<T[]> {
+    if(!canReadAnalyticsSource(source,access)){deniedSources.add(source);return [];}
+    if(source==="supplier_spend"||source==="category_spend")return []; // Deprecated until backed by dated financial evidence.
+    const unsupported=unsupportedAnalyticsSourceFilters(source,filters);
+    if(unsupported.length){partialFailures.push({area:source,code:"UNSUPPORTED_SOURCE_SCOPE",message:`This source cannot apply ${unsupported.join(", ")} through verified relationships. Clear these filters or use the source workspace. Inventory is a current operational snapshot, not dated activity.`,fallbackUsed:false});return [];}
+    if(source==="operations_trend") {
+      const end=filters.dateTo?Date.parse(filters.dateTo):Date.now();
+      const start=filters.dateFrom?Date.parse(filters.dateFrom):end-29*86400000;
+      if(end-start>366*86400000){partialFailures.push({area:source,code:"TREND_RANGE_UNSUPPORTED",message:"Activity charts support up to 366 days. Other measures retain the requested date scope.",fallbackUsed:false});return [];}
+    }
     try {
       // Analytics queries intentionally use one shared semantic parameter map,
       // but individual datasets reference different subsets. PostgreSQL requires
@@ -63,12 +80,21 @@ export async function buildAnalyticsInsights(
       const compactIndexes = new Map(referenced.map((original, index) => [original, index + 1]));
       const compactSql = sql.replace(/\$(\d+)/g, (_placeholder, rawIndex: string) => `$${compactIndexes.get(Number(rawIndex))}`);
       const compactParams = referenced.map((index) => params[index - 1]);
-      return (await pool.query<T>(compactSql, compactParams)).rows;
+      const client=await pool.connect();
+      try {
+        await client.query("BEGIN READ ONLY");
+        await client.query("SET LOCAL statement_timeout='10s'");
+        const result=await client.query<T>(compactSql,compactParams);
+        await client.query("COMMIT");
+        return result.rows;
+      }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
     } catch (error) {
+      const code=error&&typeof error==="object"&&"code" in error?String(error.code):"UNKNOWN";
+      recordServerDiagnosticEvent({source:"request",severity:"error",title:"Analytics source unavailable",message:"An analytics query failed. Review its request reference and dependencies, then retry.",route:`/api/analytics/${area}`,status:503,details:{organizationId,requestId:getOptionalTenantContext()?.correlationId,sourceRule:source,databaseCode:/^[A-Z0-9]{5}$/.test(code)?code:"UNKNOWN"}});
       partialFailures.push({
         area: source,
         code: `${source.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_ANALYTICS_UNAVAILABLE`,
-        message: error instanceof Error ? error.message : `The ${source} analytics query failed.`,
+        message: `This analytics source is temporarily unavailable. Retry or ask an administrator to review Diagnostics.`,
         fallbackUsed: false,
       });
       return [];
@@ -93,9 +119,9 @@ export async function buildAnalyticsInsights(
 
   const [poSummaryRows, poPipelineRows, requisitionPipelineRows, supplierSpendRows, categorySpendRows] = await Promise.all([
     query<Record<string, unknown>>("procurement", `
-      SELECT COALESCE(SUM(po.total_amount),0)::float8 AS spend,
+      SELECT NULL::float8 AS spend,
              COUNT(*) FILTER (WHERE upper(po.status)=ANY($11::text[]))::int AS open_count,
-             COALESCE(SUM(po.total_amount) FILTER (WHERE upper(po.status)=ANY($11::text[])),0)::float8 AS open_value,
+             NULL::float8 AS open_value,
              MIN(po.order_date) FILTER (WHERE upper(po.status)=ANY($11::text[])) AS oldest_open,
              COUNT(*) FILTER (WHERE po.expected_delivery_date < now() AND upper(po.status)=ANY($11::text[]))::int AS late_count,
              MAX(po.updated_at) AS freshness
@@ -122,42 +148,22 @@ export async function buildAnalyticsInsights(
         AND ($4::int IS NULL OR requisition.supplier_id=$4) AND ($7::int IS NULL OR requisition.requestor_id=$7)
         AND ($8::int IS NULL OR requisition.department_id=$8)
       GROUP BY lower(status) ORDER BY lower(status)`),
-    query<Record<string, unknown>>("supplier_spend", `
-      SELECT supplier.id, COALESCE(supplier.legal_name,supplier.name) AS label,
-             COUNT(po.id)::int AS count, COALESCE(SUM(po.total_amount),0)::float8 AS amount
-      FROM suppliers supplier LEFT JOIN purchase_orders po ON po.supplier_id=supplier.id AND po.organization_id=$1
-        AND ($2::timestamptz IS NULL OR po.order_date >= $2) AND ($3::timestamptz IS NULL OR po.order_date <= $3)
-        AND ($8::int IS NULL OR po.department_id=$8)
-      WHERE supplier.organization_id=$1 AND ($4::int IS NULL OR supplier.id=$4)
-      GROUP BY supplier.id, supplier.legal_name, supplier.name ORDER BY amount DESC, supplier.id LIMIT 15`),
-    query<Record<string, unknown>>("category_spend", `
-      SELECT COALESCE(category.name,'Uncategorised') AS label, COALESCE(SUM(line.total_price),0)::float8 AS amount,
-             COUNT(DISTINCT po.id)::int AS count
-      FROM purchase_order_items line JOIN purchase_orders po ON po.id=line.order_id AND po.organization_id=$1
-      LEFT JOIN inventory_items item ON item.id=line.item_id AND item.organization_id=$1
-      LEFT JOIN categories category ON category.id=item.category_id AND category.organization_id=$1
-      WHERE ($2::timestamptz IS NULL OR po.order_date >= $2) AND ($3::timestamptz IS NULL OR po.order_date <= $3)
-        AND ($4::int IS NULL OR po.supplier_id=$4) AND ($6::int IS NULL OR item.category_id=$6)
-        AND ($8::int IS NULL OR po.department_id=$8)
-      GROUP BY COALESCE(category.name,'Uncategorised') ORDER BY amount DESC LIMIT 15`),
+    Promise.resolve<Record<string,unknown>[]>([]),
+    Promise.resolve<Record<string,unknown>[]>([]),
   ]);
 
   const inventoryRows = await query<Record<string, unknown>>("inventory", `
-    WITH warehouse_stock AS (
-      SELECT item_id, SUM(quantity)::float8 AS quantity FROM warehouse_inventory
-      WHERE organization_id=$1 AND ($5::int IS NULL OR warehouse_id=$5) GROUP BY item_id
-    )
-    SELECT item.id, item.sku, item.name, COALESCE(category.name,'Uncategorised') AS category,
-           COALESCE(warehouse_stock.quantity,item.quantity,0)::float8 AS available,
-           COALESCE(item.low_stock_threshold,item.reorder_point,0)::float8 AS threshold,
-           COALESCE(item.cost,item.price,0)::float8 AS unit_cost, item.expiry_date, item.updated_at,
-           supplier.name AS supplier_name
-    FROM inventory_items item LEFT JOIN warehouse_stock ON warehouse_stock.item_id=item.id
-    LEFT JOIN categories category ON category.id=item.category_id AND category.organization_id=$1
-    LEFT JOIN suppliers supplier ON supplier.id=item.supplier_id AND supplier.organization_id=$1
-    WHERE item.organization_id=$1 AND COALESCE(item.status,'active')='active'
-      AND ($4::int IS NULL OR item.supplier_id=$4) AND ($6::int IS NULL OR item.category_id=$6)
-    ORDER BY available ASC, item.id LIMIT 5000`);
+    ${operationalStockBaseSql(5)}
+    SELECT base.id,base.sku,base.name,COALESCE(category.name,'Uncategorised') AS category,
+      base.available::numeric::text AS available,base.low_stock_threshold::numeric::text AS threshold,
+      base.available<=base.low_stock_threshold AS is_low_stock,base.available<0 AS is_negative_stock,
+      base.available=0 AS is_zero_stock,base.available>base.low_stock_threshold AS is_healthy_stock,
+      base.valuation_rate::numeric::text AS unit_cost,base.expiry_date,base.updated_at,supplier.name AS supplier_name,
+      base.incomplete_reservation_evidence
+    FROM base LEFT JOIN categories category ON category.id=base.category_id AND category.organization_id=$1
+    LEFT JOIN suppliers supplier ON supplier.id=base.supplier_id AND supplier.organization_id=$1
+    WHERE ($4::int IS NULL OR base.supplier_id=$4) AND ($6::int IS NULL OR base.category_id=$6)
+    ORDER BY base.available ASC,base.id`);
 
   const shipmentRows = await query<Record<string, unknown>>("logistics", `
     SELECT shipment.id, shipment.po_number, shipment.carrier, shipment.tracking_number, shipment.status,
@@ -169,12 +175,12 @@ export async function buildAnalyticsInsights(
                 ELSE 'on_time' END AS risk,
            GREATEST(0, EXTRACT(EPOCH FROM (now()-shipment.eta))/86400)::float8 AS days_late
     FROM shipments shipment LEFT JOIN purchase_orders po ON po.organization_id=$1
-      AND (po.id=shipment.purchase_order_id OR po.order_number=shipment.po_number)
+      AND ${shipmentOrderLinkSql('shipment','po')}
     LEFT JOIN suppliers supplier ON supplier.id=po.supplier_id AND supplier.organization_id=$1
     WHERE shipment.organization_id=$1
       AND ($2::timestamptz IS NULL OR shipment.created_at >= $2) AND ($3::timestamptz IS NULL OR shipment.created_at <= $3)
       AND ($4::int IS NULL OR po.supplier_id=$4) AND ($10::text IS NULL OR lower(shipment.status)=lower($10))
-    ORDER BY shipment.eta NULLS FIRST, shipment.id DESC LIMIT 5000`);
+    ORDER BY shipment.eta NULLS FIRST, shipment.id DESC`);
 
   const invoiceRows = await query<Record<string, unknown>>("finance", `
     SELECT invoice.id, invoice.invoice_number, invoice.status, invoice.issue_date, invoice.due_date,
@@ -191,7 +197,7 @@ export async function buildAnalyticsInsights(
       AND ($2::timestamptz IS NULL OR invoice.issue_date >= $2) AND ($3::timestamptz IS NULL OR invoice.issue_date <= $3)
       AND ($4::int IS NULL OR invoice.supplier_id=$4) AND ($7::int IS NULL OR invoice.created_by=$7)
       AND ($10::text IS NULL OR lower(invoice.status::text)=lower($10))
-    ORDER BY invoice.due_date, invoice.id DESC LIMIT 5000`);
+    ORDER BY invoice.due_date, invoice.id DESC`);
 
   const exceptionRows = await query<Record<string, unknown>>("exceptions", `
     SELECT id, type, severity, status, title, assignee, sla_hours, related_refs, created_at, updated_at,
@@ -200,23 +206,23 @@ export async function buildAnalyticsInsights(
       AND ($2::timestamptz IS NULL OR exception.created_at >= $2) AND ($3::timestamptz IS NULL OR exception.created_at <= $3)
       AND ($9::text IS NULL OR lower(exception.severity)=lower($9)) AND ($10::text IS NULL OR lower(exception.status)=lower($10))
     ORDER BY CASE lower(severity) WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC,
-             created_at ASC, id ASC LIMIT 5000`);
+             created_at ASC, id ASC`);
 
   const supplierRiskRows = await query<Record<string, unknown>>("supplier_risk", `
     SELECT supplier.id, COALESCE(supplier.legal_name,supplier.name) AS supplier,
            COALESCE(supplier.risk_rating,supplier.risk_status,'unrated') AS risk,
            COUNT(DISTINCT po.id) FILTER (WHERE upper(po.status)=ANY($11::text[]))::int AS open_pos,
-           COALESCE(SUM(po.total_amount) FILTER (WHERE upper(po.status)=ANY($11::text[])),0)::float8 AS open_value,
+           NULL::float8 AS open_value,
            COUNT(DISTINCT shipment.id) FILTER (WHERE shipment.eta < now() AND lower(shipment.status)<>ALL($12::text[]))::int AS late_shipments
     FROM suppliers supplier
     LEFT JOIN purchase_orders po ON po.supplier_id=supplier.id AND po.organization_id=$1
-    LEFT JOIN shipments shipment ON shipment.organization_id=$1 AND (shipment.purchase_order_id=po.id OR shipment.po_number=po.order_number)
+    LEFT JOIN shipments shipment ON shipment.organization_id=$1 AND ${shipmentOrderLinkSql('shipment','po')}
     WHERE supplier.organization_id=$1 AND supplier.status='active' AND ($4::int IS NULL OR supplier.id=$4)
     GROUP BY supplier.id, supplier.legal_name, supplier.name, supplier.risk_rating, supplier.risk_status
-    ORDER BY late_shipments DESC, open_value DESC, supplier.id LIMIT 100`);
+    ORDER BY late_shipments DESC, open_pos DESC, supplier.id LIMIT 100`);
 
   const trendRows = await query<Record<string, unknown>>("operations_trend", `
-    WITH days AS (SELECT generate_series(COALESCE($2::date, current_date-interval '29 days'), COALESCE($3::date,current_date), interval '1 day')::date AS day)
+    WITH days AS (SELECT generate_series(COALESCE($2::date, COALESCE($3::date,current_date)-interval '29 days'), COALESCE($3::date,current_date), interval '1 day')::date AS day)
     SELECT day,
       (SELECT count(*) FROM purchase_requisitions r WHERE r.organization_id=$1 AND r.created_at::date=day)::int AS requisitions,
       (SELECT count(*) FROM purchase_orders p WHERE p.organization_id=$1 AND p.created_at::date=day)::int AS purchase_orders,
@@ -232,15 +238,16 @@ export async function buildAnalyticsInsights(
   const activeExceptions = exceptionRows.filter((row) => ["open", "in_progress"].includes(String(row.status).toLowerCase()));
   const inventory = inventoryRows.map((row): Record<string, unknown> & { available: number; threshold: number; unit_cost: number } => ({
     ...row,
+    available_decimal:row.available,threshold_decimal:row.threshold,
     available: finite(row.available),
     threshold: finite(row.threshold),
     unit_cost: finite(row.unit_cost),
   }));
-  const lowStock = inventory.filter((row) => finite(row.available) <= finite(row.threshold));
-  const negativeStock = inventory.filter((row) => finite(row.available) < 0);
-  const zeroStock = inventory.filter((row) => finite(row.available) === 0);
+  const lowStock = inventory.filter((row) => row.is_low_stock===true);
+  const negativeStock = inventory.filter((row) => row.is_negative_stock===true);
+  const zeroStock = inventory.filter((row) => row.is_zero_stock===true);
   const expiring = inventory.filter((row) => row.expiry_date && new Date(String(row.expiry_date)).getTime() <= Date.now() + 30 * 86_400_000);
-  const healthy = inventory.filter((row) => finite(row.available) > finite(row.threshold));
+  const healthy = inventory.filter((row) => row.is_healthy_stock===true);
   const lateShipments = filteredShipments.filter((row) => row.risk === "late" && !closedShipments.has(String(row.status).toLowerCase()));
   const noEtaShipments = filteredShipments.filter((row) => row.risk === "no_eta" && !closedShipments.has(String(row.status).toLowerCase()));
   const openInvoices = invoiceRows.filter((row) => !["PAID", "CANCELLED", "REJECTED"].includes(String(row.status).toUpperCase()) && finite(row.due_amount) > 0);
@@ -309,7 +316,7 @@ export async function buildAnalyticsInsights(
         { key: "sku", label: "SKU", type: "link" }, { key: "name", label: "Item" }, { key: "category", label: "Category" },
         { key: "available", label: "Available", type: "number" }, { key: "threshold", label: "Reorder point", type: "number" }, { key: "supplier", label: "Preferred supplier" },
       ],
-      rows: lowStock.slice(0, 25).map((row) => ({ sku: row.sku, href: `/inventory/${encodeURIComponent(String(row.sku))}`, name: row.name, category: row.category, available: finite(row.available), threshold: finite(row.threshold), supplier: row.supplier_name ?? "Not configured" })),
+rows: lowStock.slice(0, 25).map((row) => ({ sku: row.sku, href: `/inventory/${encodeURIComponent(String(row.sku))}`, name: row.name, category: row.category, available: String(row.available_decimal), threshold: String(row.threshold_decimal), supplier: row.supplier_name ?? "Not configured" })),
       emptyTitle: "No low-stock items", emptyDescription: "Every active item is above its configured threshold for this view.",
     },
     overdueInvoices: {
@@ -324,7 +331,7 @@ export async function buildAnalyticsInsights(
 
   const recommendations: AnalyticsRecommendation[] = [];
   if (negativeStock.length) recommendations.push({ id: "negative-stock", severity: "critical", area: "Inventory", title: `${negativeStock.length} item${negativeStock.length === 1 ? " has" : "s have"} negative stock`, reason: "Negative availability can allow commitments that cannot be fulfilled.", suggestedAction: "Review stock movements and correct the affected warehouse balances.", href: "/inventory?stockStatus=negative" });
-  if (lateShipments.length) recommendations.push({ id: "late-shipments", severity: "high", area: "Logistics", title: `${lateShipments.length} shipment${lateShipments.length === 1 ? " is" : "s are"} past ETA`, reason: `The worst current delay is ${Math.floor(Math.max(...lateShipments.map((row) => finite(row.days_late))))} day(s).`, suggestedAction: "Contact the supplier or carrier and update the expected arrival date.", href: "/operations/logistics?risk=late" });
+if (lateShipments.length) recommendations.push({ id: "late-shipments", severity: "high", area: "Logistics", title: `${lateShipments.length} shipment${lateShipments.length === 1 ? " is" : "s are"} past ETA`, reason: `The worst current delay is ${Math.floor(lateShipments.reduce((max,row)=>Math.max(max,finite(row.days_late)),0))} day(s).`, suggestedAction: "Contact the supplier or carrier and update the expected arrival date.", href: "/operations/logistics?risk=late" });
   if (lowStock.length) recommendations.push({ id: "low-stock", severity: negativeStock.length ? "critical" : "high", area: "Inventory", title: `${lowStock.length} item${lowStock.length === 1 ? " is" : "s are"} at or below reorder threshold`, reason: "Low stock can interrupt receiving, fulfilment, and operational work.", suggestedAction: "Review replenishment and open purchase-order coverage.", href: "/inventory?low=1" });
   if (overdueInvoices.length) recommendations.push({ id: "overdue-ap", severity: "high", area: "Finance / AP", title: `${overdueInvoices.length} supplier invoice${overdueInvoices.length === 1 ? " is" : "s are"} overdue`, reason: `Overdue exposure is ${overdueInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0).toFixed(2)} in document currencies.`, suggestedAction: "Resolve approval, matching, or payment blockers.", href: "/finance/accounts-payable/aging?aging=overdue" });
   if (activeExceptions.length) recommendations.push({ id: "open-exceptions", severity: activeExceptions.some((row) => String(row.severity).toLowerCase() === "critical") ? "critical" : "medium", area: "Exceptions", title: `${activeExceptions.length} operational exception${activeExceptions.length === 1 ? " needs" : "s need"} attention`, reason: `${activeExceptions.filter((row) => finite(row.age_hours) > finite(row.sla_hours)).length} are beyond their configured SLA.`, suggestedAction: "Assign owners and resolve the oldest or highest-severity findings first.", href: "/operations/exceptions?status=open" });
@@ -338,15 +345,17 @@ export async function buildAnalyticsInsights(
   ].filter((warning) => warning.count > 0);
 
   const reportingCurrency = "reporting currency";
+  const sourceFailureCount=partialFailures.filter(row=>!["UNSUPPORTED_SOURCE_SCOPE","TREND_RANGE_UNSUPPORTED"].includes(row.code)).length;
+  const limitedScope=partialFailures.length>sourceFailureCount;
   const kpis = {
     procurementSpend: { label: "Total procurement spend", value: finite(poSummary.spend), status: "neutral" as const, href: "/procurement/orders", helperText: `Purchase-order value in document currencies for the selected period (${reportingCurrency} conversion is shown in detailed reports).` },
     openPurchaseOrders: { label: "Open purchase orders", value: finite(poSummary.open_count), status: finite(poSummary.late_count) ? "warning" as const : "good" as const, href: "/procurement/orders?status=open", helperText: "Draft, open, approved, sent, acknowledged, and partially received orders.", details: { value: finite(poSummary.open_value), oldestOpen: iso(poSummary.oldest_open), highRiskCount: finite(poSummary.late_count) } },
     inventoryHealth: { label: "Inventory health", value: healthy.length, status: negativeStock.length ? "danger" as const : lowStock.length ? "warning" as const : "good" as const, href: "/inventory", helperText: "Healthy active SKUs; low, zero, and negative stock are shown separately.", details: { lowStock: lowStock.length, zeroStock: zeroStock.length, negativeStock: negativeStock.length } },
-    lateShipments: { label: "Late shipments", value: lateShipments.length, status: lateShipments.length ? "danger" as const : "good" as const, href: "/operations/logistics?risk=late", helperText: "Active shipments whose ETA has passed.", details: { averageDaysLate: lateShipments.length ? Number((lateShipments.reduce((sum, row) => sum + finite(row.days_late), 0) / lateShipments.length).toFixed(1)) : 0, worstDelayDays: lateShipments.length ? Math.floor(Math.max(...lateShipments.map((row) => finite(row.days_late)))) : 0 } },
-    openExceptions: { label: "Open exceptions", value: activeExceptions.length, status: activeExceptions.some((row) => String(row.severity).toLowerCase() === "critical") ? "danger" as const : activeExceptions.length ? "warning" as const : "good" as const, href: "/operations/exceptions?status=open", helperText: "Current open or in-progress operational exceptions.", details: { critical: activeExceptions.filter((row) => String(row.severity).toLowerCase() === "critical").length, overSla: activeExceptions.filter((row) => finite(row.age_hours) > finite(row.sla_hours)).length, oldestHours: activeExceptions.length ? Math.floor(Math.max(...activeExceptions.map((row) => finite(row.age_hours)))) : 0 } },
+    lateShipments: { label: "Late shipments", value: lateShipments.length, status: lateShipments.length ? "danger" as const : "good" as const, href: "/operations/logistics?risk=late", helperText: "Active shipments whose ETA has passed.", details: { averageDaysLate: lateShipments.length ? Number((lateShipments.reduce((sum, row) => sum + finite(row.days_late), 0) / lateShipments.length).toFixed(1)) : 0, worstDelayDays: lateShipments.length ? Math.floor(lateShipments.reduce((max,row)=>Math.max(max,finite(row.days_late)),0)) : 0 } },
+    openExceptions: { label: "Open exceptions", value: activeExceptions.length, status: activeExceptions.some((row) => String(row.severity).toLowerCase() === "critical") ? "danger" as const : activeExceptions.length ? "warning" as const : "good" as const, href: "/operations/exceptions?status=open", helperText: "Current open or in-progress operational exceptions.", details: { critical: activeExceptions.filter((row) => String(row.severity).toLowerCase() === "critical").length, overSla: activeExceptions.filter((row) => finite(row.age_hours) > finite(row.sla_hours)).length, oldestHours: activeExceptions.length ? Math.floor(activeExceptions.reduce((max,row)=>Math.max(max,finite(row.age_hours)),0)) : 0 } },
     apExposure: { label: "AP exposure", value: openInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0), status: overdueInvoices.length ? "danger" as const : "neutral" as const, href: "/finance/accounts-payable", helperText: "Unpaid supplier invoice exposure in document currencies.", details: { overdueValue: overdueInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0), dueThisWeek: openInvoices.filter((row) => row.aging === "due_7").reduce((sum, row) => sum + finite(row.due_amount), 0), pendingApprovalValue: pendingInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0) } },
     supplierRisk: { label: "Supplier risk", value: highRiskSuppliers.length, status: highRiskSuppliers.length ? "warning" as const : "good" as const, href: "/procurement/suppliers?risk=high", helperText: "Active suppliers with high/critical ratings or current late shipments.", details: { worstSupplier: String(highRiskSuppliers[0]?.supplier ?? "None"), lateShipments: highRiskSuppliers.reduce((sum, row) => sum + finite(row.late_shipments), 0) } },
-    systemHealth: { label: "System health", value: partialFailures.length ? "Degraded" : "Ready", status: partialFailures.length ? "warning" as const : "good" as const, href: "/admin/system-diagnostics", helperText: "Readiness of the analytics data sources used for this view.", details: { failedAnalyticsFeeds: partialFailures.length, failedApiCalls: "Open diagnostics", slowEndpoints: "Open diagnostics", routeWarnings: "Open diagnostics" } },
+    systemHealth: { label: "System health", value: sourceFailureCount ? "Degraded" : limitedScope ? "Limited scope" : "Ready", status: sourceFailureCount ? "warning" as const : limitedScope ? "neutral" as const : "good" as const, href: "/admin/system-diagnostics", helperText: "Readiness of the analytics data sources used for this view.", details: { failedAnalyticsFeeds: sourceFailureCount, failedApiCalls: "Open diagnostics", slowEndpoints: "Open diagnostics", routeWarnings: "Open diagnostics" } },
   };
 
   const charts: AnalyticsResponse["charts"] = {
@@ -380,6 +389,7 @@ export async function buildAnalyticsInsights(
         finance: iso(invoiceRows[0]?.updated_at), exceptions: iso(exceptionRows[0]?.updated_at), latest: iso(freshnessValues.filter(Boolean).sort().at(-1)),
       },
       partialFailures,
+      sourceScopes:{inventory:"Current operational stock snapshot; date filters do not reconstruct historical positions. Not quality-eligible allocation authority.",supplier_risk:"Current supplier risk and open-work snapshot, not a historical scorecard.",businessArea:"Workspace/view selection; source access and supported record filters remain authoritative."},
     },
     filterOptions: {
       suppliers: supplierOptions, warehouses: warehouseOptions, categories: categoryOptions, owners: ownerOptions, departments: departmentOptions,
@@ -401,7 +411,10 @@ export async function buildAnalyticsInsights(
       ["diagnostics", "Diagnostics Report", "/admin/system-diagnostics"],
     ].map(([id, label, href]) => ({ id, label, href })),
   };
-  return JSON.parse(JSON.stringify(response)) as AnalyticsResponse;
+  restrictAnalyticsOutputs(response,deniedSources);
+  if(inventoryRows.some(row=>row.incomplete_reservation_evidence===true))markUnavailableAnalyticsSources(response,new Set(["inventory"]),"Warehouse availability is incomplete because reservations lack location evidence. Reconcile allocation locations before relying on this quantity.");
+  for(const failure of partialFailures)markUnavailableAnalyticsSources(response,new Set([failure.area]),failure.message);
+  return excludeLegacyMixedCurrencyTotals(response);
 }
 
 export const analyticsAreas: AnalyticsArea[] = ["overview", "procurement", "inventory", "logistics", "suppliers", "finance", "exceptions", "diagnostics", "reports"];

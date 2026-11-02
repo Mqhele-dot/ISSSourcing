@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { FinancialMeasuresPanel } from "@/components/financial-measures-panel";
+import { ApAgingPanel } from "@/pages/accounts-payable/ap-aging-panel";
 import {
   AlertTriangle,
   Building2,
@@ -64,6 +66,7 @@ function formatFreshnessValue(value: string | null | undefined): string {
 }
 
 export default function ControlTowerPage() {
+  const queryClient = useQueryClient();
   const { formatMoney } = useReportingMoney();
   const [trendDays, setTrendDays] = useState<7 | 30 | 90>(7);
   const [businessArea, setBusinessArea] = useState("all");
@@ -111,7 +114,7 @@ export default function ControlTowerPage() {
               size="sm"
               data-testid="dashboard-refresh-button"
               disabled={isFetching}
-              onClick={() => void refetch()}
+              onClick={() => {void refetch();void queryClient.invalidateQueries({queryKey:["/api/v2/analytics/financial-measures"]});}}
             >
               <RefreshCw className={`mr-1 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
               Refresh
@@ -176,6 +179,12 @@ export default function ControlTowerPage() {
         </Link>{" "}
         if responses are slow or incomplete.
       </p>
+
+      <div className="space-y-3" data-testid="control-tower-financial-measures">
+        <p className="text-sm text-muted-foreground">Financial measures cover all dates and all areas. The trend window and focus above apply to operational charts only. Inventory value remains a separate estimate, not verified procurement spend.</p>
+        <FinancialMeasuresPanel />
+        <ApAgingPanel showDetails={false}/>
+      </div>
 
       {freshnessSummary.length > 0 ? (
         <p className="text-xs text-muted-foreground" data-testid="control-tower-data-freshness">
@@ -305,10 +314,10 @@ export default function ControlTowerPage() {
                 <DashboardKpiCard
                   testId="dashboard-kpi-exceptions"
                   title="Operational exceptions"
-                  value={payload.kpis.operationalExceptions ?? 0}
-                  description="Open or in progress"
+                  value={payload.kpis.operationalExceptions ?? "Unavailable"}
+                  description={payload.kpis.operationalExceptions == null ? "The count could not be checked. Retry or open System Diagnostics." : "Open or in progress in this organization"}
                   href={`${APP_ROUTES.operations.exceptions}?status=active`}
-                  status={(payload.kpis.operationalExceptions ?? 0) > 0 ? "warn" : "good"}
+                  status={payload.kpis.operationalExceptions == null ? "neutral" : payload.kpis.operationalExceptions > 0 ? "warn" : "good"}
                   icon={<AlertTriangle className="h-4 w-4" />}
                 />
                 <DashboardKpiCard

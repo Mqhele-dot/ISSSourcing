@@ -73,7 +73,7 @@ export function registerCustomKpiRoutes(app: Router) {
     } catch (error) {
       if (error instanceof z.ZodError) {
         return sendError(res, 400, "VALIDATION_ERROR", "Validation failed", {
-          details: { errors: error.errors },
+          details: { errors: error.issues },
         });
       }
       return sendError(

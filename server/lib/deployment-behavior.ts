@@ -48,6 +48,10 @@ export function resolveWritableDataRoot(): string {
 }
 
 export function uploadsDirResolution(): string {
+  if (process.env.TEST_UPLOADS_DIR && process.env.NODE_ENV === "test") {
+    if (!path.isAbsolute(process.env.TEST_UPLOADS_DIR)) throw new Error("TEST_UPLOADS_DIR must be absolute.");
+    return process.env.TEST_UPLOADS_DIR;
+  }
   return path.join(resolveWritableDataRoot(), "uploads");
 }
 

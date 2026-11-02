@@ -2,16 +2,19 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { pool } from "../server/db";
 import { analyticsAreas, buildAnalyticsInsights } from "../server/modules/reports/analytics-insights-service";
+import {analyticsResources} from "../shared/analytics-source-access";
+import {assertMatchedDisposableDatabaseUrls} from "../server/config/database-safety";
 
 const expectedAreas = ["overview", "procurement", "inventory", "logistics", "suppliers", "finance", "exceptions", "diagnostics", "reports"];
 const expectedKpis = ["procurementSpend", "openPurchaseOrders", "inventoryHealth", "lateShipments", "openExceptions", "apExposure", "supplierRisk", "systemHealth"];
 
 try {
+  assertMatchedDisposableDatabaseUrls(process.env.DATABASE_URL,process.env.TEST_DATABASE_URL);
   assert.deepEqual(analyticsAreas, expectedAreas, "analytics area registry must remain complete");
   const organization = await pool.query<{ id: number }>("SELECT id FROM organizations ORDER BY id LIMIT 1");
   assert.ok(organization.rows[0], "analytics contract test requires one organization");
 
-  const response = await buildAnalyticsInsights(organization.rows[0].id, "overview", {});
+  const response = await buildAnalyticsInsights(organization.rows[0].id, "overview", {},Object.fromEntries(analyticsResources.map(resource=>[resource,true])));
   assert.ok(!Number.isNaN(Date.parse(response.generatedAt)), "generatedAt must be an ISO timestamp");
   assert.ok(Number.isFinite(response.meta.queryMs), "query duration must be finite");
   assert.deepEqual(Object.keys(response.kpis), expectedKpis, "executive KPI contract drifted");
