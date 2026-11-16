@@ -5,8 +5,8 @@ The approved sequence is fixed. Fixes and reruns belong to their originating bui
 | Build | Scope | Status |
 | --- | --- | --- |
 | 1 | Supplier 360 | Accepted on disposable data: command security, independent dated compliance, atomic onboarding and frozen delivery observations passed focused runtime, desktop/390px and exact-candidate package checks. Business activation not applied. |
-| 2 | Contract Obligations and Maverick Spend | Contract obligations, linked policy evidence, PO/agreements, sourcing awards, linked RFQ creation, withdrawal, evidence coverage and local due dates have disposable runtime evidence. Obligation owner work discovery and capability closeout remain open. Business activation is separate. |
-| 3 | Smart Procurement Intake | Queued behind Build 2. |
+| 2 | Contract Obligations and Maverick Spend | Complete on disposable acceptance: 30/30 desktop and 30/30 at 390px, plus same-candidate production smoke. Business activation and clean-checkout sign-off remain separate. |
+| 3 | Smart Procurement Intake | Next build; not started. |
 | 4 | Segregation of Duties and Payment Risk | Queued behind Build 3. |
 | 5 | Spend Cube and Savings Tracking | Queued behind Build 4. |
 | 6 | TCO and Should-Cost | Queued behind Build 5. |

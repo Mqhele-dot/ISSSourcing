@@ -1,10 +1,12 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import type { PoolClient } from "pg";
 import { db, pool } from "../db";
 import { storage } from "../storage";
 import { getActiveOrganizationId } from "../organization-context";
 import { notificationPreferences, notifications, organizationMembers, users } from "@shared/schema";
 import { sendEmail, buildISSSourcingNotificationEmailHtml } from "./email-service";
 import { maybeSendSms } from "./sms-service";
+import { queryCustomRolePermission, queryRolePermission, queryUserCustomRoleId } from "./permission-query-service";
 
 export type EmitNotificationPayload = {
   userId: number;
@@ -47,6 +49,42 @@ function safeInternalTargetPath(value: string | undefined): string | null {
   const trimmed = value.trim();
   if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("\\") || /[\r\n]/.test(trimmed)) return null;
   return trimmed;
+}
+
+/** An inbox row for a governed outcome commits with the transition, not before
+ * or after it. No optional external delivery is run under a business lock. */
+export async function recordRequisitionOutcomeNotification(client: PoolClient, organizationId: number, payload: EmitNotificationPayload) {
+  const { rows: [recipient] } = await client.query(`SELECT m.application_role::text AS role
+    FROM organization_members m JOIN users u ON u.id=m.user_id AND u.active=true
+    LEFT JOIN notification_preferences np ON np.user_id=u.id
+    WHERE m.organization_id=$1 AND m.user_id=$2 AND m.active AND m.status='active'
+      AND np.approval_request IS DISTINCT FROM false AND np.in_app_enabled IS DISTINCT FROM false`, [organizationId,payload.userId]);
+  if (!recipient) return;
+  const custom = recipient.role === "custom" ? await queryUserCustomRoleId(client,organizationId,payload.userId) : null;
+  if (!await queryRolePermission(client,recipient.role,"purchases","read") &&
+      !(custom && await queryCustomRolePermission(client,organizationId,custom,"purchases","read"))) return;
+  await client.query(`INSERT INTO notifications
+    (organization_id,user_id,type,title,body,entity_type,entity_id,target_path,priority,occurrence_count,last_occurred_at)
+    VALUES($1,$2,$3,$4,$5,'requisition',$6,$7,'normal',1,now())`,
+  [organizationId,payload.userId,payload.type,payload.title,payload.body??null,payload.entityId??null,safeInternalTargetPath(payload.targetPath)]);
+}
+
+export async function recordRequisitionSubmittedNotification(client: PoolClient, organizationId: number, id: number, requester: number, reference: string) {
+  await client.query(`INSERT INTO notifications
+    (organization_id,user_id,type,title,body,entity_type,entity_id,target_path,priority,occurrence_count,last_occurred_at)
+    SELECT m.organization_id,m.user_id,'requisition_pending_approval',$4,$5,'requisition',$2,$6,'normal',1,now()
+    FROM organization_members m JOIN users u ON u.id=m.user_id AND u.active
+    LEFT JOIN notification_preferences np ON np.user_id=u.id
+    WHERE m.organization_id=$1 AND m.user_id<>$3 AND m.active AND m.status='active'
+      AND np.approval_request IS DISTINCT FROM false AND np.in_app_enabled IS DISTINCT FROM false
+      AND (m.application_role='admin' OR
+        (m.application_role IN ('manager','planner') AND EXISTS(
+          SELECT 1 FROM permissions p WHERE p.role::text=m.application_role AND p.resource='purchases' AND p.permission_type='approve'))
+        OR (m.application_role='custom' AND EXISTS(
+          SELECT 1 FROM custom_roles r JOIN custom_role_permissions p ON p.role_id=r.id
+          WHERE r.organization_id=m.organization_id AND r.is_active
+            AND r.id::text=u.preferences->>'customRoleId' AND p.resource='purchases' AND p.permission_type='approve')))`,
+  [organizationId,id,requester,`Requisition ${reference} ready for approval`,`Requisition ${reference} is awaiting approval.`,`/procurement/requisitions/${id}`]);
 }
 
 async function upsertInAppNotification(payload: EmitNotificationPayload): Promise<{ created: boolean }> {

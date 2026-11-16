@@ -9,6 +9,7 @@ import { getOrganizationDocumentBranding } from "../../services/organization-doc
 import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
 import { lockConversionRequisition } from "../procurement/requisition-po-conversion";
 import { transferRequisitionBudget } from "../procurement/requisition-budget-transfer";
+import { bindPurchaseOrderBudgetProvenance } from "../procurement/purchase-order-budget-provenance";
 import {
   inventoryItems,
   mdmExchangeRates,
@@ -1000,6 +1001,7 @@ export function convertAwardToPurchaseOrders(actor: SourcingActor, awardId: numb
     await tx.update(sourcingAwards).set({ status: "CONVERTED", convertedPurchaseOrderId: orders[0].id, updatedAt: now })
       .where(and(eq(sourcingAwards.id, awardId), eq(sourcingAwards.organizationId, org)));
     const purchaseOrderIds = orders.map(order => order.id);
+    if (requisition) await bindPurchaseOrderBudgetProvenance(client, org, requisition.id, purchaseOrderIds, "sourcing_award");
     await auditAward(client, actor, "RFQ_AWARD_CONVERTED_TO_PO", awardId, award,
       { purchaseOrderIds, requisitionId: requisition?.id ?? null, approvalAuditId: String(proof.rows[0].id), budgetTransfer });
     return { response: { awardId, purchaseOrderIds }, result: { purchaseOrders: orders } };

@@ -28,5 +28,7 @@ export const supplierObservationMigrations = Object.freeze(["20261108090000_supp
 // Build 2 obligations are not covered by any existing business migration approval.
 export const contractObligationMigrations = Object.freeze(["20261109090000_contract_obligations.sql"]);
 export const purchaseBudgetEvidenceMigrations = Object.freeze(["20261109100000_purchase_budget_policy_evidence.sql"]);
+// Prospective PO binding requires its own business migration approval.
+export const purchaseOrderBudgetProvenanceMigrations = Object.freeze(["20261117090000_purchase_order_budget_provenance.sql"]);
 // New release-time provenance is not covered by previous business approvals.
 export const agreementReleaseEvidenceMigrations = Object.freeze(["20261112090000_agreement_release_policy_evidence.sql"]);

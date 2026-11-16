@@ -1,6 +1,12 @@
 # Next executable work
 
-## Current queue — Build 2 of 7: Contract Obligations and Maverick Spend
+## Current queue — Build 3 of 7: Smart Procurement Intake
+
+Start with the existing requisition form and draft writer, Master Data context, agreement pricing/eligibility routes and sourcing-threshold checks. Derive the recommendation server-side; retain its reasons, blockers and permissible alternatives; revalidate on explicit conversion into a canonical draft. No automatic submission or spend. Use the guarded runner on desktop and 390px for the complete Intake flow, including policy drift, retry and cross-tenant denial. Do not repeat or extend completed Build 2 work. Business activation and intentional clean-checkout sign-off remain separate.
+
+## Historical queue — Build 2 of 7 (completed on disposable data)
+
+The seven-spec closeout run passed 30/30 on desktop and 390px, followed by production smoke on its unchanged candidate. Evidence: `artifacts/release-runs/build2-canonical-final.log` and `build2-canonical-smoke.log`; earlier failures remain under `build2-canonical-closeout-verified.log`. Restore, enable and migrate the business database only under the separately approved process, never from the app or test runner. The Build 2 queue below is historical, not another list of required enhancements.
 
 Canonical PO submission now records the actual readiness rules and configured sourcing outcome in its existing audited transaction. The connected gate passed 7/7 desktop, 7/7 at 390px and exact-candidate production smoke. Do not repeat this slice. See STATUS for identities and verification.
 

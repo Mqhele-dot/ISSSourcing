@@ -3,6 +3,8 @@ import { pool } from "../server/db";
 import { gotoAuthed, readBrowserApi } from "./test-helpers";
 import { requireDisposableE2eDatabase } from "./wave7-helpers";
 import { appendAuditEventWithClient } from "../server/services/audit-chain-client";
+import { bindPurchaseOrderBudgetProvenance } from "../server/modules/procurement/purchase-order-budget-provenance";
+import { apiJsonRequest, loginForTests } from "../scripts/test-http";
 
 async function guarded() {
   requireDisposableE2eDatabase();
@@ -247,6 +249,9 @@ test("sourcing award approval and conversion conserve the linked reservation and
     return { req, commitment, event, award, line };
   };
   const linked = await fixture("linked", "CONVERTED_TO_RFQ");
+  await pool.query("UPDATE purchase_requisitions SET approver_id=$2,approval_date=now() WHERE organization_id=1 AND id=$1",[linked.req,admin]);
+  await pool.query(`INSERT INTO purchase_budget_policy_evidence(organization_id,requisition_id,approved_at,approver_user_id,policy_revision,policy_mode,outcome,budget_id)
+    SELECT organization_id,id,approval_date,approver_id,'synthetic-award-v1','HARD_BLOCK','within_budget',$2 FROM purchase_requisitions WHERE organization_id=1 AND id=$1`,[linked.req,budget]);
   const competing = await fixture("competing", "APPROVED");
   const split = await fixture("split", "APPROVED", true);
   const foreignAward = (await pool.query(`INSERT INTO sourcing_awards(organization_id,event_id,status,recommended_by_user_id,justification)
@@ -314,6 +319,7 @@ test("sourcing award approval and conversion conserve the linked reservation and
   await pool.query("UPDATE purchase_orders SET status='APPROVED',approval_status='APPROVED' WHERE organization_id=1 AND id=$1", [po]);
   const report = (await (await readBrowserApi(page, "/api/v2/procurement/maverick-spend?outcome=approved_override")).json()).data;
   expect(report.items.filter((row: { id: number }) => row.id === po)).toEqual([expect.objectContaining({
+    coverage:expect.objectContaining({budget:"recorded"}),budgetConversionKind:"sourcing_award",
     sourcingAwardId: linked.award, approvedOverrideReason: "Independently reviewed exception", currencyCode: "ZAR",
   })]);
   expect((await command(split.award, "approve")).status()).toBe(200);
@@ -344,6 +350,13 @@ test("requisition conversion commits sourcing evidence and budget transfer with 
     VALUES(1,EXTRACT(YEAR FROM now())::int,'ZAR',1000) RETURNING id`)).rows[0].id;
   const commitment = (await pool.query(`INSERT INTO budget_commitments(organization_id,budget_id,source_type,source_id,amount,currency_code,status)
     VALUES(1,$1,'REQUISITION',$2,100,'ZAR','ACTIVE') RETURNING id`, [budget, req])).rows[0].id;
+  await pool.query(`UPDATE purchase_requisitions SET requestor_id=(SELECT id FROM users WHERE username='viewer'),
+    approver_id=(SELECT id FROM users WHERE username='admin'),approval_date=now()
+    WHERE organization_id=1 AND id=$1`,[req]);
+  await pool.query(`INSERT INTO purchase_budget_policy_evidence
+    (organization_id,requisition_id,approved_at,approver_user_id,policy_revision,policy_mode,outcome,budget_id)
+    SELECT organization_id,id,approval_date,approver_id,'synthetic-direct-v1','HARD_BLOCK','within_budget',$2
+    FROM purchase_requisitions WHERE organization_id=1 AND id=$1`,[req,budget]);
   const previous = (await pool.query("UPDATE mdm_procurement_policies SET active=false WHERE organization_id=1 AND policy_type='sourcing' AND active=true RETURNING id")).rows.map(row => row.id);
   const policy = (await pool.query(`INSERT INTO mdm_procurement_policies(organization_id,code,name,policy_type,config,updated_at)
     VALUES(1,$1,'Disposable conversion competition','sourcing','{"competitionRequired":true,"competitionThreshold":50}','2026-01-01') RETURNING id`, [label])).rows[0].id;
@@ -408,6 +421,7 @@ test("requisition conversion commits sourcing evidence and budget transfer with 
     await pool.query("UPDATE purchase_orders SET status='APPROVED',approval_status='APPROVED' WHERE organization_id=1 AND id=$1", [first.id]);
     const report = (await (await readBrowserApi(page, "/api/v2/procurement/maverick-spend?outcome=po_conversion")).json()).data;
     expect(report.items.filter((row: { id: number }) => row.id === first.id)).toEqual([expect.objectContaining({
+      coverage:expect.objectContaining({budget:"recorded"}),budgetConversionKind:"requisition",
       conversionEvidence: expect.objectContaining({ budgetTransferred: true, sourcing: expect.objectContaining({ threshold: 200 }) }),
     })]);
     await page.getByRole("button", { name: "Review budget evidence" }).click();
@@ -498,6 +512,9 @@ test("agreement releases freeze the applied version and price tier without upgra
     VALUES(1,2099,'USD',500,'ACTIVE') RETURNING id`)).rows[0].id;
   const sourceCommitmentId = (await pool.query(`INSERT INTO budget_commitments(organization_id,budget_id,source_type,source_id,amount,currency_code,status)
     VALUES(1,$1,'REQUISITION',$2,200,'USD','ACTIVE') RETURNING id`, [budgetId, requisition])).rows[0].id;
+  await pool.query("UPDATE purchase_requisitions SET approver_id=(SELECT id FROM users WHERE username='admin'),approval_date=now() WHERE organization_id=1 AND id=$1",[requisition]);
+  await pool.query(`INSERT INTO purchase_budget_policy_evidence(organization_id,requisition_id,approved_at,approver_user_id,policy_revision,policy_mode,outcome,budget_id)
+    SELECT organization_id,id,approval_date,approver_id,'synthetic-agreement-v1','HARD_BLOCK','within_budget',$2 FROM purchase_requisitions WHERE organization_id=1 AND id=$1`,[requisition,budgetId]);
   const reqLines = (await pool.query(`INSERT INTO purchase_requisition_items(requisition_id,item_id,line_number,line_type,quantity,unit_price,total_price)
     VALUES($1,$2,1,'CATALOG',5,20,100),($1,$2,2,'CATALOG',5,20,100) RETURNING id`, [requisition, item])).rows;
   const agreementLine = (await pool.query(`INSERT INTO supplier_contract_lines(organization_id,contract_id,line_number,item_id,
@@ -576,7 +593,8 @@ test("agreement releases freeze the applied version and price tier without upgra
   await pool.query("UPDATE purchase_orders SET status='APPROVED' WHERE organization_id=1 AND id=$1", [first.purchaseOrderId]);
   const report = (await (await readBrowserApi(page, "/api/v2/procurement/maverick-spend?outcome=agreement_release")).json()).data;
   expect(report.items.filter((row: { agreementId: number }) => row.agreementId === agreement)).toEqual([
-    expect.objectContaining({ id: first.purchaseOrderId, agreementReleaseId: first.id, agreementVersion: 7, currencyCode: "USD" }),
+    expect.objectContaining({ id: first.purchaseOrderId, agreementReleaseId: first.id, agreementVersion: 7, currencyCode: "USD",
+      coverage:expect.objectContaining({budget:"recorded"}),budgetConversionKind:"agreement_release" }),
   ]);
   await page.goto("/procurement/overview");
   await page.getByRole("button", { name: "Review budget evidence" }).click();
@@ -654,6 +672,11 @@ test("contract obligations record dated ownership, reject stale evidence and ret
   await expect(panel.getByRole("link", { name: /Source document v/ })).toBeVisible();
   await panel.getByRole("button", { name: "Version history" }).click();
   await expect(panel.getByText(/v1 · open · Submit service review/)).toBeVisible();
+  const inboxHistory=await (await readBrowserApi(page,"/api/v2/action-inbox?state=history&pageSize=100")).json();
+  expect(inboxHistory.data.items).toContainEqual(expect.objectContaining({
+    id:`obligation:${contract}:${obligation}`,state:"completed",
+    targetPath:`/procurement/contracts?agreementId=${contract}&obligationId=${obligation}`,
+  }));
   const audit = await pool.query(`SELECT action FROM audit_logs WHERE organization_id=1 AND resource_type='supplier_contract'
     AND resource_id=$1 AND action LIKE 'CONTRACT_OBLIGATION_%' ORDER BY id`, [contract]);
   expect(audit.rows.map(row => row.action)).toEqual(["CONTRACT_OBLIGATION_CREATE", "CONTRACT_OBLIGATION_REVISE", "CONTRACT_OBLIGATION_COMPLETE"]);
@@ -803,6 +826,62 @@ test("an obligation owner can open the exact assigned item from Action Inbox and
   await page.screenshot({path:test.info().outputPath("obligation-inbox-deep-link.png")});
 });
 
+test("legacy and v2 requisition approvals share authority, level limits, replay and rollback", async ({ page }) => {
+  test.setTimeout(120000);
+  await guarded();
+  const tag=crypto.randomUUID();
+  const {rows:[users]}=await pool.query(`SELECT (SELECT id FROM users WHERE username='admin') AS admin,
+    (SELECT id FROM users WHERE username='planner') AS planner,(SELECT id FROM users WHERE username='viewer') AS maker`);
+  const previous=await pool.query(`UPDATE approval_policies SET is_active=false
+    WHERE organization_id=1 AND entity_type='requisition' AND is_active RETURNING id`);
+  const policies=await pool.query(`INSERT INTO approval_policies
+    (organization_id,name,entity_type,amount_min,amount_max,approval_level,approver_role,approver_user_id)
+    VALUES (1,$1,'requisition',100,130,1,'planner',$2),(1,$1,'requisition',100,130,2,'admin',$3) RETURNING id`,[tag,users.planner,users.admin]);
+  const make=async (suffix:string,maker=users.maker)=>Number((await pool.query(`INSERT INTO purchase_requisitions
+    (organization_id,requisition_number,requestor_id,status,currency_code,total_amount)
+    VALUES(1,$1,$2,'PENDING_APPROVAL','ZAR',120) RETURNING id`,[`${tag}-${suffix}`,maker])).rows[0].id);
+  const req=await make("levels"),self=await make("self",users.admin);
+  const count=async()=> (await pool.query(`SELECT
+    (SELECT count(*)::int FROM approval_history WHERE organization_id=1 AND entity_type='requisition' AND entity_id=$1 AND level>0) AS approvals,
+    (SELECT count(*)::int FROM purchase_budget_policy_evidence WHERE organization_id=1 AND requisition_id=$1) AS evidence
+  `,[req])).rows[0];
+  try{
+    await gotoAuthed(page,"/procurement/requisitions");
+    const headers=await csrf(page);
+    const post=(id:number,body:object={},key=crypto.randomUUID())=>page.request.post(`/api/v2/procurement/requisitions/${id}/approve`,{headers:{...headers,"Idempotency-Key":key},data:body});
+    expect((await post(self)).status()).toBe(403);
+    expect((await post(req,{approverId:users.planner})).status()).toBe(403);
+    expect((await post(req)).status()).toBe(403);
+    const cookie=await loginForTests("planner","Admin123!");
+    expect(cookie).toBeTruthy();
+    const ordered=await apiJsonRequest(`/purchase-requisitions/${req}/approve`,{method:"POST",cookie:cookie!,body:{}});
+    expect(ordered.status,JSON.stringify(ordered.json)).toBe(200);
+    expect(ordered.json).toMatchObject({data:{status:"PENDING_APPROVAL",approvalProgress:{completedLevels:[1],requiredLevels:[1,2],state:"pending"}}});
+    expect(await count()).toEqual({approvals:1,evidence:0});
+    await pool.query(`INSERT INTO user_approval_limits(organization_id,user_id,entity_type,amount_limit,currency_code)
+      VALUES(1,$1,'requisition',100,'ZAR')`,[users.admin]);
+    try { expect((await post(req)).status()).toBe(403); }
+    finally {await pool.query("DELETE FROM user_approval_limits WHERE organization_id=1 AND user_id=$1 AND entity_type='requisition'",[users.admin]);}
+    const key=crypto.randomUUID();
+    await pool.query(`CREATE FUNCTION build2_requisition_audit_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.action='REQUISITION_WORKFLOW_APPROVE' THEN RAISE EXCEPTION 'Synthetic requisition audit failure'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER build2_requisition_audit_fault BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION build2_requisition_audit_fault()`);
+    try {
+      expect((await post(req,{},key)).status()).toBe(500);
+      expect(await count()).toEqual({approvals:1,evidence:0});
+    } finally {await pool.query("DROP TRIGGER build2_requisition_audit_fault ON audit_logs; DROP FUNCTION build2_requisition_audit_fault()");}
+    const replies=await Promise.all([post(req,{},key),post(req,{},key)]);
+    expect(replies.map(r=>r.status())).toEqual([200,200]);
+    const results=await Promise.all(replies.map(r=>r.json()));
+    expect(results.filter(r=>r.data.duplicate)).toHaveLength(1);
+    expect(results[0].data).toMatchObject({status:"APPROVED",approver_id:users.admin,approvalProgress:{completedLevels:[1,2],state:"approved"}});
+    expect(await count()).toEqual({approvals:2,evidence:1});
+  }finally{
+    await pool.query("UPDATE approval_policies SET is_active=false WHERE organization_id=1 AND id=ANY($1::int[])",[policies.rows.map(r=>r.id)]);
+    if(previous.rowCount)await pool.query("UPDATE approval_policies SET is_active=true WHERE organization_id=1 AND id=ANY($1::int[])",[previous.rows.map(r=>r.id)]);
+  }
+});
+
 test("budget decision history uses the policy evaluated at approval and exposes one contribution per order", async ({ page }, info) => {
   test.setTimeout(120000);
   await guarded();
@@ -816,6 +895,8 @@ test("budget decision history uses the policy evaluated at approval and exposes 
     VALUES($1,1,EXTRACT(YEAR FROM now())::int,'USD',$2,1)`, [budget, department]);
   const draft = (await pool.query(`INSERT INTO purchase_requisitions(organization_id,requisition_number,requestor_id,department_id,status,currency_code,total_amount)
     VALUES(1,$1,$2,$3,'PENDING_APPROVAL','USD',98765432) RETURNING id`, [suffix, maker, department])).rows[0].id;
+  const policyId=(await pool.query(`INSERT INTO approval_policies(organization_id,name,entity_type,amount_min,amount_max,approval_level,approver_role)
+    VALUES(1,$1,'requisition',98765400,98765500,1,'admin') RETURNING id`,[suffix])).rows[0].id;
   try {
     await pool.query(`INSERT INTO procurement_feature_settings(organization_id,budget_control_mode) VALUES(1,'WARNING_ONLY')
       ON CONFLICT (organization_id) DO UPDATE SET budget_control_mode='WARNING_ONLY',updated_at=now()`);
@@ -835,6 +916,8 @@ test("budget decision history uses the policy evaluated at approval and exposes 
     const audit = await pool.connect();
     try {
       await audit.query("BEGIN");
+      await audit.query("SELECT id FROM purchase_requisitions WHERE organization_id=1 AND id=$1 FOR UPDATE",[draft]);
+      await bindPurchaseOrderBudgetProvenance(audit,1,draft,[order],"sourcing_award");
       const actor = { userId: captured.rows[0].approver_user_id };
       const event = (await audit.query(`INSERT INTO sourcing_events(organization_id,event_number,title,owner_user_id,deadline,status)
         VALUES(1,$1,'Disposable sourcing evidence',$2,now(),'AWARDED') RETURNING id`, [suffix, maker])).rows[0].id;
@@ -877,13 +960,17 @@ test("budget decision history uses the policy evaluated at approval and exposes 
     const missingBudget = await readBrowserApi(page,`/api/v2/procurement/maverick-spend?outcome=unverified&evidenceFamily=budget&supplierId=${supplier}&from=2090-01-01&to=2090-01-01`);
     expect(missingBudget.status()).toBe(200);
     expect((await missingBudget.json()).data.items).toHaveLength(0);
-    const orderCreatedAt = (await pool.query("SELECT created_at::text AS created FROM purchase_orders WHERE organization_id=1 AND id=$1", [order])).rows[0].created;
-    await pool.query("UPDATE purchase_orders SET created_at='2000-01-01' WHERE organization_id=1 AND id=$1", [order]);
-    const stale = await (await readBrowserApi(page, "/api/v2/procurement/maverick-spend")).json();
-    expect(stale.data.items.some((row: { id: number }) => row.id === order)).toBe(false);
-    await pool.query("UPDATE purchase_orders SET created_at=$2 WHERE organization_id=1 AND id=$1", [order, orderCreatedAt]);
+    const borrowed=(await pool.query(`INSERT INTO purchase_orders(organization_id,order_number,supplier_id,requisition_id,order_date,total_amount,currency_code,status,approval_status)
+      VALUES(1,$1,$2,$3,'2090-01-01',456,'USD','APPROVED','APPROVED') RETURNING id`, [`${suffix}-borrowed`, supplier, draft])).rows[0].id;
+    await pool.query("UPDATE purchase_requisitions SET approval_date=now()+interval '3 hours' WHERE organization_id=1 AND id=$1",[draft]);
+    await pool.query("UPDATE operational_exceptions SET related_refs='{}' WHERE organization_id=1 AND id=$1",[captured.rows[0].exception_id]);
+    const retained = await (await readBrowserApi(page, "/api/v2/procurement/maverick-spend")).json();
+    expect(retained.data.items).toContainEqual(expect.objectContaining({id:order,evaluatedAt:rows[0].evaluatedAt,exceptionRevision:rows[0].exceptionRevision}));
+    expect(retained.data.items.some((row: { id: number }) => row.id === borrowed)).toBe(false);
+    await expect(pool.query("DELETE FROM purchase_order_budget_provenance WHERE organization_id=1 AND purchase_order_id=$1", [order])).rejects.toThrow(/immutable/);
     await expect(pool.query("DELETE FROM purchase_budget_policy_evidence WHERE organization_id=1 AND requisition_id=$1", [draft])).rejects.toThrow(/immutable/);
   } finally {
+    await pool.query("UPDATE approval_policies SET is_active=false WHERE organization_id=1 AND id=$1",[policyId]);
     if (original) await pool.query("UPDATE procurement_feature_settings SET budget_control_mode=$1,updated_at=$2 WHERE organization_id=1", [original.budget_control_mode, original.updated_at]);
     else await pool.query("DELETE FROM procurement_feature_settings WHERE organization_id=1");
   }

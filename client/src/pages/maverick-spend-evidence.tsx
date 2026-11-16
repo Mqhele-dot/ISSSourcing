@@ -21,6 +21,7 @@ type Row = {
   id: number; orderNumber: string; orderDate: string | null; requisitionId: number | null; requisitionNumber: string | null;
   outcome: "within_budget" | "over_budget" | "no_matching_budget" | null;
   policyMode: string | null; policyRevision: string | null; evaluatedAt: string | null; budgetId: string | null; exceptionId: string | null;
+  budgetCapturedAt: string | null; budgetConversionKind: string | null; exceptionRevision: string | null;
   approvedOverrideReason: string | null; overrideApprovedAt: string | null; overrideRuleRevision: string | null;
   sourcingEventId: number | null; sourcingAwardId: number | null;
   agreementId: number | null; agreementReleaseId: string | null; agreementVersion: number | null; agreementReference: string | null;
@@ -130,9 +131,11 @@ export function MaverickSpendEvidence() {
           <p>{row.outcome === "over_budget" ? "Requisition exceeded its available budget." : row.outcome === "no_matching_budget" ? "No matching budget existed at approval." :
             row.outcome === "within_budget" ? "Requisition was within its budget at approval." : "No verified budget decision is linked to this order."}</p>
           {row.policyMode && <p>Policy: {modes[row.policyMode] ?? row.policyMode} · Revision {row.policyRevision} · Decision {row.evaluatedAt?.replace("T", " ")}</p>}
+          {row.budgetCapturedAt && <p>Budget evidence was saved for this order at conversion.</p>}
           {row.requisitionId && <p>Source: <Link className="underline" href={APP_ROUTES.procurement.requisition(row.requisitionId)}>{row.requisitionNumber}</Link>
             {row.budgetId && <> · Budget #{row.budgetId}</>}
             {row.exceptionId && <> · <Link className="underline" href={`${APP_ROUTES.procurement.exceptions}/${encodeURIComponent(row.exceptionId)}`}>Recorded exception #{row.exceptionId}</Link></>}</p>}
+          {row.exceptionRevision && <p>Exception revision observed at conversion: {row.exceptionRevision}. The linked exception may have changed since then.</p>}
           {row.approvedOverrideReason && row.sourcingEventId && <p>Approved sourcing override: {row.approvedOverrideReason} · {row.overrideApprovedAt}
             {" · "}<Link className="underline" href={APP_ROUTES.procurement.sourcingEvent(row.sourcingEventId)}>Award #{row.sourcingAwardId} v{row.overrideRuleRevision}</Link></p>}
           {row.agreementId && row.agreementReleaseId && <p>Agreement used at release:{" "}

@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { ZodError, z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { PoolClient } from "pg";
 import { storage } from "../../storage";
@@ -11,7 +11,6 @@ import { sendError, sendFunctionError, sendOk } from "../../api-response";
 import { emitNotification } from "../../services/notification-emitter";
 import {
   insertPurchaseRequisitionSchema,
-  insertPurchaseRequisitionItemSchema,
   insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema,
   departments,
@@ -29,6 +28,7 @@ import {
   purchaseOrders,
   purchaseOrderItems,
   purchaseRequisitions,
+  purchaseRequisitionItems,
   sourcingAwards,
   sourcingEvents,
   workflowIdempotency,
@@ -45,6 +45,7 @@ import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed 
 import { validatePurchaseOrderWorkflowReadiness } from "./po-validation";
 import { lockConversionRequisition, writeRequisitionPurchaseOrder } from "./requisition-po-conversion";
 import { transferRequisitionBudget } from "./requisition-budget-transfer";
+import { bindPurchaseOrderBudgetProvenance } from "./purchase-order-budget-provenance";
 import { validateMdmTransaction } from "../master-data/mdm-control-centre";
 import type { AuthBundle } from "./types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
@@ -581,9 +582,15 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         const entropy = `${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
         requisitionInput.requisitionNumber = `REQ-${year}${month}-${entropy}`;
       }
-      if (!requisitionInput.status) {
-        requisitionInput.status = "DRAFT";
-      }
+      if (requisitionInput.status != null && requisitionInput.status !== "DRAFT")
+        return sendError(res, 400, "REQUISITION_LIFECYCLE_FIELD_FORBIDDEN", "Create a draft, then use the submit and approval commands.");
+      requisitionInput.status = "DRAFT";
+      requisitionInput.organizationId = getActiveOrganizationId();
+      requisitionInput.requestorId = Number(req.user?.id);
+      requisitionInput.totalAmount = 0;
+      delete requisitionInput.approverId;
+      delete requisitionInput.approvalDate;
+      delete requisitionInput.rejectionReason;
       if (typeof requisitionInput.requiredDate === "string" && requisitionInput.requiredDate.trim()) {
         const parsedRequiredDate = new Date(requisitionInput.requiredDate);
         if (!Number.isNaN(parsedRequiredDate.getTime())) {
@@ -727,6 +734,10 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       }
       const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
       const { items, revisionReason: _revisionReason, ...headerPatch } = body;
+      if (["organizationId","requestorId","status","approverId","approvalDate","rejectionReason","totalAmount","sharedWithUserIds"]
+        .some(key => Object.hasOwn(headerPatch,key))) {
+        return sendError(res,400,"REQUISITION_LIFECYCLE_FIELD_FORBIDDEN","Use the governed requisition actions to change ownership or workflow state.");
+      }
       const requisitionPatch: Record<string, unknown> = { ...headerPatch };
       // Match POST: JSON sends requiredDate as ISO string; insert schema expects Date.
       if (typeof requisitionPatch.requiredDate === "string") {
@@ -788,83 +799,40 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (!projectCheckPut.ok) {
         return sendFunctionError(res, 400, "updatePurchaseRequisition", projectCheckPut.message);
       }
-      let updatedRequisition = await storage.updatePurchaseRequisition(id, validatedData);
-      
-      if (!updatedRequisition) {
-        return sendFunctionError(res, 404, "updatePurchaseRequisition", "Purchase requisition not found");
+      const normalizedLines = Array.isArray(items) ? items.map((item,index)=>normalizeRequisitionLineInput(item,index)) : null;
+      if (normalizedLines) {
+        if (!normalizedLines.length) return sendError(res,400,"REQUISITION_ITEMS_REQUIRED","At least one requisition line is required.");
+        const validation=await validateRequisitionLineMasterDataPolicy(normalizedLines);
+        if (!validation.ok) return sendError(res,400,"REQUISITION_LINE_MDM_VALIDATION_FAILED",
+          "Requisition line Master Data validation failed.",{details:{errors:validation.errors}});
       }
-
-      if (Array.isArray(items)) {
-        if (items.length === 0) {
-          return sendFunctionError(res, 400, "updatePurchaseRequisition", "At least one requisition line is required");
-        }
-        const normalizedLines = items.map((item, index) => normalizeRequisitionLineInput(item, index));
-        const linePolicyValidation = await validateRequisitionLineMasterDataPolicy(normalizedLines);
-        if (!linePolicyValidation.ok) {
-          return sendError(
-            res,
-            400,
-            "REQUISITION_LINE_MDM_VALIDATION_FAILED",
-            "Requisition line Master Data validation failed.",
-            { details: { errors: linePolicyValidation.errors } },
-          );
-        }
-        const existingLines = await storage.getPurchaseRequisitionItems(id);
-        const existingById = new Map(existingLines.map((line) => [line.id, line]));
-        const keptIds = new Set<number>();
-        for (const line of normalizedLines) {
-          const payload = {
-            requisitionId: id,
-            itemId: line.itemId,
-            lineNumber: line.lineNumber,
-            lineType: line.lineType,
-            description: line.description,
-            manualEntryReason: line.manualEntryReason,
-            fulfilmentType: line.fulfilmentType,
-            receiptRequired: line.receiptRequired,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            totalPrice: line.totalPrice,
-            unitOfMeasureId: line.unitOfMeasureId,
-            taxCodeId: line.taxCodeId,
-            costCentreId: line.costCentreId,
-            glAccountCode: line.glAccountCode,
-            notes: line.notes,
-          };
-          if (line.id && existingById.has(line.id)) {
-            await storage.updatePurchaseRequisitionItem(line.id, payload);
-            keptIds.add(line.id);
-          } else {
-            const created = await storage.addPurchaseRequisitionItem(payload);
-            keptIds.add(created.id);
+      const organizationId=getActiveOrganizationId();
+      const updatedRequisition=await db.transaction(async tx=>{
+        const locked=await lockConversionRequisition(tx,organizationId,id);
+        if (!locked || !["DRAFT","NEEDS_INFO"].includes(String(locked.status).toUpperCase()) ||
+            +locked.updatedAt!==+currentRequisition.updatedAt)
+          throw Object.assign(new Error("The requisition changed. Refresh before saving."),{status:409,code:"REQUISITION_REVISION_CHANGED"});
+        let totalAmount=locked.totalAmount;
+        if (normalizedLines) {
+          const existing=await tx.select({id:purchaseRequisitionItems.id}).from(purchaseRequisitionItems).where(eq(purchaseRequisitionItems.requisitionId,id));
+          const pending=new Set(existing.map(line=>line.id));
+          for (const line of normalizedLines) {
+            const {id:knownId,...fields}=line;
+            const values={...fields,requisitionId:id};
+            if (knownId && pending.delete(knownId))
+              await tx.update(purchaseRequisitionItems).set(values).where(and(eq(purchaseRequisitionItems.id,knownId),eq(purchaseRequisitionItems.requisitionId,id)));
+            else await tx.insert(purchaseRequisitionItems).values(values);
           }
+          if (pending.size) await tx.delete(purchaseRequisitionItems).where(and(eq(purchaseRequisitionItems.requisitionId,id),inArray(purchaseRequisitionItems.id,[...pending])));
+          totalAmount=normalizedLines.reduce((sum,line)=>sum+line.totalPrice,0);
         }
-        for (const existing of existingLines) {
-          if (!keptIds.has(existing.id)) {
-            await storage.deletePurchaseRequisitionItem(existing.id);
-          }
-        }
-        const totalAmount = normalizedLines.reduce((sum, line) => sum + line.totalPrice, 0);
-        updatedRequisition = await storage.updatePurchaseRequisition(id, { totalAmount }) ?? updatedRequisition;
-        await storage.createActivityLog({
-          action: "Requisition Lines Revised",
-          description: `Revised ${normalizedLines.length} line(s) on requisition ${updatedRequisition.requisitionNumber}`,
-          referenceType: "requisition",
-          referenceId: id,
-          userId: (req as Request & { user?: { id?: number } }).user?.id ?? null,
-        }).catch(() => {});
-        await db.insert(approvalHistory).values({
-          organizationId: getActiveOrganizationId(),
-          entityType: "requisition",
-          entityId: id,
-          level: 0,
-          action: "revised",
-          performedBy: Number((req as Request & { user?: { id?: number } }).user?.id ?? 0),
-          previousStatus: updatedRequisition.status,
-          newStatus: updatedRequisition.status,
-          comment: typeof body.revisionReason === "string" ? body.revisionReason : "Requisition lines revised",
-        } as any).catch(() => {});
-      }
+        const [updated]=await tx.update(purchaseRequisitions).set({...validatedData,totalAmount,updatedAt:new Date()})
+          .where(and(eq(purchaseRequisitions.organizationId,organizationId),eq(purchaseRequisitions.id,id))).returning();
+        await tx.insert(approvalHistory).values({organizationId,entityType:"requisition",entityId:id,level:0,action:"revised",
+          performedBy:Number(req.user?.id), previousStatus:locked.status,newStatus:updated.status,
+          comment:typeof body.revisionReason==="string"?body.revisionReason:"Requisition revised"});
+        return updated;
+      });
       
       return sendOk(res, updatedRequisition);
     } catch (error) {
@@ -907,170 +875,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  app.post("/api/purchase-requisitions/:id/approve", ...poApprove, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendFunctionError(res, 400, "approvePurchaseRequisition", "Invalid purchase requisition ID");
-      }
-      
-      const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
-      const approverRole = String((req as any).user?.role ?? "");
-      const existing = await storage.getPurchaseRequisition(id);
-      if (!existing) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
-      if (!["PENDING", "PENDING_APPROVAL", "SUBMITTED"].includes(String(existing.status).toUpperCase())) {
-        return sendFunctionError(
-          res,
-          409,
-          "approvePurchaseRequisition",
-          `Requisition must be submitted or pending approval before approval; current status is ${existing.status}`,
-        );
-      }
-      if (existing.requestorId != null && approverId === existing.requestorId && approverRole.toLowerCase() !== "admin") {
-        return sendFunctionError(res, 403, "approvePurchaseRequisition", "Requester cannot approve their own requisition");
-      }
-      const requisitionTotal = Number(existing.totalAmount ?? 0);
-      const approverUser = await storage.getUser(approverId);
-      const userCap = approverUser?.approverAmountLimit != null ? Number(approverUser.approverAmountLimit) : null;
-      if (userCap != null && userCap > 0 && requisitionTotal > userCap) {
-        return sendFunctionError(
-          res,
-          403,
-          "approvePurchaseRequisition",
-          `Requisition total exceeds your approver limit (${userCap.toFixed(2)}).`,
-        );
-      }
-      const workflowStep = await authorizeApprovalStep({
-        organizationId: getActiveOrganizationId(),
-        entityType: "requisition",
-        entityId: id,
-        amount: requisitionTotal,
-        actorUserId: approverId,
-        actorRole: approverRole,
-        actorPreferences: (req as any).user?.preferences,
-      });
-      if (!workflowStep.isFinal) {
-        await db.insert(approvalHistory).values({
-          organizationId: getActiveOrganizationId(), entityType: "requisition", entityId: id,
-          level: workflowStep.level, action: "approved", performedBy: approverId,
-          previousStatus: existing.status, newStatus: existing.status,
-          comment: typeof req.body?.comment === "string" ? req.body.comment : null,
-        } as any);
-        return sendOk(res, {
-          ...existing,
-          approvalProgress: {
-            completedLevels: [...workflowStep.progress.completedLevels, workflowStep.level],
-            requiredLevels: workflowStep.progress.requiredLevels,
-            state: "pending",
-          },
-        });
-      }
-      
-      const updatedRequisition = await storage.approvePurchaseRequisition(id, approverId);
-      
-      if (!updatedRequisition) return sendFunctionError(res, 404, "approvePurchaseRequisition", "Purchase requisition not found");
-      await db.insert(approvalHistory).values({
-        organizationId: getActiveOrganizationId(),
-        entityType: "requisition",
-        entityId: id,
-        level: workflowStep.level,
-        action: "approved",
-        performedBy: approverId,
-        previousStatus: existing.status,
-        newStatus: updatedRequisition.status,
-        comment: typeof req.body?.comment === "string" ? req.body.comment : null,
-      } as any);
-      if (existing.requestorId) {
-        await emitNotification({
-          userId: Number(existing.requestorId),
-          type: "approval_request",
-          title: `Requisition ${existing.requisitionNumber ?? `#${id}`} approved`,
-          body: `Your requisition has been approved.`,
-          entityType: "requisition",
-          entityId: id,
-        });
-      }
-      
-      return sendOk(res, updatedRequisition);
-    } catch (error) {
-      console.error("Error approving purchase requisition:", error);
-      const structured = error as { status?: number; code?: string; message?: string };
-      if (structured.status && structured.code) {
-        return sendError(res, structured.status, structured.code, structured.message ?? "Approval was not allowed");
-      }
-      return sendFunctionError(
-        res,
-        500,
-        "approvePurchaseRequisition",
-        "Failed to approve purchase requisition",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  });
-
-  app.post("/api/purchase-requisitions/:id/reject", ...poApprove, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendFunctionError(res, 400, "rejectPurchaseRequisition", "Invalid purchase requisition ID");
-      }
-      
-      const approverId = req.body?.approverId != null ? Number(req.body.approverId) : (req as any).user?.id ?? 0;
-      const approverRole = String((req as any).user?.role ?? "");
-      const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
-      const existing = await storage.getPurchaseRequisition(id);
-      if (!existing) return sendFunctionError(res, 404, "rejectPurchaseRequisition", "Purchase requisition not found");
-      if (existing.requestorId != null && approverId === existing.requestorId && approverRole.toLowerCase() !== "admin") {
-        return sendFunctionError(res, 403, "rejectPurchaseRequisition", "Requester cannot reject their own requisition");
-      }
-      const requisitionTotal = Number(existing.totalAmount ?? 0);
-      const workflowStep = await authorizeApprovalStep({
-        organizationId: getActiveOrganizationId(), entityType: "requisition", entityId: id,
-        amount: requisitionTotal, actorUserId: approverId, actorRole: approverRole,
-        actorPreferences: (req as any).user?.preferences,
-      });
-      
-      const updatedRequisition = await storage.rejectPurchaseRequisition(id, approverId, reason);
-      
-      if (!updatedRequisition) return sendFunctionError(res, 404, "rejectPurchaseRequisition", "Purchase requisition not found");
-      await db.insert(approvalHistory).values({
-        organizationId: getActiveOrganizationId(),
-        entityType: "requisition",
-        entityId: id,
-        level: workflowStep.level,
-        action: "rejected",
-        performedBy: approverId,
-        previousStatus: existing.status,
-        newStatus: updatedRequisition.status,
-        comment: reason || null,
-      } as any);
-      if (existing.requestorId) {
-        await emitNotification({
-          userId: Number(existing.requestorId),
-          type: "approval_request",
-          title: `Requisition ${existing.requisitionNumber ?? `#${id}`} rejected`,
-          body: reason || "Your requisition has been rejected.",
-          entityType: "requisition",
-          entityId: id,
-        });
-      }
-      
-      return sendOk(res, updatedRequisition);
-    } catch (error) {
-      console.error("Error rejecting purchase requisition:", error);
-      const structured = error as { status?: number; code?: string; message?: string };
-      if (structured.status && structured.code) {
-        return sendError(res, structured.status, structured.code, structured.message ?? "Rejection was not allowed");
-      }
-      return sendFunctionError(
-        res,
-        500,
-        "rejectPurchaseRequisition",
-        "Failed to reject purchase requisition",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  });
+  // Approve/reject compatibility routes mount with the canonical v2 command.
 
   app.post("/api/purchase-requisitions/:id/convert", ...poWrite, async (req: Request, res: Response) => {
     let client: PoolClient | undefined;
@@ -1126,6 +931,7 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       const actorUserId = Number.isInteger(userId) && userId > 0 ? userId : null;
       const { order, supplierDecision } = await writeRequisitionPurchaseOrder(transactionDb, requisition, { actorUserId, canonical: true });
       const transferred = await transferRequisitionBudget(client, organizationId, id, order.id);
+      await bindPurchaseOrderBudgetProvenance(client, organizationId, id, [order.id], "requisition");
 
       await appendAuditEventWithClient(client, {
         organizationId, actor: { userId: actorUserId }, action: "REQUISITION_CONVERTED_TO_PO", resourceType: "purchase_order", resourceId: order.id,
@@ -1207,76 +1013,11 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
     }
   });
 
-  app.post("/api/purchase-requisitions/:reqId/items", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const reqId = Number(req.params.reqId);
-      if (isNaN(reqId)) {
-        return sendError(res, 400, "INVALID_REQUISITION_ID", "Invalid purchase requisition ID");
-      }
-      
-      const validatedData = insertPurchaseRequisitionItemSchema.parse({
-        ...req.body,
-        requisitionId: reqId
-      });
-      
-      const newItem = await storage.addPurchaseRequisitionItem(validatedData);
-      return sendOk(res, newItem, 201);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
-      } else {
-        console.error("Error adding purchase requisition item:", error);
-        return sendError(res, 500, "ADD_REQUISITION_ITEM_FAILED", "Failed to add purchase requisition item");
-      }
-    }
-  });
-
-  app.put("/api/purchase-requisitions-items/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "INVALID_REQUISITION_ITEM_ID", "Invalid purchase requisition item ID");
-      }
-      
-      const validatedData = insertPurchaseRequisitionItemSchema.partial().parse(req.body);
-      const updatedItem = await storage.updatePurchaseRequisitionItem(id, validatedData);
-      
-      if (!updatedItem) {
-        return sendError(res, 404, "REQUISITION_ITEM_NOT_FOUND", "Purchase requisition item not found");
-      }
-      
-      return sendOk(res, updatedItem);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const validationError = fromZodError(error);
-        return sendError(res, 400, "VALIDATION_ERROR", validationError.message);
-      } else {
-        console.error("Error updating purchase requisition item:", error);
-        return sendError(res, 500, "UPDATE_REQUISITION_ITEM_FAILED", "Failed to update purchase requisition item");
-      }
-    }
-  });
-
-  app.delete("/api/purchase-requisitions-items/:id", ...poWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "INVALID_REQUISITION_ITEM_ID", "Invalid purchase requisition item ID");
-      }
-      
-      const success = await storage.deletePurchaseRequisitionItem(id);
-      
-      if (!success) {
-        return sendError(res, 404, "REQUISITION_ITEM_NOT_FOUND", "Purchase requisition item not found");
-      }
-      
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting purchase requisition item:", error);
-      return sendError(res, 500, "DELETE_REQUISITION_ITEM_FAILED", "Failed to delete purchase requisition item");
-    }
-  });
+  const useRequisitionDraft = (_req: Request, res: Response) => sendError(res,409,
+    "REQUISITION_DRAFT_EDIT_REQUIRED","Edit requisition lines together with the draft so its total and approval revision stay in sync.");
+  app.post("/api/purchase-requisitions/:reqId/items", ...poWrite, useRequisitionDraft);
+  app.put("/api/purchase-requisitions-items/:id", ...poWrite, useRequisitionDraft);
+  app.delete("/api/purchase-requisitions-items/:id", ...poWrite, useRequisitionDraft);
 
   // Purchase Order endpoints (same RBAC as requisitions) — list routes registered early in routes.ts
 

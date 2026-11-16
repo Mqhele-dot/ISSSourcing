@@ -8,6 +8,7 @@ import { DocumentAccessError, documentAccess } from "../documents/document-acces
 import type { AuthBundle } from "../procurement/types";
 import { approvedOrderScopeSql, approvedOrderStates, orderDateSupplierScopeSql, readFinancialSourceContributions } from "./financial-source-contributions";
 import { hasAgreementReleaseEvidence } from "../procurement-completion/agreement-release-evidence";
+import { hasPurchaseOrderBudgetProvenance } from "../procurement/purchase-order-budget-provenance";
 import { maverickEvidenceFamilies, type MaverickEvidenceCoverage, type MaverickEvidenceFamily } from "@shared/maverick-evidence";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -43,6 +44,7 @@ export function registerMaverickSpendRoutes(app: Express, auth: AuthBundle) {
       }
       const scope = {from:query.from,to:query.to,supplierId:query.supplierId};
       const captureAvailable = await hasAgreementReleaseEvidence(client);
+      const budgetAvailable = await hasPurchaseOrderBudgetProvenance(client);
       const agreementVersion = captureAvailable ? "release_evidence.agreement_version" : "NULL::int";
       const result = await client.query(`WITH scoped_orders AS MATERIALIZED (
           SELECT p.id,p.order_number,p.order_date,p.organization_id,p.requisition_id,p.sourcing_award_id,p.contract_id,p.supplier_id,p.created_at
@@ -58,7 +60,9 @@ export function registerMaverickSpendRoutes(app: Express, auth: AuthBundle) {
         SELECT p.id,p.order_number AS "orderNumber", coverage.evidence AS "coverage",
         to_char(p.order_date,'YYYY-MM-DD') AS "orderDate", r.id AS "requisitionId", r.requisition_number AS "requisitionNumber",
         e.outcome,e.policy_mode AS "policyMode",e.policy_revision AS "policyRevision",to_char(e.approved_at,'YYYY-MM-DD"T"HH24:MI:SS.US') AS "evaluatedAt",
-        e.budget_id::text AS "budgetId", x.id::text AS "exceptionId",
+        e.budget_id::text AS "budgetId", e.exception_id::text AS "exceptionId",
+        b.captured_at AS "budgetCapturedAt", b.conversion_kind AS "budgetConversionKind",
+        b.exception_revision->>'observedRevision' AS "exceptionRevision",
         award.event_id AS "sourcingEventId", award.id AS "sourcingAwardId",
         proof."approvedAt" AS "overrideApprovedAt", proof."ruleRevision" AS "overrideRuleRevision",
         proof.reason AS "approvedOverrideReason",
@@ -93,12 +97,14 @@ export function registerMaverickSpendRoutes(app: Express, auth: AuthBundle) {
           LEFT JOIN agreement_release_policy_evidence release_evidence ON release_evidence.release_id=linked_release.id
             AND release_evidence.snapshot->'supplier'->>'id'=p.supplier_id::text` : ""}
         LEFT JOIN purchase_requisitions r ON r.organization_id=p.organization_id AND r.id=p.requisition_id
-        LEFT JOIN purchase_budget_policy_evidence e ON e.organization_id=p.organization_id AND e.requisition_id=r.id
-          AND e.approved_at=r.approval_date AND e.approver_user_id=r.approver_id AND e.approved_at<=p.created_at
-        LEFT JOIN operational_exceptions x ON x.organization_id=p.organization_id AND x.id=e.exception_id
-          AND x.related_refs @> jsonb_build_object('requisitionId',r.id)
-          AND (e.outcome<>'over_budget' OR x.related_refs->>'budgetId'=e.budget_id::text)
-          AND x.type=CASE e.outcome WHEN 'over_budget' THEN 'procurement_budget_override' WHEN 'no_matching_budget' THEN 'procurement_budget_missing' END
+        ${budgetAvailable ? `LEFT JOIN purchase_order_budget_provenance b ON b.organization_id=p.organization_id
+          AND b.purchase_order_id=p.id AND b.requisition_id=p.requisition_id
+          LEFT JOIN purchase_budget_policy_evidence e ON e.organization_id=b.organization_id AND e.requisition_id=b.requisition_id
+          AND e.approved_at=b.approved_at` : `LEFT JOIN LATERAL (
+            SELECT NULL::timestamp AS captured_at,NULL::text AS conversion_kind,NULL::jsonb AS exception_revision
+          ) b ON true LEFT JOIN LATERAL (SELECT NULL::text AS outcome,NULL::text AS policy_mode,
+            NULL::text AS policy_revision,NULL::timestamp AS approved_at,NULL::bigint AS budget_id,
+            NULL::bigint AS exception_id) e ON true`}
         LEFT JOIN sourcing_awards award ON award.organization_id=p.organization_id AND award.id=p.sourcing_award_id AND award.status='CONVERTED'
         LEFT JOIN sourcing_events event ON event.organization_id=p.organization_id AND event.id=award.event_id
         LEFT JOIN LATERAL (
@@ -150,7 +156,7 @@ export function registerMaverickSpendRoutes(app: Express, auth: AuthBundle) {
           sourcingAwardId: row.approvedOverrideReason ? sourcingAwardId : null,
           orderedAmount: amount?.currencyCode ? amount.amount : null, currencyCode: amount?.currencyCode ?? null };
       }), hasNext: result.rows.length > query.pageSize, page:query.page,pageSize:query.pageSize,filters:scope,
-        scope: "linked-budget-sourcing-release-and-workflow-evidence-v5" });
+        scope: "linked-budget-sourcing-release-and-workflow-evidence-v6" });
     } catch (error) {
       await client?.query("ROLLBACK").catch(() => undefined);
       if (error instanceof z.ZodError) return sendError(res, 400, "MAVERICK_SPEND_FILTER_INVALID", "Choose a valid purchase evidence filter and page.");

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { pool } from "../../server/db";
 import { apiJsonRequest, loginForTests } from "../test-http";
+import { assertMatchedDisposableDatabaseUrls } from "../../server/config/database-safety";
 
 type ApiEnvelope<T> = { ok?: boolean; data?: T };
 
@@ -33,6 +34,11 @@ export type ProcurementEvidenceFixture = {
 };
 
 export async function seedProcurementEvidenceFixture(): Promise<ProcurementEvidenceFixture> {
+  assertMatchedDisposableDatabaseUrls(process.env.DATABASE_URL,process.env.TEST_DATABASE_URL);
+  // The connected scenario explicitly delegates the first level to the planner.
+  // Application authority must not depend on a special rule for seeded users.
+  await pool.query(`UPDATE approval_policies SET approver_role='manager,planner'
+    WHERE organization_id=1 AND entity_type='requisition' AND name='Requisition Standard Approval' AND approver_role='manager'`);
   const suffix = `${Date.now()}${Math.floor(Math.random() * 10_000)}`.slice(-12);
   await pool.query(
     `WITH updated AS (

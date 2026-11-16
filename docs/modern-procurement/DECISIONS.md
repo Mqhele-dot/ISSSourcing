@@ -1,5 +1,8 @@
 # Decisions
 
+- Build 2 closeout: the existing v2 and compatibility approval URLs use the same locked command. The current actor and effective permission determine authority; approval levels and policy versions belong to one submission cycle. Budget reservation and outcome inbox work happen only with the governed transition. Unbound compatibility history is not credited toward a new approval.
+- Build 2 closeout: the immutable PO budget reference is prospective. Bind the exact tenant, requisition, approval time and captured exception revision only in governed conversion transactions. The Maverick report never borrows evidence from a current requisition or reconstructs a missing reference. The migration requires separate business approval.
+
 - Build 2: Action Inbox reads the latest assigned obligation version rather than emitting a synthetic reminder. Reassignment removes old work; completed/cancelled latest versions belong in History. An exact agreement/obligation URL is navigation only and never substitutes for current purchase and warehouse scope.
 
 - Build 2: Maverick Spend distinguishes recorded evidence, unverified evidence, and no linked source for each evidence family. “No source linked” is not a compliance decision. The Unverified filter matches any missing applicable evidence, or one selected family; the report retains one ordered-value contribution per PO. Date scope uses inclusive PO issue dates and supplier scope requires current supplier read access and tenant ownership. No history is classified using today's policy.

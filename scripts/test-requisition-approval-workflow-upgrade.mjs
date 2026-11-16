@@ -8,6 +8,7 @@ const lines = read("client/src/pages/requisitions/requisition-lines-editor.tsx")
 const mdm = read("server/modules/master-data/mdm-control-centre.ts");
 const routes = read("server/modules/procurement/register-procurement-routes.ts");
 const workflow = read("server/services/approval-workflow-service.ts");
+const completion = read("server/modules/procurement-completion/register-procurement-completion-routes.ts");
 const authorityCatalog = read("shared/authority-catalogs.ts");
 const policies = read("client/src/pages/approval-policies.tsx");
 const starter = read("server/modules/setup/register-setup-routes.ts");
@@ -19,9 +20,9 @@ for (const legacy of ["/api/inventory", "/api/departments", "/api/currencies", "
   assert.ok(!hook.includes(`\"GET\", \"${legacy}\"`), `requisition form must not fetch legacy ${legacy}`);
 }
 assert.match(hook, /defaultRequiredDate/);
-assert.match(hook, /rules\.requiresCostCentre/);
-assert.match(hook, /rules\.requiresTaxCode/);
-assert.match(hook, /rules\.requiresUom/);
+assert.match(hook, /rules\?\.requiresCostCentre\s*&&\s*missingCostCentre/);
+assert.match(hook, /rules\?\.requiresTaxCode\s*&&\s*missingTax/);
+assert.match(hook, /rules\?\.requiresUom\s*&&\s*missingUom/);
 assert.match(header, /Department\{requiresDepartment \? " \*"/);
 assert.match(lines, /Purchase UOM \*/);
 assert.match(mdm, /COALESCE\(ii\.unit_of_measure_id, default_uom\.id\)/);
@@ -30,7 +31,8 @@ assert.match(routes, /config\.requiresCostCentre/);
 assert.match(routes, /REQUISITION_LINE_COST_CENTRE_INVALID/);
 assert.match(routes, /eq\(departments\.organizationId, getActiveOrganizationId\(\)\)/);
 assert.match(routes, /eq\(currencies\.organizationId, getActiveOrganizationId\(\)\)/);
-assert.match(routes, /authorizeApprovalStep/);
+assert.match(completion, /await authorizeApprovalStep\(\{organizationId:org,entityType:"requisition"/);
+assert.match(completion, /if \(isDecision\) app\.post\(.*\.\.\.approve, handler\(true\)\)/);
 assert.match(workflow, /INDEPENDENT_APPROVER_REQUIRED/);
 assert.match(workflow, /requiredLevels/);
 assert.match(apPolicy, /authorizeApprovalStep/);

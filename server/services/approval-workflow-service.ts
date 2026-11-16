@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "../db";
 import { approvalHistory, approvalPolicies, userApprovalLimits, type ApprovalPolicy } from "@shared/schema";
 import { roleMatchesPolicy } from "../modules/procurement/service";
@@ -17,6 +17,7 @@ export type ApprovalWorkflowProgress = {
   completedLevels: number[];
   nextPolicy: ApprovalPolicy | null;
   completedApproverIds: number[];
+  applicablePolicyVersions: { id: number; level: number; version: number }[];
 };
 
 export async function getApprovalWorkflowProgress(input: {
@@ -24,8 +25,8 @@ export async function getApprovalWorkflowProgress(input: {
   entityType: GovernedApprovalEntityType;
   entityId: number;
   amount: number;
-}): Promise<ApprovalWorkflowProgress> {
-  const policies = await db
+}, database: Pick<typeof db, "select"> = db, afterHistoryId?: number): Promise<ApprovalWorkflowProgress> {
+  const policies = await database
     .select()
     .from(approvalPolicies)
     .where(and(
@@ -39,13 +40,14 @@ export async function getApprovalWorkflowProgress(input: {
     const max = policy.amountMax == null ? Number.POSITIVE_INFINITY : Number(policy.amountMax);
     return input.amount >= min && input.amount <= max;
   });
-  const history = await db
+  const history = await database
     .select()
     .from(approvalHistory)
     .where(and(
       eq(approvalHistory.organizationId, input.organizationId),
       eq(approvalHistory.entityType, input.entityType),
       eq(approvalHistory.entityId, input.entityId),
+      afterHistoryId === undefined ? undefined : gt(approvalHistory.id, afterHistoryId),
     ))
     .orderBy(asc(approvalHistory.performedAt), asc(approvalHistory.id));
   const rejected = history.some((entry) => String(entry.action).toLowerCase() === "rejected");
@@ -65,6 +67,7 @@ export async function getApprovalWorkflowProgress(input: {
     completedLevels,
     nextPolicy,
     completedApproverIds,
+    applicablePolicyVersions: applicable.map(policy=>({id:policy.id,level:Number(policy.approvalLevel??1),version:policy.version})),
   };
 }
 
@@ -76,8 +79,9 @@ export async function authorizeApprovalStep(input: {
   actorUserId: number;
   actorRole: string;
   actorPreferences?: unknown;
-}): Promise<{ level: number; isFinal: boolean; progress: ApprovalWorkflowProgress }> {
-  const [authority] = await db
+  amountCurrency?: string;
+}, database: Pick<typeof db, "select"> = db, options: { afterHistoryId?: number; independent?: boolean } = {}): Promise<{ level: number; isFinal: boolean; progress: ApprovalWorkflowProgress }> {
+  const [authority] = await database
     .select({ amountLimit: userApprovalLimits.amountLimit, currencyCode: userApprovalLimits.currencyCode })
     .from(userApprovalLimits)
     .where(and(
@@ -87,14 +91,17 @@ export async function authorizeApprovalStep(input: {
     ))
     .limit(1);
   const configuredLimit = authority?.amountLimit == null ? null : Number(authority.amountLimit);
+  if (authority && input.amountCurrency && authority.currencyCode.toUpperCase() !== input.amountCurrency.toUpperCase()) {
+    throw Object.assign(new Error("No matching currency is configured for your approval limit."), { status: 409, code: "APPROVAL_LIMIT_CURRENCY_UNVERIFIED" });
+  }
   if (configuredLimit != null && Number.isFinite(configuredLimit) && input.amount > configuredLimit) {
     throw Object.assign(
       new Error(`This approval exceeds your ${input.entityType.replaceAll("_", " ")} limit of ${authority.currencyCode} ${configuredLimit.toFixed(2)}.`),
       { status: 403, code: "APPROVAL_LIMIT_EXCEEDED", limit: configuredLimit, currencyCode: authority.currencyCode },
     );
   }
-  const progress = await getApprovalWorkflowProgress(input);
-  if (progress.completedApproverIds.includes(input.actorUserId) && input.actorRole.toLowerCase() !== "admin") {
+  const progress = await getApprovalWorkflowProgress(input, database, options.afterHistoryId);
+  if (progress.completedApproverIds.includes(input.actorUserId) && (options.independent || input.actorRole.toLowerCase() !== "admin")) {
     throw Object.assign(new Error("A different approver is required for the next approval level."), { status: 403, code: "INDEPENDENT_APPROVER_REQUIRED" });
   }
   const policy = progress.nextPolicy;
@@ -104,7 +111,7 @@ export async function authorizeApprovalStep(input: {
     }
     throw Object.assign(new Error("This approval workflow is already complete."), { status: 409, code: "APPROVAL_WORKFLOW_COMPLETE" });
   }
-  if (policy.approverUserId != null && Number(policy.approverUserId) !== input.actorUserId && input.actorRole.toLowerCase() !== "admin") {
+  if (policy.approverUserId != null && Number(policy.approverUserId) !== input.actorUserId && (options.independent || input.actorRole.toLowerCase() !== "admin")) {
     throw Object.assign(new Error("Only the configured approver can complete this approval level."), { status: 403, code: "APPROVER_USER_REQUIRED" });
   }
   if (!roleMatchesPolicy(policy.approverRole, input.actorRole, input.actorPreferences)) {

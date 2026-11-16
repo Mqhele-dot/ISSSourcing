@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -227,13 +227,19 @@ export default function RequisitionsPage({ embedded, basePath = "/requisitions" 
     if (key === "status") setQueryState({ status: "", page: "1" });
   };
 
+  const approvalRetries=useRef(new Map<number,string>());
   const approveMutation = useMutation({
-    mutationFn: (id: number) =>
-      requestJson("POST", `/api/v2/procurement/requisitions/${id}/approve`, {}),
-    onSuccess: async () => {
+    mutationFn: (id: number) => {
+      const key=approvalRetries.current.get(id)??crypto.randomUUID();
+      approvalRetries.current.set(id,key);
+      return requestJson<{approvalProgress?: {state:string}}>("POST", `/api/v2/procurement/requisitions/${id}/approve`, {},
+        {headers:{"Idempotency-Key":key}});
+    },
+    onSuccess: async (result,id) => {
+      approvalRetries.current.delete(id);
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requisitions"] });
       await invalidateRequisitionDomain(queryClient);
-      toast({ title: "Requisition approved", variant: "default" });
+      toast({ title: result.approvalProgress?.state === "pending" ? "Approval step recorded; more approval required" : "Requisition approved", variant: "default" });
     },
     onError: (e, id) => {
       toast({

@@ -1,5 +1,14 @@
 # Programme status
 
+## Build 2 complete — Contract Obligations and Maverick Spend
+
+- **Done:** the earlier, unchanged owner-work candidate passed 29/29 desktop and 29/29 at 390px; production smoke passed in 18,405 ms. This candidate adds document-backed completion in Inbox History, one approval command for both URLs, and immutable, exact PO-to-budget-decision evidence on the three governed conversions. Existing orders without such binding stay unverified.
+- **Tests:** TypeScript and lint (one existing warning), migration validation, procurement and workflow contract checks, and the in-memory cross-path model passed during implementation. First connected desktop: 26/30 passed, three failed and one dependent test skipped. PostgreSQL rejected the inbox submission join between a permission-role enum and membership role text; the failing report is retained under `iss_e2e_test_11478b7c43d14f17afb6f34162c4d1b5`. The join is corrected; the guarded rerun is `artifacts/release-runs/build2-canonical-final.log`. Earlier results never substitute for the unchanged final candidate.
+- **Final candidate:** revision `60e36c95`, fingerprint `7f95adf2e70eeb6cdc301f291327fb77706bb45ec7d3e33d60b3d0f0a7b58ae2`, build journal `build-acd89238-b2d8-4302-93a8-d21e197e7fc1.json`. Desktop `iss_e2e_test_f7a40bac296a4fd69b9dcb631dfde8fb` and 390px `iss_e2e_test_5a6d5dbd2585461fb8c3a206c1674adf` each passed 30/30: zero skips/flakes and no unexpected HTTP 5xx. Same-package production smoke `iss_e2e_test_53bc779d4ff74b1580d980288081ca28` passed in 19,160 ms. All exact temporary databases and uploads were removed; the PostgreSQL catalog confirms all five test database identities for the initial and final gates are absent.
+- **Remaining:** business activation and clean-checkout verification on an intentional release commit, not additional Build 2 capability work.
+- **Blockers:** business installation of `20261117090000_purchase_order_budget_provenance.sql` requires separate backup, rehearsal and explicit approval. No business data, migration or Git commit is included.
+- **Next exact action:** start Build 3 (Smart Procurement Intake) in its assigned run. See NEXT.
+
 ## Build 2 assigned contract work — 14 November 2026
 
 - Action Inbox now projects current assigned contract obligations from their canonical immutable revisions. The list checks current tenant membership, purchase read and warehouse scope, and derives active/history from the latest revision. It does not create notification records. The bounded inbox count and page share a read observation.

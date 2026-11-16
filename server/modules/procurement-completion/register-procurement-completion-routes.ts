@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { purchaseRequisitions } from "@shared/schema";
 import { captureReceiptReversalValue } from "../reports/receipt-value-capture";
 import { wholeStockQuantity } from "../inventory-flow/whole-stock-quantity";
 import type { Express, Request, Response } from "express";
@@ -7,13 +10,15 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { z } from "zod";
 import { pool } from "../../db";
 import { sendError, sendOk } from "../../api-response";
-import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
+import { getActiveOrganizationId, getOptionalTenantContext, getTenantContext } from "../../organization-context";
 import type { AuthBundle } from "../procurement/types";
 import { convertRequisitionToSourcingDraft, SourcingError, type SourcingActor } from "../sourcing/service";
 import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
 import { transferRequisitionBudget } from "../procurement/requisition-budget-transfer";
+import { bindPurchaseOrderBudgetProvenance } from "../procurement/purchase-order-budget-provenance";
 import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
-import { emitNotificationToRoles } from "../../services/notification-emitter";
+import { recordRequisitionOutcomeNotification, recordRequisitionSubmittedNotification } from "../../services/notification-emitter";
+import { queryCustomRolePermission, queryRolePermission, queryUserCustomRoleId } from "../../services/permission-query-service";
 import { authorizeApprovalStep } from "../../services/approval-workflow-service";
 import { appendAuditEventWithClient } from "../../services/audit-chain-client";
 import { hasAgreementReleaseEvidence, releaseCommandHash } from "./agreement-release-evidence";
@@ -199,8 +204,7 @@ async function reserveRequisitionBudget(client: DbClient, organizationId: number
     [requisition.id],
   );
   const budget = await client.query(
-    `SELECT b.*,
-       COALESCE((SELECT sum(c.amount) FROM budget_commitments c WHERE c.organization_id=$1 AND c.budget_id=b.id AND c.status='ACTIVE'),0) AS committed
+    `SELECT b.*
      FROM finance_budgets b
      WHERE b.organization_id=$1 AND b.status='ACTIVE' AND b.fiscal_year=EXTRACT(YEAR FROM now())::int
        AND upper(b.currency_code)=upper($2)
@@ -223,14 +227,18 @@ async function reserveRequisitionBudget(client: DbClient, organizationId: number
     return { mode, revision, outcome: "no_matching_budget", budgetId: null, exceptionId };
   }
   const amount = Number(requisition.total_amount ?? 0);
-  const available = Number(selected.approved_amount) - Number(selected.committed);
+  // This statement starts after obtaining the budget row lock, so concurrent
+  // reservations are visible rather than using the earlier selection snapshot.
+  const {rows:[balance]}=await client.query(`SELECT ($3::numeric>($4::numeric-COALESCE(sum(amount),0))) AS over
+    FROM budget_commitments WHERE organization_id=$1 AND budget_id=$2 AND status='ACTIVE'`,
+    [organizationId,selected.id,amount,selected.approved_amount]);
   let exceptionId: number | null = null;
-  if (amount > available) {
+  if (balance.over) {
     if (mode === "HARD_BLOCK") throw new Error("BUDGET_HARD_BLOCK");
     exceptionId = await createProcurementException(client, organizationId, {
       type: "procurement_budget_override", severity: "high",
       title: `Budget override for ${requisition.requisition_number}`,
-      description: `The requisition exceeds the available budget by ${(amount - available).toFixed(2)} ${selected.currency_code}.`,
+      description: `The requisition exceeds the available ${selected.currency_code} budget.`,
       refs: { requisitionId: requisition.id, budgetId: selected.id },
     });
   }
@@ -438,31 +446,87 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
   });
 
   for (const action of Object.keys(requisitionTransitions)) {
-    app.post(`/api/v2/procurement/requisitions/:id/${action}`, ...(action === "approve" || action === "reject" ? approve : manage), async (req, res) => {
+    const isDecision = action === "approve" || action === "reject";
+    const handler = (legacy: boolean) => async (req: Request, res: Response) => {
       try {
         const transition = requisitionTransitions[action];
-        const org = getActiveOrganizationId();
+        const context = getTenantContext();
+        const org = context.organizationId;
         const id = positiveInt(req.params.id, 0);
-        const userId = Number((req as any).user?.id ?? 0);
-        const reason = String(req.body?.reason ?? "").trim();
+        const userId = context.userId;
+        const reason = z.string().trim().max(4000).parse(req.body?.reason ?? req.body?.comment ?? "");
+        const key = isDecision ? z.string().trim().min(1).max(256).optional().parse(req.get("Idempotency-Key")) : undefined;
         if (!id) return sendError(res, 400, "INVALID_REQUISITION_ID", "A valid requisition ID is required.");
+        if (isDecision && req.body?.approverId != null && Number(req.body.approverId) !== userId)
+          return sendError(res, 403, "REQUISITION_APPROVER_SPOOFED", "The approver is the person signed in.");
         if (transition.reasonRequired && reason.length < 5) return sendError(res, 400, "REASON_REQUIRED", "Provide a reason of at least 5 characters.");
         const updated = await withTransaction(async (client) => {
+          const tx = drizzle(client);
+          const commandHash = createHash("sha256").update(JSON.stringify([id,action,userId,reason])).digest("hex");
+          if (key) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`workflow:${org}:${key}`]);
           const locked = await client.query(`SELECT * FROM purchase_requisitions WHERE id=$1 AND organization_id=$2 FOR UPDATE`, [id, org]);
           const record = locked.rows[0];
           if (!record) throw new Error("NOT_FOUND");
+          const respond = async (row: Record<string, unknown>, progress?: unknown) => {
+            const [camel] = legacy ? await tx.select().from(purchaseRequisitions).where(and(eq(purchaseRequisitions.organizationId,org),eq(purchaseRequisitions.id,id))) : [];
+            return {...(legacy ? camel : row), ...(progress ? {approvalProgress:progress} : {})};
+          };
+          if (key) {
+            const {rows:[replay]} = await client.query(`SELECT response FROM workflow_idempotency
+              WHERE organization_id=$1 AND idempotency_key=$2`,[org,key]);
+            if (replay) {
+              if (replay.response?.commandHash !== commandHash) throw new Error("IDEMPOTENCY_CONFLICT");
+              return {...(legacy ? replay.response.legacy : replay.response.current),duplicate:true};
+            }
+          }
           const current = String(record.status).toUpperCase() === "PENDING" ? "PENDING_APPROVAL" : String(record.status).toUpperCase();
           if (!transition.from.includes(current)) throw new Error("STATE_TRANSITION_NOT_ALLOWED");
           if (action === "submit") await assertCurrentRequisitionMasterData(client, org, record);
-          if (action === "approve" && Number(record.requestor_id) === userId) throw new Error("FORBIDDEN_SELF_APPROVAL");
-          const decision = action === "approve" ? await reserveRequisitionBudget(client, org, record) : null;
+          let step: Awaited<ReturnType<typeof authorizeApprovalStep>> | undefined;
+          if (isDecision) {
+            if (!record.requestor_id || Number(record.requestor_id) === userId) throw new Error("FORBIDDEN_SELF_APPROVAL");
+            const {rows:[authority]} = await client.query(`SELECT m.application_role::text AS role,u.approver_amount_limit
+              FROM organization_members m JOIN users u ON u.id=m.user_id AND u.active JOIN organizations o ON o.id=m.organization_id AND o.active
+              WHERE m.organization_id=$1 AND m.user_id=$2 AND m.id=$3 AND m.active AND m.status='active' FOR SHARE OF m,u,o`,[org,userId,context.membershipId]);
+            if (!authority) throw new Error("FORBIDDEN_APPROVER_MEMBERSHIP");
+            const customRoleId=authority.role==="custom" ? await queryUserCustomRoleId(client,org,userId,true) : null;
+            if (!await queryRolePermission(client,authority.role,"purchases","approve",true) &&
+                !(customRoleId && await queryCustomRolePermission(client,org,customRoleId,"purchases","approve",true)))
+              throw new Error("FORBIDDEN_APPROVER_PERMISSION");
+            const amount=Number(record.total_amount),legacyCap=Number(authority.approver_amount_limit);
+            if (!Number.isFinite(amount) || amount<0) throw new Error("STATE_REQUISITION_AMOUNT_UNVERIFIED");
+            if (legacyCap>0 && amount>legacyCap) throw Object.assign(new Error("This requisition exceeds your approval limit."),{status:403,code:"APPROVAL_LIMIT_EXCEEDED"});
+            const {rows:[cycle]}=await client.query(`SELECT max(id) FILTER (WHERE level=0) AS boundary,max(id) AS last
+              FROM approval_history WHERE organization_id=$1 AND entity_type='requisition' AND entity_id=$2`,[org,id]);
+            let floor=Number(cycle.boundary ?? 0);
+            if (!floor) {
+              // Do not credit unbound approvals on pre-existing pending requests.
+              const marker=await client.query(`INSERT INTO approval_history(organization_id,entity_type,entity_id,level,action,performed_by,previous_status,new_status)
+                VALUES($1,'requisition',$2,0,'review_started',$3,$4,$4) RETURNING id`,[org,id,userId,current]);
+              floor=Number(marker.rows[0].id);
+            }
+            step=await authorizeApprovalStep({organizationId:org,entityType:"requisition",entityId:id,amount,
+              amountCurrency:record.currency_code,actorUserId:userId,actorRole:authority.role,actorPreferences:{customRoleId}},tx,{afterHistoryId:floor,independent:true});
+            if (step.progress.completedLevels.length) {
+              const {rows:[prior]}=await client.query(`SELECT details->'policyVersions' AS versions FROM audit_logs
+                WHERE organization_id=$1 AND resource_type='purchase_requisition' AND resource_id=$2
+                  AND action='REQUISITION_WORKFLOW_APPROVE' AND event_hash IS NOT NULL
+                  AND (details#>>'{after,historyId}')::bigint>$3 ORDER BY id DESC LIMIT 1`,[org,id,floor]);
+              const versions=step.progress.applicablePolicyVersions;
+              const versionKey=(entries:typeof versions)=>entries?.map(x=>[x.id,x.level,x.version]);
+              if (JSON.stringify(versionKey(prior?.versions))!==JSON.stringify(versionKey(versions)))
+                throw Object.assign(new Error("The approval policy changed. Return the requisition for information and submit it again."),{status:409,code:"REQUISITION_APPROVAL_POLICY_CHANGED"});
+            }
+          }
+          const nextStatus=action==="approve" && !step?.isFinal ? current : transition.to;
+          const decision = nextStatus==="APPROVED" && action==="approve" ? await reserveRequisitionBudget(client, org, record) : null;
           const result = await client.query(
             `UPDATE purchase_requisitions SET status=$1,
-              approver_id=CASE WHEN $2='APPROVED' THEN $3 ELSE approver_id END,
-              approval_date=CASE WHEN $2='APPROVED' THEN now() ELSE approval_date END,
+              approver_id=CASE WHEN $2='APPROVED' THEN $3 WHEN $5='submit' THEN NULL ELSE approver_id END,
+              approval_date=CASE WHEN $2='APPROVED' THEN now() WHEN $5='submit' THEN NULL ELSE approval_date END,
               rejection_reason=CASE WHEN $2 IN ('REJECTED','NEEDS_INFO','CANCELLED','CLOSED') THEN $4 ELSE rejection_reason END,
-              updated_at=now() WHERE id=$5 AND organization_id=$6 RETURNING *`,
-            [transition.to, transition.to, userId || null, reason || null, id, org],
+              updated_at=now() WHERE id=$6 AND organization_id=$7 RETURNING *`,
+            [nextStatus,nextStatus,userId,reason||null,action,id,org],
           );
           if (decision && userId && record.requestor_id && (await client.query("SELECT to_regclass('public.purchase_budget_policy_evidence') AS installed")).rows[0].installed) {
             await client.query(`INSERT INTO purchase_budget_policy_evidence
@@ -472,25 +536,37 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
             await appendAuditEventWithClient(client, { organizationId: org, actor: { userId }, action: "REQUISITION_BUDGET_POLICY_OBSERVED",
               resourceType: "purchase_requisition", resourceId: id, after: decision, reason: reason || null });
           }
-          await recordActivity(client, org, "purchase_requisition", id, `REQUISITION_${transition.to}`, { actorUserId: userId, reason, beforeStatus: current, afterStatus: transition.to });
-          return result.rows[0];
+          const progress=step ? {requiredLevels:step.progress.requiredLevels,
+            completedLevels:action==="approve" ? [...step.progress.completedLevels,step.level] : step.progress.completedLevels,
+            state:action==="reject" ? "rejected" : step.isFinal ? "approved" : "pending"} : undefined;
+          if (isDecision || action==="submit" || action==="request-info") {
+            const event=await client.query(`INSERT INTO approval_history(organization_id,entity_type,entity_id,level,action,performed_by,comment,previous_status,new_status)
+              VALUES($1,'requisition',$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[org,id,step?.level??0,
+              action==="approve"?"approved":action==="reject"?"rejected":action==="submit"?"submitted":"returned",userId,reason||null,current,nextStatus]);
+            await appendAuditEventWithClient(client,{organizationId:org,actor:{userId},action:`REQUISITION_WORKFLOW_${action.toUpperCase().replace("-","_")}`,
+              resourceType:"purchase_requisition",resourceId:id,before:{status:current},after:{status:nextStatus,historyId:event.rows[0].id},
+              details:{progress,policyId:step?.progress.nextPolicy?.id,policyVersion:step?.progress.nextPolicy?.version,
+                policyVersions:step?.progress.applicablePolicyVersions},reason:reason||null});
+          }
+          if (isDecision && ["APPROVED","REJECTED"].includes(nextStatus)) await recordRequisitionOutcomeNotification(client,org,{
+            userId:Number(record.requestor_id),type:`requisition_${nextStatus.toLowerCase()}`,title:`Requisition ${record.requisition_number} ${nextStatus.toLowerCase()}`,
+            body:`Your requisition was ${nextStatus.toLowerCase()}.`,entityId:id,targetPath:`/procurement/requisitions/${id}`});
+          if (action==="submit") await recordRequisitionSubmittedNotification(client,org,id,Number(record.requestor_id)||userId,record.requisition_number);
+          await recordActivity(client, org, "purchase_requisition", id, `REQUISITION_${nextStatus}`, { actorUserId: userId, reason, beforeStatus: current, afterStatus: nextStatus });
+          const currentPayload={...result.rows[0],...(progress ? {approvalProgress:progress} : {})};
+          if (key) {
+            const [camel]=await tx.select().from(purchaseRequisitions).where(and(eq(purchaseRequisitions.organizationId,org),eq(purchaseRequisitions.id,id)));
+            await client.query(`INSERT INTO workflow_idempotency(organization_id,idempotency_key,action,resource_type,resource_id,response)
+              VALUES($1,$2,$3,'purchase_requisition',$4,$5::jsonb)`,[org,key,`REQUISITION_${action.toUpperCase()}`,id,
+              JSON.stringify({commandHash,current:currentPayload,legacy:{...camel,...(progress ? {approvalProgress:progress} : {})}})]);
+          }
+          return legacy ? respond(result.rows[0],progress) : currentPayload;
         });
-        if (action === "submit") {
-          await emitNotificationToRoles(["manager", "planner", "admin"], {
-            type: "requisition_pending_approval",
-            title: `Requisition ${updated.requisition_number} ready for approval`,
-            body: `Requisition ${updated.requisition_number} is awaiting approval.`,
-            entityType: "requisition",
-            entityId: id,
-            targetPath: `/procurement/requisitions/${id}`,
-            priority: "normal",
-          }, { excludeUserIds: [userId] }).catch((error) => {
-            console.warn("Requisition approval inbox notification failed:", error);
-          });
-        }
         return sendOk(res, updated);
       } catch (error) { return handleError(res, error); }
-    });
+    };
+    app.post(`/api/v2/procurement/requisitions/:id/${action}`, ...(isDecision ? approve : manage), handler(false));
+    if (isDecision) app.post(`/api/purchase-requisitions/:id/${action}`, ...approve, handler(true));
   }
 
   app.post("/api/v2/procurement/requisitions/:id/convert-to-po", ...manage, (req, res) => {
@@ -1146,6 +1222,7 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
           await client.query(`UPDATE supplier_contract_lines SET committed_quantity=committed_quantity+$1 WHERE id=$2 AND organization_id=$3`,[lineRequest.quantity,line.id,org]);
         }
         const budgetTransfer = await transferRequisitionBudget(client, org, body.requisitionId, po.rows[0].id);
+        await bindPurchaseOrderBudgetProvenance(client, org, body.requisitionId, [po.rows[0].id], "agreement_release");
         if (captureAvailable) {
           const policy = releaseApproval.progress.nextPolicy;
           const snapshot = {
