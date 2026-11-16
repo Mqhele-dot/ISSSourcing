@@ -21,6 +21,7 @@ import {
 import type { AuthBundle } from "../procurement/types";
 import { registerInventoryV2Routes } from "./register-inventory-v2-routes";
 import { getReportingFx, reportingAmount } from "../../lib/reporting-fx";
+import { publicSupplierProfile } from "../../../shared/supplier-public-profile";
 
 const pageSchema = z.coerce.number().int().min(1).default(1);
 const pageSizeSchema = z.coerce.number().int().min(1).max(100).default(25);
@@ -237,7 +238,7 @@ export function registerV2Routes(app: Express, auth: AuthBundle): void {
         db.select().from(suppliers).where(where).orderBy(...order).limit(query.pageSize).offset((query.page - 1) * query.pageSize),
         db.select({ value: count() }).from(suppliers).where(where),
       ]);
-      return sendOk(res, paginated(items, Number(totals[0]?.value ?? 0), query.page, query.pageSize));
+      return sendOk(res, paginated(items.map(publicSupplierProfile), Number(totals[0]?.value ?? 0), query.page, query.pageSize));
     } catch (error) { return sendError(res, 500, "SUPPLIERS_FETCH_FAILED", "Failed to fetch suppliers", { details: String(error) }); }
   });
 

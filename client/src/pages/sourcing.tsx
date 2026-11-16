@@ -27,6 +27,7 @@ type SourcingEvent = {
   eventNumber: string;
   title: string;
   description?: string | null;
+  requisitionId?: number | null;
   status: string;
   deadline: string;
   reportingCurrencyCode: string;
@@ -162,8 +163,10 @@ function NewEventDialog({ open, onOpenChange, requisitionId }: { open: boolean; 
   }), [supplierSearch, suppliersQuery.data]);
   const totalWeight = criteria.reduce((sum, criterion) => sum + Number(criterion.weight || 0), 0);
 
+  const pendingDraftKey = useRef<{command:string;key:string}|null>(null);
   const createMutation = useMutation({
-    mutationFn: () => requestJson<EventDetails>("POST", "/api/sourcing/events", {
+    mutationFn: () => {
+      const body = {
       title,
       description: description || null,
       deadline,
@@ -185,8 +188,13 @@ function NewEventDialog({ open, onOpenChange, requisitionId }: { open: boolean; 
         requiredDate: line.requiredDate ?? null,
       })),
       criteria: criteria.map((criterion) => ({ name: criterion.name, criterionType: criterion.criterionType, weight: Number(criterion.weight) })),
-    }),
+      };
+      const command = JSON.stringify(body);
+      if (pendingDraftKey.current?.command !== command) pendingDraftKey.current = {command,key:mutationKey()};
+      return requestJson<EventDetails>("POST","/api/sourcing/events",body,{headers:{"Idempotency-Key":pendingDraftKey.current.key}});
+    },
     onSuccess: async (details) => {
+      pendingDraftKey.current = null;
       await invalidateSourcingDomain(queryClient, details.event.id);
       toast({ title: "RFQ draft created", description: `${details.event.eventNumber} is ready for review and publication.` });
       onOpenChange(false);
@@ -253,16 +261,39 @@ function EvaluationAndAwardPanel({ eventId, details, comparison }: { eventId: nu
     }),
     onSuccess: async () => { await refresh(); toast({ title: "Evaluation saved", description: "Weighted comparison has been recalculated." }); },
   });
+  const pendingSubmissionKey = useRef<{ command: string; key: string } | null>(null);
   const awardMutation = useMutation({
-    mutationFn: () => requestJson<{ award: Award }>("POST", `/api/sourcing/events/${eventId}/awards`, {
-      justification,
-      lines: details.lines.map((line) => ({ eventLineId: line.id, quoteLineId: Number(awardSelections[line.id]), awardedQuantity: line.quantity })),
-    }, { headers: { "Idempotency-Key": mutationKey() } }),
-    onSuccess: async () => { await refresh(); toast({ title: "Award submitted", description: "An independent sourcing approver must approve it before PO conversion." }); },
+    mutationFn: () => {
+      const body = {
+        justification: justification.trim(),
+        lines: details.lines.map((line) => ({ eventLineId: line.id, quoteLineId: Number(awardSelections[line.id]), awardedQuantity: line.quantity })),
+      };
+      const command = JSON.stringify([eventId, body]);
+      if (pendingSubmissionKey.current?.command !== command) pendingSubmissionKey.current = { command, key: mutationKey() };
+      return requestJson<{ award: Award }>("POST", `/api/sourcing/events/${eventId}/awards`, body, {
+        headers: { "Idempotency-Key": pendingSubmissionKey.current.key },
+      });
+    },
+    onSuccess: async () => {
+      pendingSubmissionKey.current = null;
+      await refresh();
+      toast({ title: "Award submitted", description: "An independent sourcing approver must approve it before PO conversion." });
+    },
   });
+  const pendingAwardKey = useRef<{ command: string; key: string } | null>(null);
   const awardActionMutation = useMutation({
-    mutationFn: ({ awardId, action }: { awardId: number; action: "approve" | "convert-to-po" }) => requestJson("POST", `/api/sourcing/awards/${awardId}/${action}`, action === "approve" ? { reason: approvalReason } : {}, { headers: { "Idempotency-Key": mutationKey() } }),
-    onSuccess: async (_data, variables) => { await refresh(); toast({ title: variables.action === "approve" ? "Award approved" : "Purchase order created", description: variables.action === "approve" ? "The approved award is ready for controlled PO conversion." : "Awarded pricing and MDM evidence were carried into the PO." }); },
+    mutationFn: ({ awardId, action }: { awardId: number; action: "approve" | "convert-to-po" }) => {
+      const reason = action === "approve" ? approvalReason.trim() : "";
+      const command = JSON.stringify([awardId, action, reason]);
+      if (pendingAwardKey.current?.command !== command) pendingAwardKey.current = { command, key: mutationKey() };
+      return requestJson("POST", `/api/sourcing/awards/${awardId}/${action}`, action === "approve" ? { reason } : {},
+        { headers: { "Idempotency-Key": pendingAwardKey.current.key } });
+    },
+    onSuccess: async (_data, variables) => {
+      pendingAwardKey.current = null;
+      await refresh();
+      toast({ title: variables.action === "approve" ? "Award approved" : "Purchase order created", description: variables.action === "approve" ? "The approved award is ready for controlled PO conversion." : "Awarded pricing and MDM evidence were carried into the PO." });
+    },
   });
   const selectedQuote = comparison.find((entry) => String(entry.quote.id) === selectedQuoteId);
   const latestAward = details.awards[0];
@@ -299,6 +330,9 @@ function EventDetail({ eventId }: { eventId: number }) {
   const { toast } = useToast();
   const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
   const [earlyCloseReason, setEarlyCloseReason] = useState("");
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawReason, setWithdrawReason] = useState("");
+  const withdrawKey = useRef<{reason: string; key: string} | null>(null);
   const detailsQuery = useQuery<EventDetails>({ queryKey: qk.sourcingEvent(eventId), queryFn: () => requestJson("GET", `/api/sourcing/events/${eventId}`) });
   const comparisonQuery = useQuery<Comparison>({ queryKey: qk.sourcingComparison(eventId), queryFn: () => requestJson("GET", `/api/sourcing/events/${eventId}/comparison`), enabled: Boolean(detailsQuery.data && !["DRAFT", "OPEN"].includes(detailsQuery.data.event.status)) });
   const emailPreviewQuery = useQuery<RfqEmailPreview>({
@@ -322,11 +356,50 @@ function EventDetail({ eventId }: { eventId: number }) {
     mutationFn: (supplierId: number) => requestJson<{ status: string; duplicate: boolean }>("POST", `/api/sourcing/events/${eventId}/invitations/${supplierId}/send`, {}, { headers: { "Idempotency-Key": mutationKey() } }),
     onSuccess: async (result) => { await invalidateSourcingDomain(queryClient, eventId); toast({ title: result.duplicate ? "Invitation already processed" : "Supplier email sent" }); },
   });
+  const withdrawMutation = useMutation({
+    mutationFn: () => {
+      const reason = withdrawReason.trim();
+      if (withdrawKey.current?.reason !== reason) withdrawKey.current = {reason, key: mutationKey()};
+      return requestJson("POST", `/api/sourcing/events/${eventId}/withdraw-draft`, {reason},
+        {headers: {"Idempotency-Key": withdrawKey.current.key}});
+    },
+    onSuccess: async () => {
+      setWithdrawOpen(false);
+      setWithdrawReason("");
+      withdrawKey.current = null;
+      await invalidateSourcingDomain(queryClient, eventId);
+      toast({title: "Draft withdrawn", description: "The requisition is available again under its existing approval."});
+    },
+  });
   return <PageDataState isLoading={detailsQuery.isLoading} error={detailsQuery.error} isEmpty={!detailsQuery.data} onRetry={() => void detailsQuery.refetch()} emptyView={<div>RFQ not found.</div>}>
     {detailsQuery.data ? <div className="space-y-5" data-testid="sourcing-event-detail">
       <PageHeader title={detailsQuery.data.event.title} subtitle={`${detailsQuery.data.event.eventNumber} / closes ${new Date(detailsQuery.data.event.deadline).toLocaleString()}`} breadcrumb={<Link href={APP_ROUTES.procurement.sourcing}>Sourcing / RFQs</Link>} actions={<div className="flex flex-wrap gap-2"><Badge variant={statusVariant(detailsQuery.data.event.status)} className="self-center">{detailsQuery.data.event.status}</Badge><Button type="button" variant="outline" onClick={() => setEmailPreviewOpen(true)}><Mail className="mr-2 h-4 w-4" />Preview supplier emails</Button>{detailsQuery.data.event.status === "OPEN" ? <Button asChild variant="outline"><Link href={`${APP_ROUTES.procurement.quotationNew}?eventId=${detailsQuery.data.event.id}`}><Plus className="mr-2 h-4 w-4" />Capture quotation</Link></Button> : null}{detailsQuery.data.event.status === "DRAFT" ? <Can resource="purchases" permissionType="manage" reason="Publishing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("publish")} disabled={workflowMutation.isPending}><Send className="mr-2 h-4 w-4" />Publish RFQ</Button></Can> : null}{detailsQuery.data.event.status === "OPEN" ? <Can resource="purchases" permissionType="manage" reason="Closing requires sourcing management permission"><Button onClick={() => workflowMutation.mutate("close")} disabled={workflowMutation.isPending || (new Date(detailsQuery.data.event.deadline).getTime() > Date.now() && earlyCloseReason.trim().length < 10)}><ClipboardCheck className="mr-2 h-4 w-4" />Close for evaluation</Button></Can> : null}</div>} />
       {detailsQuery.data.event.status === "OPEN" && new Date(detailsQuery.data.event.deadline).getTime() > Date.now() ? <Card><CardHeader><CardTitle className="text-base">Early-close control</CardTitle></CardHeader><CardContent className="space-y-2"><Label htmlFor="rfq-early-close-reason">Early-close reason</Label><Textarea id="rfq-early-close-reason" value={earlyCloseReason} onChange={(event) => setEarlyCloseReason(event.target.value)} placeholder="Explain why evaluation must begin before the published deadline." /><p className="text-xs text-muted-foreground">Required while the supplier submission window is still open. The reason is retained in the audit trail.</p></CardContent></Card> : null}
       {workflowMutation.error ? <PanelInlineError title="Workflow action failed" description={workflowMutation.error.message} /> : null}
+      {detailsQuery.data.event.status === "DRAFT" && detailsQuery.data.event.requisitionId != null ? (
+        <>
+          <Can resource="purchases" permissionType="manage" reason="Withdrawing a draft requires sourcing management permission">
+            <Button type="button" variant="outline" onClick={() => setWithdrawOpen(true)}>Withdraw linked draft</Button>
+          </Can>
+          <Dialog open={withdrawOpen} onOpenChange={open => { if (!withdrawMutation.isPending) setWithdrawOpen(open); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Withdraw linked RFQ draft?</DialogTitle>
+                <DialogDescription>This keeps the cancelled draft for audit. The requisition returns to Approved only if its original approval and unused draft can still be verified. No supplier emails are sent.</DialogDescription>
+              </DialogHeader>
+              <Label htmlFor="rfq-withdraw-reason">Withdrawal reason</Label>
+              <Textarea id="rfq-withdraw-reason" value={withdrawReason} maxLength={2000} disabled={withdrawMutation.isPending}
+                onChange={event => setWithdrawReason(event.target.value)} />
+              {withdrawMutation.error ? <PanelInlineError title="Could not withdraw this draft" description={withdrawMutation.error.message} /> : null}
+              <DialogFooter>
+                <Button type="button" variant="outline" disabled={withdrawMutation.isPending} onClick={() => setWithdrawOpen(false)}>Keep draft</Button>
+                <Button type="button" variant="destructive" disabled={withdrawReason.trim().length < 5 || withdrawMutation.isPending}
+                  onClick={() => withdrawMutation.mutate()}>{withdrawMutation.isPending ? "Withdrawing…" : "Withdraw draft and restore requisition"}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-3"><Card><CardHeader><CardTitle className="text-base">Commercial lines</CardTitle></CardHeader><CardContent className="space-y-2">{detailsQuery.data.lines.map((line) => <div key={line.id} className="flex justify-between border-b pb-2 text-sm"><span>{line.lineNumber}. {line.description}</span><span className="font-medium">{line.quantity}</span></div>)}</CardContent></Card><Card><CardHeader><CardTitle className="text-base">Invited suppliers</CardTitle></CardHeader><CardContent className="space-y-2">{detailsQuery.data.invitations.map((entry) => <div key={entry.invitation.id} className="flex items-center justify-between text-sm"><span>{entry.supplierName}</span><Badge variant={statusVariant(entry.invitation.status)}>{entry.invitation.status}</Badge></div>)}</CardContent></Card><Card><CardHeader><CardTitle className="text-base">Evaluation criteria</CardTitle></CardHeader><CardContent className="space-y-2">{detailsQuery.data.criteria.map((criterion) => <div key={criterion.id} className="flex items-center justify-between text-sm"><span>{criterion.name}</span><span className="font-medium">{criterion.weight}%</span></div>)}</CardContent></Card></div>
       <Card><CardHeader><CardTitle className="text-base">Quote comparison</CardTitle></CardHeader><CardContent>{detailsQuery.data.quotes.length === 0 ? <p className="text-sm text-muted-foreground">No supplier responses yet. The empty state reflects live RFQ data.</p> : <Table><TableHeader><TableRow><TableHead>Supplier</TableHead><TableHead>Quote</TableHead><TableHead>Compliance</TableHead><TableHead className="text-right">Reporting total</TableHead><TableHead className="text-right">Weighted score</TableHead></TableRow></TableHeader><TableBody>{(comparisonQuery.data ?? detailsQuery.data.quotes.map((entry) => ({ ...entry, weightedScore: null }))).map((entry) => <TableRow key={entry.quote.id}><TableCell className="font-medium">{entry.supplierName}</TableCell><TableCell>{entry.quote.quoteNumber} v{entry.quote.version}</TableCell><TableCell><Badge variant={statusVariant(entry.quote.complianceStatus)}>{entry.quote.complianceStatus}</Badge></TableCell><TableCell className="text-right">{entry.quote.currencyCode} {entry.quote.reportingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell><TableCell className="text-right">{entry.weightedScore == null ? "Not scored" : entry.weightedScore.toFixed(1)}</TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
       {["EVALUATING", "AWARDED"].includes(detailsQuery.data.event.status) && comparisonQuery.data?.length ? <EvaluationAndAwardPanel eventId={eventId} details={detailsQuery.data} comparison={comparisonQuery.data} /> : null}

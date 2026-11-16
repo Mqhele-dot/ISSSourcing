@@ -9,11 +9,15 @@ import { pool } from "../../db";
 import { sendError, sendOk } from "../../api-response";
 import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
 import type { AuthBundle } from "../procurement/types";
-import { createSourcingEvent, SourcingError, type SourcingActor } from "../sourcing/service";
+import { convertRequisitionToSourcingDraft, SourcingError, type SourcingActor } from "../sourcing/service";
 import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
+import { transferRequisitionBudget } from "../procurement/requisition-budget-transfer";
 import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { authorizeApprovalStep } from "../../services/approval-workflow-service";
+import { appendAuditEventWithClient } from "../../services/audit-chain-client";
+import { hasAgreementReleaseEvidence, releaseCommandHash } from "./agreement-release-evidence";
+import { registerMaverickSpendRoutes } from "../reports/register-maverick-spend-routes";
 import {
   addOperationalExceptionComment,
   assignOperationalException,
@@ -185,10 +189,11 @@ async function assertCurrentRequisitionMasterData(client: DbClient, organization
 
 async function reserveRequisitionBudget(client: DbClient, organizationId: number, requisition: Record<string, any>) {
   const settings = await client.query(
-    `SELECT budget_control_mode FROM procurement_feature_settings WHERE organization_id=$1`,
+    `SELECT budget_control_mode,updated_at::text AS revision FROM procurement_feature_settings WHERE organization_id=$1`,
     [organizationId],
   );
   const mode = String(settings.rows[0]?.budget_control_mode ?? "WARN_APPROVAL");
+  const revision = String(settings.rows[0]?.revision ?? "default:budget-control-v1");
   const costCentre = await client.query(
     `SELECT cost_centre_id FROM purchase_requisition_items WHERE requisition_id=$1 AND cost_centre_id IS NOT NULL ORDER BY id LIMIT 1`,
     [requisition.id],
@@ -209,19 +214,20 @@ async function reserveRequisitionBudget(client: DbClient, organizationId: number
   const selected = budget.rows[0];
   if (!selected) {
     if (mode === "HARD_BLOCK") throw new Error("BUDGET_NOT_CONFIGURED");
-    await createProcurementException(client, organizationId, {
+    const exceptionId = await createProcurementException(client, organizationId, {
       type: "procurement_budget_missing", severity: "medium",
       title: `No budget configured for ${requisition.requisition_number}`,
       description: "The requisition was approved with elevated authority, but no matching active budget exists.",
       refs: { requisitionId: requisition.id },
     });
-    return;
+    return { mode, revision, outcome: "no_matching_budget", budgetId: null, exceptionId };
   }
   const amount = Number(requisition.total_amount ?? 0);
   const available = Number(selected.approved_amount) - Number(selected.committed);
+  let exceptionId: number | null = null;
   if (amount > available) {
     if (mode === "HARD_BLOCK") throw new Error("BUDGET_HARD_BLOCK");
-    await createProcurementException(client, organizationId, {
+    exceptionId = await createProcurementException(client, organizationId, {
       type: "procurement_budget_override", severity: "high",
       title: `Budget override for ${requisition.requisition_number}`,
       description: `The requisition exceeds the available budget by ${(amount - available).toFixed(2)} ${selected.currency_code}.`,
@@ -234,6 +240,7 @@ async function reserveRequisitionBudget(client: DbClient, organizationId: number
      ON CONFLICT (organization_id,source_type,source_id) DO NOTHING`,
     [organizationId, selected.id, requisition.id, amount, requisition.currency_code ?? selected.currency_code],
   );
+  return { mode, revision, outcome: exceptionId == null ? "within_budget" : "over_budget", budgetId: selected.id, exceptionId };
 }
 
 async function phase2Readiness(organizationId: number) {
@@ -259,6 +266,7 @@ async function phase2Readiness(organizationId: number) {
 }
 
 export function registerProcurementCompletionRoutes(app: Express, auth: AuthBundle): void {
+  registerMaverickSpendRoutes(app, auth);
   const read = [auth.ensureAuthenticated, auth.ensurePermission("purchases", "read")];
   const manage = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("purchases", "manage")];
   const approve = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("purchases", "approve")];
@@ -447,7 +455,7 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
           if (!transition.from.includes(current)) throw new Error("STATE_TRANSITION_NOT_ALLOWED");
           if (action === "submit") await assertCurrentRequisitionMasterData(client, org, record);
           if (action === "approve" && Number(record.requestor_id) === userId) throw new Error("FORBIDDEN_SELF_APPROVAL");
-          if (action === "approve") await reserveRequisitionBudget(client, org, record);
+          const decision = action === "approve" ? await reserveRequisitionBudget(client, org, record) : null;
           const result = await client.query(
             `UPDATE purchase_requisitions SET status=$1,
               approver_id=CASE WHEN $2='APPROVED' THEN $3 ELSE approver_id END,
@@ -456,6 +464,14 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
               updated_at=now() WHERE id=$5 AND organization_id=$6 RETURNING *`,
             [transition.to, transition.to, userId || null, reason || null, id, org],
           );
+          if (decision && userId && record.requestor_id && (await client.query("SELECT to_regclass('public.purchase_budget_policy_evidence') AS installed")).rows[0].installed) {
+            await client.query(`INSERT INTO purchase_budget_policy_evidence
+              (organization_id,requisition_id,approved_at,approver_user_id,policy_revision,policy_mode,outcome,budget_id,exception_id)
+              SELECT organization_id,id,approval_date,approver_id,$3,$4,$5,$6,$7 FROM purchase_requisitions
+              WHERE organization_id=$1 AND id=$2`, [org, id, decision.revision, decision.mode, decision.outcome, decision.budgetId, decision.exceptionId]);
+            await appendAuditEventWithClient(client, { organizationId: org, actor: { userId }, action: "REQUISITION_BUDGET_POLICY_OBSERVED",
+              resourceType: "purchase_requisition", resourceId: id, after: decision, reason: reason || null });
+          }
           await recordActivity(client, org, "purchase_requisition", id, `REQUISITION_${transition.to}`, { actorUserId: userId, reason, beforeStatus: current, afterStatus: transition.to });
           return result.rows[0];
         });
@@ -483,25 +499,20 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
 
   app.post("/api/v2/procurement/requisitions/:id/convert-to-rfq", ...manage, async (req, res) => {
     try {
-      const org = getActiveOrganizationId();
-      const id = positiveInt(req.params.id, 0);
-      const requisition = await pool.query(`SELECT * FROM purchase_requisitions WHERE id=$1 AND organization_id=$2`, [id, org]);
-      if (!requisition.rows[0]) return sendError(res, 404, "REQUISITION_NOT_FOUND", "Requisition not found.");
-      if (String(requisition.rows[0].status).toUpperCase() !== "APPROVED") return sendError(res, 409, "REQUISITION_NOT_APPROVED", "Only an approved requisition can be converted to an RFQ.");
-      const lines = await pool.query(`SELECT * FROM purchase_requisition_items WHERE requisition_id=$1 ORDER BY line_number,id`, [id]);
-      const supplierIds = z.array(z.coerce.number().int().positive()).min(1).parse(req.body?.supplierIds);
-      const created = await createSourcingEvent(actor(req, res), {
-        title: String(req.body?.title ?? `RFQ for ${requisition.rows[0].requisition_number}`),
-        description: requisition.rows[0].justification ?? requisition.rows[0].notes,
-        deadline: new Date(String(req.body?.deadline)), requisitionId: id,
-        reportingCurrencyCode: String(requisition.rows[0].currency_code ?? "ZAR"),
-        minimumResponses: Math.min(Number(req.body?.minimumResponses ?? Math.min(2, supplierIds.length)), supplierIds.length),
-        competitionRequired: req.body?.competitionRequired !== false,
-        terms: req.body?.terms ?? null, supplierIds,
-        lines: lines.rows.map((line) => ({ itemId: line.item_id, description: line.description ?? line.item_description_snapshot ?? `Line ${line.line_number}`, quantity: Number(line.quantity), unitOfMeasureId: line.unit_of_measure_id, taxCodeId: line.tax_code_id, costCentreId: line.cost_centre_id, glAccountCode: line.gl_account_code, requiredDate: requisition.rows[0].required_date, targetUnitPrice: Number(line.unit_price), targetCurrencyCode: requisition.rows[0].currency_code })),
-        criteria: req.body?.criteria ?? [{ name: "Landed cost", criterionType: "commercial", weight: 50 }, { name: "Delivery", criterionType: "delivery", weight: 25 }, { name: "Compliance and risk", criterionType: "risk", weight: 25 }],
-      });
-      await pool.query(`UPDATE purchase_requisitions SET status='CONVERTED_TO_RFQ',updated_at=now() WHERE id=$1 AND organization_id=$2`, [id, org]);
+      const id = z.coerce.number().int().positive().max(2147483647).parse(req.params.id);
+      const body = z.object({
+        title:z.string().trim().min(3).max(180).optional(),deadline:z.coerce.date(),
+        supplierIds:z.array(z.coerce.number().int().positive().max(2147483647)).min(1).max(100),
+        minimumResponses:z.coerce.number().int().min(1).max(100).optional(),competitionRequired:z.boolean().default(true),
+        terms:z.string().max(10000).nullable().optional(),
+        criteria:z.array(z.object({name:z.string().trim().min(2).max(200),
+          criterionType:z.enum(["commercial","technical","compliance","delivery","risk"]),weight:z.number().positive().max(100),
+          knockout:z.boolean().optional(),guidance:z.string().max(1000).nullable().optional()})).min(1).max(100).default([
+          {name:"Landed cost",criterionType:"commercial",weight:50},{name:"Delivery",criterionType:"delivery",weight:25},
+          {name:"Compliance and risk",criterionType:"risk",weight:25},
+        ]),
+      }).strict().parse(req.body);
+      const created=await convertRequisitionToSourcingDraft(actor(req,res),id,body,req.get("Idempotency-Key"));
       return sendOk(res, created, 201);
     } catch (error) { return handleError(res, error); }
   });
@@ -801,15 +812,50 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
   app.get("/api/v2/procurement/contracts/:id", ...read, async (req, res) => {
     try {
       const org = getActiveOrganizationId(), id = positiveInt(req.params.id, 0);
+      const captureAvailable = await hasAgreementReleaseEvidence(pool);
       const [contract, lines, releases, versions, activity] = await Promise.all([
         pool.query(`SELECT c.id,COALESCE(NULLIF(c.contract_number,''),NULLIF(c.reference_number,''),'AGR-'||c.id::text) AS "contractNumber",c.title,c.contract_type AS "contractType",c.category,c.supplier_id AS "supplierId",s.name AS "supplierName",c.owner_user_id AS "ownerUserId",u.username AS "ownerName",CASE WHEN c.approval_status='APPROVED' AND c.status='active' AND c.end_date<now() THEN 'expired' ELSE c.status END AS status,c.approval_status AS "approvalStatus",c.start_date AS "startDate",c.end_date AS "endDate",c.maximum_value::text AS "maximumValue",c.committed_value::text AS "committedValue",CASE WHEN c.maximum_value IS NULL THEN NULL ELSE (c.maximum_value-c.committed_value)::text END AS "remainingValue",c.currency AS "currencyCode",c.summary,c.payment_terms_id AS "paymentTermsId",c.incoterm_id AS "incotermId",c.default_tax_code_id AS "defaultTaxCodeId",c.default_warehouse_id AS "defaultWarehouseId",c.default_delivery_address AS "defaultDeliveryAddress",c.renewal_date AS "renewalDate",c.renewal_notice_days AS "renewalNoticeDays",c.release_rules AS "releaseRules",c.version,c.lifecycle_reason AS "lifecycleReason",c.created_at AS "createdAt",c.updated_at AS "updatedAt" FROM supplier_contracts c JOIN suppliers s ON s.id=c.supplier_id AND s.organization_id=$1 LEFT JOIN users u ON u.id=c.owner_user_id WHERE c.id=$2 AND c.organization_id=$1`, [org, id]),
         pool.query(`SELECT l.id,l.line_number AS "lineNumber",l.line_type AS "lineType",l.item_id AS "itemId",i.sku,i.name AS "itemName",l.description,l.unit_of_measure_id AS "unitOfMeasureId",uom.code AS "unitOfMeasure",l.currency_code AS "currencyCode",l.unit_price::text AS "unitPrice",l.minimum_quantity::text AS "minimumQuantity",l.maximum_quantity::text AS "maximumQuantity",l.committed_quantity::text AS "committedQuantity",CASE WHEN l.maximum_quantity IS NULL THEN NULL ELSE (l.maximum_quantity-l.committed_quantity)::text END AS "remainingQuantity",l.lead_time_days AS "leadTimeDays",l.tax_code_id AS "taxCodeId",l.valid_from AS "validFrom",l.valid_to AS "validTo",l.active,COALESCE((SELECT json_agg(json_build_object('id',b.id,'minimumQuantity',b.minimum_quantity::text,'unitPrice',b.unit_price::text) ORDER BY b.minimum_quantity) FROM supplier_contract_price_breaks b WHERE b.organization_id=$1 AND b.contract_line_id=l.id),'[]'::json) AS "priceBreaks" FROM supplier_contract_lines l LEFT JOIN inventory_items i ON i.id=l.item_id AND i.organization_id=$1 LEFT JOIN units_of_measure uom ON uom.id=l.unit_of_measure_id WHERE l.organization_id=$1 AND l.contract_id=$2 ORDER BY l.line_number,l.id`, [org, id]),
-        pool.query(`SELECT r.id,r.requisition_id AS "requisitionId",r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber",r.release_amount::text AS "releaseAmount",r.created_at AS "createdAt" FROM supplier_contract_releases r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1 WHERE r.organization_id=$1 AND r.contract_id=$2 ORDER BY r.created_at DESC,r.id DESC LIMIT 100`, [org, id]),
+        pool.query(`SELECT r.id,r.requisition_id AS "requisitionId",r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber",
+          r.release_amount::text AS "releaseAmount",r.created_at AS "createdAt",
+          ${captureAvailable ? "e.agreement_version" : "NULL::int"} AS "agreementVersion",
+          ${captureAvailable ? "e.snapshot->'agreement'->>'currencyCode'" : "NULL::text"} AS "capturedCurrency"
+          FROM supplier_contract_releases r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1
+          ${captureAvailable ? "LEFT JOIN agreement_release_policy_evidence e ON e.release_id=r.id" : ""}
+          WHERE r.organization_id=$1 AND r.contract_id=$2 ORDER BY r.created_at DESC,r.id DESC LIMIT 100`, [org, id]),
         pool.query(`SELECT id,version,change_reason AS "changeReason",created_by AS "createdBy",created_at AS "createdAt" FROM supplier_contract_versions WHERE organization_id=$1 AND contract_id=$2 ORDER BY version DESC LIMIT 100`, [org, id]),
         pool.query(`SELECT id,actor,action,summary_json AS summary,created_at AS "createdAt" FROM ops_activity WHERE organization_id=$1 AND entity_type='supplier_contract' AND entity_id=$2::text ORDER BY created_at DESC,id DESC LIMIT 100`, [org, id]),
       ]);
       if (!contract.rows[0]) return sendError(res, 404, "CONTRACT_NOT_FOUND", "Contract not found.");
       return sendOk(res, { contract: contract.rows[0], lines: lines.rows, releases: releases.rows, versions: versions.rows, activity: activity.rows });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/contracts/:id/releases/:releaseId/evidence", ...read, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId(), id = z.coerce.number().int().positive().max(2147483647).parse(req.params.id);
+      const releaseId = z.string().refine(value => /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n).parse(req.params.releaseId);
+      const { page, pageSize } = z.object({ page: z.coerce.number().int().min(1).max(10000).default(1),
+        pageSize: z.enum(["25", "50", "100"]).default("25").transform(Number) }).strict().parse(req.query);
+      const offset = (page - 1) * pageSize;
+      const captureAvailable = await hasAgreementReleaseEvidence(pool);
+      const { rows } = await pool.query(`SELECT r.id::text AS "releaseId",
+        ${captureAvailable ? `e.agreement_version AS "agreementVersion",e.captured_at AS "capturedAt",
+          e.snapshot->'agreement' AS agreement,e.snapshot->'approval' AS approval,e.snapshot->'supplier' AS supplier,
+          e.snapshot->'budgetReservation' AS "budgetReservation",
+          jsonb_array_length(e.snapshot->'lines') AS "lineCount",
+          COALESCE((SELECT jsonb_agg(item ORDER BY ordinal) FROM (
+            SELECT item,ordinal FROM jsonb_array_elements(e.snapshot->'lines') WITH ORDINALITY AS items(item,ordinal)
+            ORDER BY ordinal LIMIT $4 OFFSET $5) bounded),'[]'::jsonb) AS lines`
+          : `NULL::int AS "agreementVersion",NULL::int AS "lineCount", '[]'::jsonb AS lines`}
+        FROM supplier_contract_releases r
+        JOIN supplier_contracts c ON c.id=r.contract_id AND c.organization_id=r.organization_id
+        JOIN purchase_orders p ON p.id=r.purchase_order_id AND p.organization_id=r.organization_id
+        ${captureAvailable ? "LEFT JOIN agreement_release_policy_evidence e ON e.release_id=r.id" : ""}
+        WHERE r.organization_id=$1 AND r.contract_id=$2 AND r.id=$3`,
+      captureAvailable ? [org, id, releaseId, pageSize, offset] : [org, id, releaseId]);
+      if (!rows[0]) return sendError(res, 404, "AGREEMENT_RELEASE_NOT_FOUND", "The requested agreement release was not found.");
+      return sendOk(res, { ...rows[0], page, pageSize, hasNext: page * pageSize < (rows[0].lineCount ?? 0) });
     } catch (error) { return handleError(res, error); }
   });
 
@@ -1012,17 +1058,61 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
       const body=z.object({requisitionId:z.coerce.number().int().positive(),lineMappings:z.array(z.object({requisitionItemId:z.coerce.number().int().positive(),contractLineId:z.coerce.number().int().positive()})).default([])}).parse(req.body);
       const key=String(req.get("Idempotency-Key")??"").trim();if(!key)return sendError(res,400,"IDEMPOTENCY_KEY_REQUIRED","Idempotency-Key is required.");
       const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0);
+      const mappings = new Map(body.lineMappings.map(mapping => [mapping.requisitionItemId, mapping.contractLineId]));
+      if (mappings.size !== body.lineMappings.length) throw new Error("INVALID_AGREEMENT_LINE_MAPPING");
+      const commandHash = releaseCommandHash(id, body.requisitionId, body.lineMappings);
       await assertPhaseEnabled(org, 2);
       const released=await withTransaction(async(client)=>{
-        const previous=await client.query(`SELECT r.*,r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber" FROM supplier_contract_releases r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1 WHERE r.organization_id=$1 AND r.idempotency_key=$2`,[org,key]);
-        if(previous.rows[0]) return previous.rows[0];
-        const c=await client.query(`SELECT * FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[id,org]);
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`agreement-release:${org}:${key}`]);
+        const captureAvailable = await hasAgreementReleaseEvidence(client);
+        const previous=await client.query(`SELECT r.*,r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber",
+          ${captureAvailable ? "e.agreement_version AS \"agreementVersion\",e.command_hash" : "NULL::int AS \"agreementVersion\",NULL::text AS command_hash"}
+          FROM supplier_contract_releases r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1
+          ${captureAvailable ? "LEFT JOIN agreement_release_policy_evidence e ON e.release_id=r.id" : ""}
+          WHERE r.organization_id=$1 AND r.idempotency_key=$2`,[org,key]);
+        if(previous.rows[0]) {
+          const { command_hash: originalCommand, ...result } = previous.rows[0];
+          if (result.contract_id !== id || result.requisition_id !== body.requisitionId || (originalCommand && originalCommand !== commandHash)) {
+            throw Object.assign(new Error("This release key is already bound to a different request."), { status: 409, code: "AGREEMENT_RELEASE_KEY_CONFLICT" });
+          }
+          return result;
+        }
+        const c=await client.query(`SELECT *,start_date<=now() AND (end_date IS NULL OR end_date>=now()) AS date_eligible
+          FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[id,org]);
         if(!c.rows[0])throw new Error("NOT_FOUND");
-        if(c.rows[0].approval_status!=="APPROVED"||c.rows[0].status!=="active"||new Date(c.rows[0].start_date)>new Date()||(c.rows[0].end_date&&new Date(c.rows[0].end_date)<new Date()))throw new Error("STATE_CONTRACT_NOT_AVAILABLE");
+        const agreement = c.rows[0];
+        if(agreement.approval_status!=="APPROVED"||agreement.status!=="active"||!agreement.date_eligible)throw new Error("STATE_CONTRACT_NOT_AVAILABLE");
+        const supplierResult = await client.query(`SELECT id,name,status,compliance_status,blocked_reason
+          FROM suppliers WHERE id=$1 AND organization_id=$2 FOR SHARE`, [agreement.supplier_id, org]);
+        const supplier = supplierResult.rows[0];
+        if (!supplier) throw new Error("INVALID_SUPPLIER");
+        assertSupplierTransactionAllowed({ supplierName: supplier.name, status: supplier.status,
+          complianceStatus: supplier.compliance_status, blockedReason: supplier.blocked_reason }, "agreement releases");
         const reqRow=await client.query(`SELECT * FROM purchase_requisitions WHERE id=$1 AND organization_id=$2 AND upper(status)='APPROVED' FOR UPDATE`,[body.requisitionId,org]);if(!reqRow.rows[0])throw new Error("INVALID_APPROVED_REQUISITION");if(reqRow.rows[0].supplier_id&&reqRow.rows[0].supplier_id!==c.rows[0].supplier_id)throw new Error("INVALID_REQUISITION_SUPPLIER");
         const reqLines=await client.query(`SELECT * FROM purchase_requisition_items WHERE requisition_id=$1 ORDER BY line_number,id FOR UPDATE`,[body.requisitionId]);if(!reqLines.rows.length)throw new Error("INVALID_REQUISITION_LINES");
-        const resolved=[] as Array<{req:any;line:any;unitPrice:number;amount:number}>;let amount=0;
-        for(const requisitionLine of reqLines.rows){const explicit=body.lineMappings.find(x=>x.requisitionItemId===requisitionLine.id);const lineResult=await client.query(`SELECT * FROM supplier_contract_lines WHERE organization_id=$1 AND contract_id=$2 AND active=true AND ($3::bigint IS NOT NULL AND id=$3 OR $3::bigint IS NULL AND item_id IS NOT DISTINCT FROM $4) ORDER BY line_number,id LIMIT 1 FOR UPDATE`,[org,id,explicit?.contractLineId??null,requisitionLine.item_id??null]);const line=lineResult.rows[0];if(!line)throw new Error("INVALID_AGREEMENT_LINE_MAPPING");if(line.line_type==="CATALOG"&&line.item_id!==requisitionLine.item_id)throw new Error("INVALID_AGREEMENT_ITEM");const qty=Number(requisitionLine.quantity);if(qty<Number(line.minimum_quantity)||line.maximum_quantity!=null&&Number(line.committed_quantity)+qty>Number(line.maximum_quantity))throw new Error("INSUFFICIENT_AGREEMENT_QUANTITY");const price=await client.query(`SELECT unit_price FROM supplier_contract_price_breaks WHERE organization_id=$1 AND contract_line_id=$2 AND minimum_quantity<=$3 ORDER BY minimum_quantity DESC LIMIT 1`,[org,line.id,qty]);const unitPrice=Number(price.rows[0]?.unit_price??line.unit_price),lineAmount=Number((qty*unitPrice).toFixed(4));amount+=lineAmount;resolved.push({req:requisitionLine,line,unitPrice,amount:lineAmount});}
+        if (mappings.size && [...mappings.keys()].some(itemId => !reqLines.rows.some(line => line.id === itemId))) throw new Error("INVALID_AGREEMENT_LINE_MAPPING");
+        const resolved=[] as Array<{req:any;line:any;unitPrice:number;amount:number;priceBreak: { id: string; minimum_quantity: string } | null}>;
+        const quantitiesByLine = new Map<string, number>();
+        let amount=0;
+        for (const requisitionLine of reqLines.rows) {
+          const lineResult=await client.query(`SELECT * FROM supplier_contract_lines
+            WHERE organization_id=$1 AND contract_id=$2 AND active=true
+              AND valid_from<=now() AND (valid_to IS NULL OR valid_to>=now()) AND currency_code=$5
+              AND ($3::bigint IS NOT NULL AND id=$3 OR $3::bigint IS NULL AND item_id IS NOT DISTINCT FROM $4)
+            ORDER BY line_number,id LIMIT 1 FOR UPDATE`,[org,id,mappings.get(requisitionLine.id)??null,requisitionLine.item_id??null,agreement.currency]);
+          const line=lineResult.rows[0];
+          if(!line)throw new Error("INVALID_AGREEMENT_LINE_MAPPING");
+          if(line.line_type!==(requisitionLine.line_type??"CATALOG") || (line.line_type==="CATALOG"&&line.item_id!==requisitionLine.item_id))throw new Error("INVALID_AGREEMENT_ITEM");
+          const qty=Number(requisitionLine.quantity);
+          const lineKey = String(line.id), previouslyRequested = quantitiesByLine.get(lineKey) ?? 0;
+          if(qty<Number(line.minimum_quantity)||line.maximum_quantity!=null&&Number(line.committed_quantity)+previouslyRequested+qty>Number(line.maximum_quantity))throw new Error("INSUFFICIENT_AGREEMENT_QUANTITY");
+          quantitiesByLine.set(lineKey, previouslyRequested + qty);
+          const price=await client.query(`SELECT id,minimum_quantity::text,unit_price FROM supplier_contract_price_breaks
+            WHERE organization_id=$1 AND contract_line_id=$2 AND minimum_quantity<=$3 ORDER BY minimum_quantity DESC LIMIT 1 FOR SHARE`,[org,line.id,qty]);
+          const unitPrice=Number(price.rows[0]?.unit_price??line.unit_price),lineAmount=Number((qty*unitPrice).toFixed(4));
+          amount+=lineAmount;
+          resolved.push({req:requisitionLine,line,unitPrice,amount:lineAmount,priceBreak:price.rows[0]??null});
+        }
         amount=Number(amount.toFixed(4));
         if(c.rows[0].maximum_value!=null&&Number(c.rows[0].committed_value)+amount>Number(c.rows[0].maximum_value))throw new Error("INSUFFICIENT_CONTRACT_VALUE");
         if (Number(reqRow.rows[0].requestor_id) === userId || Number(c.rows[0].owner_user_id) === userId) throw new Error("FORBIDDEN_RELEASE_SELF_APPROVAL");
@@ -1035,16 +1125,52 @@ export function registerProcurementCompletionRoutes(app: Express, auth: AuthBund
           actorRole: String(getOptionalTenantContext()?.userRole ?? (req as any).user?.role ?? ""),
           actorPreferences: (req as any).user?.preferences,
         });
-        await client.query(`INSERT INTO approval_history (organization_id,entity_type,entity_id,level,action,performed_by,comment,previous_status,new_status) VALUES ($1,'contract_release',$2,$3,'approved',$4,$5,'PENDING_APPROVAL',$6)`, [org,body.requisitionId,releaseApproval.level,userId,`Agreement ${c.rows[0].contract_number} release`,releaseApproval.isFinal?"APPROVED":"PENDING_APPROVAL"]);
+        const approvalEvent = await client.query(`INSERT INTO approval_history (organization_id,entity_type,entity_id,level,action,performed_by,comment,previous_status,new_status) VALUES ($1,'contract_release',$2,$3,'approved',$4,$5,'PENDING_APPROVAL',$6) RETURNING id`, [org,body.requisitionId,releaseApproval.level,userId,`Agreement ${c.rows[0].contract_number} release`,releaseApproval.isFinal?"APPROVED":"PENDING_APPROVAL"]);
         if (!releaseApproval.isFinal) return { pendingApproval: true, requisitionId: body.requisitionId, contractId: id, approvalProgress: { requiredLevels: releaseApproval.progress.requiredLevels, completedLevels: [...releaseApproval.progress.completedLevels, releaseApproval.level], state: "pending" } };
         const poNumber=`BPA-${new Date().getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`;const po=await client.query(`INSERT INTO purchase_orders(organization_id,order_number,supplier_id,requisition_id,department_id,contract_id,payment_terms_id,incoterm_id,currency_code,tax_code_id,status,approval_status,created_by_user_id,expected_delivery_date,delivery_address,total_amount,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'DRAFT','APPROVED',$11,$12,$13,$14,$15) RETURNING *`,[org,poNumber,c.rows[0].supplier_id,body.requisitionId,reqRow.rows[0].department_id,id,c.rows[0].payment_terms_id,c.rows[0].incoterm_id,c.rows[0].currency,c.rows[0].default_tax_code_id,userId||null,reqRow.rows[0].required_date,c.rows[0].default_delivery_address,amount,`Blanket agreement release ${c.rows[0].contract_number}`]);
         const ins=await client.query(`INSERT INTO supplier_contract_releases (organization_id,contract_id,requisition_id,purchase_order_id,release_amount,released_by,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[org,id,body.requisitionId,po.rows[0].id,amount,userId||null,key]);
-        for(const resolvedLine of resolved){const poi=await client.query(`INSERT INTO purchase_order_items(order_id,item_id,line_number,line_type,description,item_code_snapshot,item_description_snapshot,manual_entry_reason,fulfilment_type,receipt_required,quantity,unit_price,total_price,unit_of_measure_id,tax_code_id,cost_centre_id,gl_account_code,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,[po.rows[0].id,resolvedLine.req.item_id,resolvedLine.req.line_number,resolvedLine.req.line_type,resolvedLine.req.description,resolvedLine.req.item_code_snapshot,resolvedLine.req.item_description_snapshot,resolvedLine.req.manual_entry_reason,resolvedLine.req.fulfilment_type,resolvedLine.req.receipt_required,resolvedLine.req.quantity,resolvedLine.unitPrice,resolvedLine.amount,resolvedLine.req.unit_of_measure_id,resolvedLine.req.tax_code_id,resolvedLine.req.cost_centre_id,resolvedLine.req.gl_account_code,resolvedLine.req.notes]);await client.query(`INSERT INTO supplier_contract_release_lines(organization_id,release_id,contract_line_id,requisition_item_id,purchase_order_item_id,quantity,unit_price,line_amount) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[org,ins.rows[0].id,resolvedLine.line.id,resolvedLine.req.id,poi.rows[0].id,resolvedLine.req.quantity,resolvedLine.unitPrice,resolvedLine.amount]);await client.query(`UPDATE supplier_contract_lines SET committed_quantity=committed_quantity+$1 WHERE id=$2 AND organization_id=$3`,[resolvedLine.req.quantity,resolvedLine.line.id,org]);}
+        const capturedLines: Array<Record<string, unknown>> = [];
+        for (const { req: lineRequest, line, unitPrice, amount: lineAmount, priceBreak } of resolved) {
+          const poi=await client.query(`INSERT INTO purchase_order_items(order_id,item_id,line_number,line_type,description,item_code_snapshot,item_description_snapshot,manual_entry_reason,fulfilment_type,receipt_required,quantity,unit_price,total_price,unit_of_measure_id,tax_code_id,cost_centre_id,gl_account_code,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,[po.rows[0].id,lineRequest.item_id,lineRequest.line_number,lineRequest.line_type,lineRequest.description,lineRequest.item_code_snapshot,lineRequest.item_description_snapshot,lineRequest.manual_entry_reason,lineRequest.fulfilment_type,lineRequest.receipt_required,lineRequest.quantity,unitPrice,lineAmount,lineRequest.unit_of_measure_id,lineRequest.tax_code_id,lineRequest.cost_centre_id,lineRequest.gl_account_code,lineRequest.notes]);
+          const stored = await client.query(`INSERT INTO supplier_contract_release_lines(organization_id,release_id,contract_line_id,requisition_item_id,purchase_order_item_id,quantity,unit_price,line_amount)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+            RETURNING quantity::text,unit_price::text AS "unitPrice",line_amount::text AS "lineAmount"`,
+          [org,ins.rows[0].id,line.id,lineRequest.id,poi.rows[0].id,lineRequest.quantity,unitPrice,lineAmount]);
+          if (captureAvailable) capturedLines.push({ ...stored.rows[0], contractLineId: String(line.id),
+            requisitionItemId: lineRequest.id, purchaseOrderItemId: poi.rows[0].id, lineNumber: line.line_number,
+            lineType: line.line_type, itemId: line.item_id, description: line.description,
+            validFrom: line.valid_from, validTo: line.valid_to, baseUnitPrice: String(line.unit_price),
+            minimumQuantity: String(line.minimum_quantity), maximumQuantity: line.maximum_quantity == null ? null : String(line.maximum_quantity),
+            committedQuantityBefore: String(line.committed_quantity),
+            priceBreak: priceBreak ? { id: String(priceBreak.id), minimumQuantity: priceBreak.minimum_quantity } : null });
+          await client.query(`UPDATE supplier_contract_lines SET committed_quantity=committed_quantity+$1 WHERE id=$2 AND organization_id=$3`,[lineRequest.quantity,line.id,org]);
+        }
+        const budgetTransfer = await transferRequisitionBudget(client, org, body.requisitionId, po.rows[0].id);
+        if (captureAvailable) {
+          const policy = releaseApproval.progress.nextPolicy;
+          const snapshot = {
+            schemaVersion: 1,
+            agreement: { id, reference: agreement.contract_number || agreement.reference_number || `AGR-${id}`,
+              currencyCode: agreement.currency, approvedAt: agreement.approved_at, startDate: agreement.start_date, endDate: agreement.end_date,
+              maximumValue: agreement.maximum_value == null ? null : String(agreement.maximum_value),
+              committedValueBefore: String(agreement.committed_value), releaseAmount: String(ins.rows[0].release_amount),
+              configuredReleaseRules: agreement.release_rules },
+            supplier: { id: supplier.id, status: supplier.status, complianceStatus: supplier.compliance_status },
+            budgetReservation: { transferred: Boolean(budgetTransfer), transfer: budgetTransfer },
+            approval: { historyId: approvalEvent.rows[0].id, approverId: userId, level: releaseApproval.level,
+              policyId: policy?.id ?? null, policyVersion: policy?.version ?? null, requiredLevels: releaseApproval.progress.requiredLevels },
+            lines: capturedLines,
+          };
+          const evidence = await client.query(`INSERT INTO agreement_release_policy_evidence(release_id,agreement_version,command_hash,snapshot)
+            VALUES($1,$2,$3,$4::jsonb) RETURNING captured_at`, [ins.rows[0].id, agreement.version, commandHash, JSON.stringify(snapshot)]);
+          await appendAuditEventWithClient(client, { organizationId: org, actor: { userId }, action: "AGREEMENT_RELEASE_POLICY_CAPTURED",
+            resourceType: "supplier_contract", resourceId: id, after: { agreementVersion: agreement.version, releaseId: String(ins.rows[0].id),
+              purchaseOrderId: po.rows[0].id, capturedAt: evidence.rows[0].captured_at.toISOString(), lineCount: capturedLines.length } });
+        }
         await client.query(`UPDATE supplier_contracts SET committed_value=committed_value+$1,version=version+1,updated_at=now() WHERE id=$2 AND organization_id=$3`,[amount,id,org]);
         await client.query(`UPDATE purchase_requisitions SET status='CONVERTED_TO_PO',supplier_id=$1,updated_at=now() WHERE id=$2 AND organization_id=$3`,[c.rows[0].supplier_id,body.requisitionId,org]);
-        await client.query(`UPDATE budget_commitments SET status='TRANSFERRED',updated_at=now() WHERE organization_id=$1 AND source_type='REQUISITION' AND source_id=$2 AND status='ACTIVE'`,[org,body.requisitionId]);
         await recordActivity(client,org,"supplier_contract",id,"AGREEMENT_RELEASE_PO_CREATED",{actorUserId:userId,requisitionId:body.requisitionId,purchaseOrderId:po.rows[0].id,purchaseOrderNumber:poNumber,amount});
-        return {...ins.rows[0],purchaseOrderId:po.rows[0].id,purchaseOrderNumber:poNumber};
+        return {...ins.rows[0],purchaseOrderId:po.rows[0].id,purchaseOrderNumber:poNumber,agreementVersion:captureAvailable ? agreement.version : null};
       });return sendOk(res,released,201);
     }catch(error){return handleError(res,error);}
   });

@@ -6,12 +6,14 @@ import { createContractRepository } from "../../repositories";
 import { createContractService, ContractDateError } from "../../services/contract-service";
 import { insertSupplierContractSchema } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
+import { registerContractObligationRoutes } from "./register-contract-obligation-routes";
 
 const contractRepo = createContractRepository(storage);
 const contractService = createContractService(contractRepo, storage);
 
 /** Supplier contracts CRUD — org-scoped via contract repository. */
 export function registerContractRoutes(app: Express, auth: AuthBundle): void {
+  registerContractObligationRoutes(app, auth);
   const contractRead = [auth.ensureAuthenticated];
   const contractWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
 
@@ -96,6 +98,10 @@ export function registerContractRoutes(app: Express, auth: AuthBundle): void {
       if (!ok) return res.status(404).json({ message: "Contract not found" });
       res.status(204).send();
     } catch (error) {
+      const cause = (error as { cause?: unknown }).cause ?? error;
+      if ((cause as { constraint?: string }).constraint === "contract_obligations_contract_fk") {
+        return res.status(409).json({ message: "This contract has obligation history. Retain the contract and use its existing close workflow." });
+      }
       console.error("Error deleting contract:", error);
       res.status(500).json({ message: "Failed to delete contract" });
     }

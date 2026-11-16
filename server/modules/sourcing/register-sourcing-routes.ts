@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, notInArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, pool } from "../../db";
 import { sendEmail, type EmailOptions } from "../../services/email-service";
@@ -35,6 +35,7 @@ import {
   SourcingError,
   submitSourcingAward,
   submitSupplierQuote,
+  withdrawLinkedSourcingDraft,
   withdrawSupplierQuote,
   type SourcingActor,
 } from "./service";
@@ -409,7 +410,7 @@ export function registerSourcingRoutes(
   });
 
   app.post("/api/sourcing/events", ...buyerCreate, async (req, res) => {
-    try { return sendOk(res, await createSourcingEvent(actor(req, res), eventSchema.parse(req.body)), 201); }
+    try { return sendOk(res, await createSourcingEvent(actor(req, res), eventSchema.parse(req.body), req.get("Idempotency-Key")), 201); }
     catch (error) { return handleSourcingError(res, error); }
   });
 
@@ -432,6 +433,13 @@ export function registerSourcingRoutes(
   app.post("/api/sourcing/events/:id/publish", ...buyerManage, async (req, res) => {
     try { return sendOk(res, await publishSourcingEvent(actor(req, res), parseId(req.params.id), idempotencyKey(req))); }
     catch (error) { return handleSourcingError(res, error); }
+  });
+
+  app.post("/api/sourcing/events/:id/withdraw-draft", ...buyerManage, auth.ensureTwoFactorAuthenticated, async (req, res) => {
+    try {
+      const { reason } = z.object({ reason: z.string().trim().min(5).max(2000) }).strict().parse(req.body);
+      return sendOk(res, await withdrawLinkedSourcingDraft(actor(req,res), parseId(req.params.id), reason, idempotencyKey(req)));
+    } catch (error) { return handleSourcingError(res, error); }
   });
 
   app.post("/api/sourcing/events/:id/invitations/:supplierId/send", ...buyerManage, async (req, res) => {
@@ -560,7 +568,8 @@ export function registerSourcingRoutes(
         .select({ invitation: sourcingInvitations, event: sourcingEvents })
         .from(sourcingInvitations)
         .innerJoin(sourcingEvents, and(eq(sourcingEvents.id, sourcingInvitations.eventId), eq(sourcingEvents.organizationId, getActiveOrganizationId())))
-        .where(and(eq(sourcingInvitations.organizationId, getActiveOrganizationId()), eq(sourcingInvitations.supplierId, supplierId)));
+        .where(and(eq(sourcingInvitations.organizationId, getActiveOrganizationId()), eq(sourcingInvitations.supplierId, supplierId),
+          notInArray(sourcingEvents.status, ["DRAFT","CANCELLED"])));
       return sendOk(res, invitations);
     } catch (error) { return handleSourcingError(res, error); }
   });
@@ -569,12 +578,19 @@ export function registerSourcingRoutes(
     try {
       const supplierId = await mappedSupplierId(req);
       const eventId = parseId(req.params.id);
-      const [invitation] = await db.select({ id: sourcingInvitations.id, status: sourcingInvitations.status }).from(sourcingInvitations).where(and(eq(sourcingInvitations.organizationId, getActiveOrganizationId()), eq(sourcingInvitations.eventId, eventId), eq(sourcingInvitations.supplierId, supplierId))).limit(1);
-      if (!invitation) throw new SourcingError("SUPPLIER_NOT_INVITED", "You are not invited to this RFQ.", 403);
-      await db.update(sourcingInvitations).set({
-        viewedAt: new Date(),
-        status: invitation.status === "INVITED" ? "VIEWED" : invitation.status,
-      }).where(and(eq(sourcingInvitations.id, invitation.id), eq(sourcingInvitations.organizationId, getActiveOrganizationId())));
+      const org = getActiveOrganizationId();
+      await db.transaction(async tx => {
+        const [event] = await tx.select({ id: sourcingEvents.id }).from(sourcingEvents)
+          .where(and(eq(sourcingEvents.organizationId, org), eq(sourcingEvents.id, eventId),
+            notInArray(sourcingEvents.status, ["DRAFT","CANCELLED"]))).for("share");
+        if (!event) throw new SourcingError("SOURCING_EVENT_NOT_FOUND", "Sourcing event was not found.", 404);
+        const [invitation] = await tx.update(sourcingInvitations).set({
+          viewedAt: new Date(),
+          status: sql`CASE WHEN ${sourcingInvitations.status} = 'INVITED' THEN 'VIEWED' ELSE ${sourcingInvitations.status} END`,
+        }).where(and(eq(sourcingInvitations.organizationId, org), eq(sourcingInvitations.eventId, eventId),
+          eq(sourcingInvitations.supplierId, supplierId))).returning({ id: sourcingInvitations.id });
+        if (!invitation) throw new SourcingError("SUPPLIER_NOT_INVITED", "You are not invited to this RFQ.", 403);
+      });
       const details = await getSourcingEventDetails(getActiveOrganizationId(), eventId);
       const supplierQuotes = details.quotes.filter(({ quote }) => quote.supplierId === supplierId);
       const supplierQuoteIds = supplierQuotes.map(({ quote }) => quote.id);
@@ -619,7 +635,7 @@ export function registerSourcingRoutes(
       const [invitation] = await db.select({ id: sourcingInvitations.id }).from(sourcingInvitations).where(and(eq(sourcingInvitations.organizationId, getActiveOrganizationId()), eq(sourcingInvitations.eventId, eventId), eq(sourcingInvitations.supplierId, supplierId))).limit(1);
       if (!invitation) throw new SourcingError("SUPPLIER_NOT_INVITED", "You are not invited to this RFQ.", 403);
       const input = clarificationSchema.parse({ ...req.body, supplierId, visibility: "PRIVATE" });
-      return sendOk(res, await addSourcingClarification(actor(req, res), eventId, input), 201);
+      return sendOk(res, await addSourcingClarification(actor(req, res), eventId, input, true), 201);
     } catch (error) { return handleSourcingError(res, error); }
   });
 }

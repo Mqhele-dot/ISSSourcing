@@ -28,6 +28,7 @@ import { registerDocumentExtractorRoutes } from "./controllers/document-extracto
 import { uploadProfilePicture, removeProfilePicture, updateProfilePictureUrl } from "./controllers/profile-picture-controller";
 import { profilePictureUpload } from "./services/cloudinary-service";
 import { generateDocument, generateOperationalInventoryCsvFromRows } from "./services/document-generator-service";
+import { publicSupplierProfile, SUPPLIER_DISCLOSURE_POLICY } from "../shared/supplier-public-profile";
 import { listOperationalInventory, listOperationalShipments } from "./operations-core";
 import { recordExportHistory } from "./modules/exports/export-history-service";
 import { getOrganizationDocumentBranding } from "./services/organization-document-branding";
@@ -496,7 +497,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (filter.supplierId) {
             suppliersList = suppliersList.filter((s) => s.id === filter.supplierId);
           }
-          data = suppliersList;
+          data = suppliersList.map(publicSupplierProfile);
           title = 'Suppliers Report' + filterText;
           break;
         }
@@ -821,6 +822,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Content-Type", meta.contentType);
       res.setHeader("X-Export-Format", String(format));
       res.setHeader("X-Export-Row-Count", String(exportRowCount));
+      if(reportType==="suppliers")res.setHeader("X-Supplier-Disclosure-Policy",SUPPLIER_DISCLOSURE_POLICY);
       res.setHeader("Content-Disposition", `attachment; filename="${normalizedTitle}.${meta.extension}"`);
 
       console.info(

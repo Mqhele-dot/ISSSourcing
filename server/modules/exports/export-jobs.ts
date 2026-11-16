@@ -5,6 +5,8 @@ import { getActiveOrganizationId, getTenantContext } from "../../organization-co
 import { incrementMetric } from "../../observability/metrics";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
 import {readExpiredExportFiles} from "./expired-export-files";
+import {publishSupplierExport} from "./supplier-export-publication";
+import {exportsDir} from "../../http/upload-config";
 
 export type ExportJobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -186,6 +188,9 @@ export async function claimNextQueuedExportJob(): Promise<ExportJobRow | null> {
 
 export async function markExportJobSucceeded(input: {
   id: number;
+  organizationId: number;
+  dataset: string;
+  supplierPolicyVersion?: string | null;
   fileName: string;
   filePath: string;
   fileSize: number;
@@ -196,6 +201,10 @@ export async function markExportJobSucceeded(input: {
   const tokenTtlMinutes = Math.min(appEnv.exportDownloadTokenTtlMinutes, 55);
   const tokenExpiry = new Date(Date.now() + tokenTtlMinutes * 60_000);
   const retentionExpiry = new Date(Date.now() + appEnv.exportRetentionDays * 24 * 60 * 60_000);
+  if(input.dataset==="suppliers"){
+    await publishSupplierExport(pool,{...input,root:exportsDir,policyVersion:input.supplierPolicyVersion??null,downloadToken,tokenExpiry,retentionExpiry});
+    return;
+  }
   await pool.query(
     `
       UPDATE export_jobs
@@ -211,9 +220,9 @@ export async function markExportJobSucceeded(input: {
           completed_at = NOW(),
           updated_at = NOW(),
           last_error = NULL
-      WHERE id = $1
+      WHERE id = $1 AND organization_id = $10 AND status = 'running'
     `,
-    [input.id, input.fileName, input.filePath, input.fileSize, input.mimeType, input.rowCount, downloadToken, tokenExpiry, retentionExpiry],
+    [input.id, input.fileName, input.filePath, input.fileSize, input.mimeType, input.rowCount, downloadToken, tokenExpiry, retentionExpiry,input.organizationId],
   );
 }
 

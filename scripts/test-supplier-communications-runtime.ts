@@ -29,8 +29,9 @@ try {
   const database = await import("../server/db");
   pool = database.pool;
   await pool.query(`
-    CREATE TABLE organizations(id integer PRIMARY KEY);
-    CREATE TABLE users(id integer PRIMARY KEY);
+    CREATE TABLE organizations(id integer PRIMARY KEY,active boolean DEFAULT true);
+    CREATE TABLE users(id integer PRIMARY KEY,active boolean DEFAULT true,warehouse_id integer);
+    CREATE TABLE organization_members(id integer PRIMARY KEY,organization_id integer,user_id integer,active boolean DEFAULT true,status text DEFAULT 'active',application_role text DEFAULT 'admin');
     CREATE TABLE suppliers(id integer PRIMARY KEY, organization_id integer);
     CREATE TABLE sourcing_invitations(id integer PRIMARY KEY, organization_id integer, supplier_id integer, event_id integer, invited_at timestamp, status text, invited_by_user_id integer);
     CREATE TABLE supplier_quotes(id integer PRIMARY KEY, organization_id integer, supplier_id integer, event_id integer, created_at timestamp, status text, submitted_by_user_id integer);
@@ -41,8 +42,9 @@ try {
     CREATE TABLE documents(id integer PRIMARY KEY, organization_id integer, entity_type text, entity_id integer, file_name text, uploaded_at timestamp, uploaded_by integer, archived_at timestamp);
     CREATE TABLE supplier_communication_notes(id serial PRIMARY KEY, organization_id integer, supplier_id integer, actor_user_id integer, occurred_at timestamp DEFAULT now(), channel text, summary text, document_id integer);
     CREATE TABLE audit_logs(id serial PRIMARY KEY, organization_id integer, user_id integer, action text, resource_type text, resource_id integer, details jsonb, reason text, previous_hash text, event_hash text, hash_version integer, request_id text, ip_address text, user_agent text, created_at timestamp);
-    INSERT INTO organizations VALUES(1),(2);
-    INSERT INTO users VALUES(1),(2);
+    INSERT INTO organizations(id) VALUES(1),(2);
+    INSERT INTO users(id) VALUES(1),(2);
+    INSERT INTO organization_members(id,organization_id,user_id) VALUES(1,1,1),(2,2,2);
     INSERT INTO suppliers VALUES(10,1),(20,2);
     INSERT INTO documents(id,organization_id,entity_type,entity_id,file_name,uploaded_at) VALUES
       (100,1,'supplier',10,'scope.pdf',now()),(200,2,'supplier',20,'foreign.pdf',now());
@@ -61,7 +63,9 @@ try {
   });
   const allow = (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
   const checkPermission = (req: express.Request, res: express.Response, next: express.NextFunction) => req.get("Deny") === "1" ? res.status(403).json({ error: { code: "PERMISSION_DENIED" } }) : next();
-  const auth = { ensureAuthenticated: allow, ensureTwoFactorAuthenticated: allow, ensureRole: () => allow, ensurePermission: () => checkPermission } as any;
+  const auth = { ensureAuthenticated: allow, ensureTwoFactorAuthenticated: allow, ensureRole: () => allow,
+    ensurePermission: (resource: string) => (req: express.Request, res: express.Response, next: express.NextFunction) =>
+      req.get("Deny-Resource") === resource ? res.status(403).json({ error: { code: "PERMISSION_DENIED" } }) : checkPermission(req, res, next) } as any;
   registerSupplierRoutes(app, auth);
   const { registerSourcingRoutes } = await import("../server/modules/sourcing/register-sourcing-routes");
   let deliveryCalls = 0;
@@ -89,6 +93,8 @@ try {
     return { status: response.status, body: await response.json() as any };
   };
   const initial = await call("/api/v2/suppliers/10/communications");
+  for (const path of ["/api/suppliers", "/api/suppliers/10"])
+    assert.equal((await call(path, "GET", undefined, 1, { "Deny-Resource": "suppliers" })).status, 403, "Legacy profile reads require supplier permission before reading records.");
   await pool.query(`ALTER TABLE suppliers ADD COLUMN name text DEFAULT 'Test supplier';
     ALTER TABLE purchase_orders ADD COLUMN expected_delivery_date timestamp;
     CREATE TABLE stock_movements(organization_id integer,reference_type text,reference_id integer,type text,received_at timestamp,timestamp timestamp);
@@ -105,6 +111,25 @@ try {
   assert.equal(measured.body.data[0].ordersMeasured, 1);
   assert.equal(measured.body.data[0].invoicesMeasured, 2);
   assert.equal(measured.body.data[0].overallRating, 4);
+  const legacy = await call("/api/suppliers/performance?ids=10");
+  assert.equal(legacy.status, 200); assert.deepEqual(legacy.body, measured.body.data, "Legacy requests with explicit IDs share the bounded reader.");
+  for (const path of ["/api/suppliers/performance", "/api/v2/suppliers/performance?ids=10&pageSize=5000", "/api/v2/suppliers/performance?ids=2147483648"])
+    assert.equal((await call(path)).status, 400, "No unbounded or ignored-filter fallback.");
+  for (const resource of ["suppliers", "purchases", "inventory", "finance"]) {
+    const denied = await call("/api/v2/suppliers/performance?ids=10", "GET", undefined, 1, { "Deny-Resource": resource });
+    assert.equal(denied.status, 403); assert.ok(!JSON.stringify(denied.body).includes("invoicesMeasured"));
+  }
+  await pool.query("UPDATE users SET warehouse_id=9 WHERE id=1");
+  assert.equal((await call("/api/v2/suppliers/performance?ids=10")).status, 403, "Admins cannot bypass warehouse scope.");
+  await pool.query("UPDATE users SET warehouse_id=null WHERE id=1; UPDATE organization_members SET active=false WHERE id=1");
+  assert.equal((await call("/api/v2/suppliers/performance?ids=10")).status, 403);
+  await pool.query("UPDATE organization_members SET active=true WHERE id=1");
+  await pool.query(`INSERT INTO suppliers(id,organization_id,name) SELECT n,1,'Volume supplier '||n FROM generate_series(1000,5999) n;
+    INSERT INTO invoices(organization_id,supplier_id,status) SELECT 1,n,'APPROVED' FROM generate_series(1000,5999) n;`);
+  const selected = Array.from({ length: 100 }, (_, index) => index + 1000);
+  const volume = await call(`/api/v2/suppliers/performance?ids=${selected.join(",")}`);
+  assert.equal(volume.status, 200); assert.equal(volume.body.data.length, 100);
+  assert.ok(volume.body.data.every((row: { invoicesMeasured: number; overallRating: number | null }) => row.invoicesMeasured === 1 && row.overallRating === null));
   assert.equal((await call(`/api/v2/suppliers/performance?ids=${Array(101).fill(10).join(',')}`)).status, 400);
   assert.equal((await call("/api/v2/suppliers/performance?ids=10", "GET", undefined, 1, {Deny:"1"})).status, 403);
   assert.equal(initial.status, 200, JSON.stringify(initial.body));
@@ -149,7 +174,7 @@ try {
   assert.deepEqual(attempts.rows.map((row) => row.status), ["sent", "failed", "sent"]);
   assert.equal((await call("/api/v2/suppliers/10/communications")).body.data.items.some((row: { summary: string }) => row.summary.includes("RFQ invitation email — failed")), true);
   assert.equal(Number((await pool.query("SELECT count(*) AS n FROM audit_logs WHERE organization_id=1 AND action='RFQ_INVITATION_EMAIL_QUEUED'")).rows[0].n), 3);
-  console.log("Supplier communication runtime passed: provider-mocked RFQ delivery, retries, denial, tenant isolation, timeline, and audit trail.");
+  console.log(`Supplier communication runtime passed: provider-mocked delivery, timeline/audit, bounded legacy/v2 proxy parity, four source permissions, revoked membership/location denial, 5000-supplier volume. Database: ${name}`);
 } finally {
   if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
   if (pool) await pool.end();

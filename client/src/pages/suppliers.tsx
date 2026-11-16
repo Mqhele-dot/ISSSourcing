@@ -68,6 +68,8 @@ export default function SuppliersPage() {
     departmentsQuery,
     contractsQuery,
     performanceQuery,
+    performanceAvailable,
+    performanceRestricted,
   } = useSuppliersCoreQueries({ q: supplierSearch, status: supplierStatus, page, pageSize });
   const { data: supplierPage, isLoading, isError, error, refetch } = suppliersQuery;
   const suppliers = supplierPage?.items;
@@ -94,11 +96,12 @@ export default function SuppliersPage() {
   const { data: departments = [], isError: departmentsError, refetch: refetchDepartments } = departmentsQuery;
   const { data: contracts = [], isError: contractsError, refetch: refetchContracts } = contractsQuery;
   const {
-    data: performance = [],
+    data: observedPerformance = [],
     isError: performanceError,
     error: performanceErr,
     refetch: refetchPerformance,
   } = performanceQuery;
+  const performance = performanceAvailable ? observedPerformance : [];
 
   const suppliersAuxError =
     paymentTermsError ||
@@ -108,7 +111,7 @@ export default function SuppliersPage() {
     incotermsError ||
     departmentsError ||
     contractsError ||
-    performanceError;
+    (performanceAvailable && performanceError);
   const refetchSuppliersAux = () => {
     void refetchPaymentTerms();
     void refetchCurrencies();
@@ -117,7 +120,7 @@ export default function SuppliersPage() {
     void refetchIncoterms();
     void refetchDepartments();
     void refetchContracts();
-    void refetchPerformance();
+    if (performanceAvailable) void refetchPerformance();
   };
 
   // Get logo for selected supplier (non-blocking: failures do not clear selection)
@@ -430,7 +433,7 @@ export default function SuppliersPage() {
     allowCurrencyOverride: Boolean(data.allowCurrencyOverride),
     requireApprovalForOverride: data.requireApprovalForOverride !== false,
     riskStatus: data.riskStatus?.trim() || "unknown",
-    complianceStatus: data.complianceStatus?.trim() || "unknown",
+    complianceStatus: undefined,
     blockedReason: data.blockedReason?.trim() || null,
     insuranceExpiry: data.insuranceExpiry?.trim() || null,
     complianceNotes: data.complianceNotes?.trim() || null,
@@ -540,7 +543,7 @@ export default function SuppliersPage() {
           />
         </div>
       ) : null}
-      {performanceError ? (
+      {performanceAvailable && performanceError ? (
         <div className="mb-4 px-4 md:px-6">
           <PanelInlineError
             title="Supplier performance metrics failed to load"
@@ -558,6 +561,7 @@ export default function SuppliersPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-6">
+        {performanceRestricted && <p role="status" className="text-sm text-muted-foreground">Combined supplier ratings require procurement, inventory and Finance read access with organization-wide warehouse scope. Supplier profiles remain available according to your permissions.</p>}
         <div className="flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={supplierSearch} onChange={(event) => { setSupplierSearch(event.target.value); setPage(1); }} placeholder="Search suppliers" /><Select value={supplierStatus} onValueChange={(value) => { setSupplierStatus(value); setPage(1); }}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="blocked">Blocked</SelectItem></SelectContent></Select></div>
         <SuppliersListCard
           isLoading={isLoading}

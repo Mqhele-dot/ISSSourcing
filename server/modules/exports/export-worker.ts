@@ -173,6 +173,9 @@ async function processOneJob(): Promise<void> {
 
     await markExportJobSucceeded({
       id: job.id,
+      organizationId: job.organizationId,
+      dataset: job.dataset,
+      supplierPolicyVersion: response.headers.get("x-supplier-disclosure-policy"),
       fileName: packaged.fileName,
       filePath: relativePath,
       fileSize,

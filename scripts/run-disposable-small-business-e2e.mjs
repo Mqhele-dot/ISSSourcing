@@ -8,7 +8,8 @@ import os from "node:os";
 import { mkdtemp, rm, writeFile, rename } from "node:fs/promises";
 import { existsSync, mkdirSync, writeFileSync,readdirSync,statSync } from "node:fs";
 import { assertDisposableE2eEnvironment } from "./e2e-database-guard.mjs";
-import { releaseMigrations, apHistoryMigrations, compactExportMigrations, compactFullDetailMigrations, compactPublicationMigrations, compactWorkspaceMigrations, compactCaptureMigrations, compactRetryMigrations } from "./release-migrations.mjs";
+import { releaseMigrations, apHistoryMigrations, compactExportMigrations, compactFullDetailMigrations, compactPublicationMigrations, compactWorkspaceMigrations, compactCaptureMigrations, compactRetryMigrations, supplierExportMigrations, supplierObservationMigrations, contractObligationMigrations, purchaseBudgetEvidenceMigrations } from "./release-migrations.mjs";
+import { agreementReleaseEvidenceMigrations } from "./release-migrations.mjs";
 import { smokeProductionPackage } from "./production-package-smoke.mjs";
 import { acquireE2eWorkspaceLock } from "./e2e-workspace-lock.mjs";
 import { captureReleaseCandidate } from "./release-candidate-evidence.mjs";
@@ -90,6 +91,9 @@ const env = {
   TEST_DATABASE_URL: testUrl.toString(),
   NODE_ENV: "test",
   ALLOW_COMMERCIAL_TEST_DB_INIT: "1",
+  // AP Aging is mounted by ordinary supplier, Control Tower and Analytics views.
+  // Its schema is part of the disposable candidate, not a business migration approval.
+  ENABLE_AP_HISTORY_TESTS: "1",
   AUTO_SEED_ON_EMPTY_DB: "true",
   PLAYWRIGHT_REUSE_EXISTING_SERVER: "0",
   PLAYWRIGHT_EXTERNAL_DEV_SERVER: "0",
@@ -193,12 +197,15 @@ try {
   const fullCompactTests=env.ENABLE_COMPACT_FULL_DETAIL_TESTS==='1'||expectedSpecs.some(spec=>spec.endsWith('/compact-profile-release-guard.spec.ts'));
   if(fullCompactTests)env.ENABLE_COMPACT_FULL_DETAIL_TESTS='1';
   const compactTests=fullCompactTests||env.ENABLE_COMPACT_EXPORT_TESTS==="1"||expectedSpecs.some(spec=>spec.endsWith("/paired-export-download.spec.ts"));
-  if(compactTests){
+  if(compactTests||supplierExportMigrations.length){
     checkpoint("export_schema_prerequisites");
     const prerequisite=spawnSync(process.execPath,["--import","tsx","scripts/initialize-export-test-schema.mjs"],{env,stdio:"inherit",shell:false});
     if(prerequisite.status!==0)throw new Error("Export schema prerequisites failed before paired migration or fixtures.");
   }
-  for (const migration of [...releaseMigrations,...(env.ENABLE_AP_HISTORY_TESTS==="1"?apHistoryMigrations:[]),...(compactTests?compactExportMigrations:[]),...(fullCompactTests?[...compactFullDetailMigrations,...compactPublicationMigrations,...compactWorkspaceMigrations,...compactCaptureMigrations,...compactRetryMigrations]:[])]) {
+  // The release FK depends on canonical SQL-only procurement tables, normally
+  // installed at development bootstrap. Install them before evidence and fixtures.
+  const procurementPrerequisites = ["20260830143000_procurement_completion.sql", "20260907120000_blanket_agreements_completion.sql"];
+  for (const migration of [...procurementPrerequisites,...releaseMigrations,...apHistoryMigrations,...supplierExportMigrations,...supplierObservationMigrations,...contractObligationMigrations,...purchaseBudgetEvidenceMigrations,...agreementReleaseEvidenceMigrations,...(compactTests?compactExportMigrations:[]),...(fullCompactTests?[...compactFullDetailMigrations,...compactPublicationMigrations,...compactWorkspaceMigrations,...compactCaptureMigrations,...compactRetryMigrations]:[])]) {
     checkpoint(`migration:${migration}`);
     const child = spawnSync(process.execPath, ["scripts/apply-sql-migration.mjs", migration], {
       env,

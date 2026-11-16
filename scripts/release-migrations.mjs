@@ -21,3 +21,12 @@ export const compactWorkspaceMigrations = Object.freeze(["20261030170000_compact
 export const compactCaptureMigrations = Object.freeze(["20261030180000_compact_capture_evidence.sql"]);
 // Retry-command idempotency requires a separately approved canonical audit index.
 export const compactRetryMigrations = Object.freeze(["20261101090000_compact_retry_commands.sql"]);
+// Supplier-file confidentiality proof: separate from every prior approval group.
+export const supplierExportMigrations = Object.freeze(["20261103160000_supplier_export_publication.sql"]);
+// Supplier 360 evidence is not included in prior business migration approvals.
+export const supplierObservationMigrations = Object.freeze(["20261108090000_supplier_observations.sql"]);
+// Build 2 obligations are not covered by any existing business migration approval.
+export const contractObligationMigrations = Object.freeze(["20261109090000_contract_obligations.sql"]);
+export const purchaseBudgetEvidenceMigrations = Object.freeze(["20261109100000_purchase_budget_policy_evidence.sql"]);
+// New release-time provenance is not covered by previous business approvals.
+export const agreementReleaseEvidenceMigrations = Object.freeze(["20261112090000_agreement_release_policy_evidence.sql"]);

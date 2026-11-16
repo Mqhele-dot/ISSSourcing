@@ -2,13 +2,14 @@ import type {AnalyticsResponse} from "./analytics-types";
 import type {AnalyticsFilters} from "./analytics-types";
 
 export const analyticsResources=["purchases","inventory","suppliers","warehouses","finance","users"] as const;
-export type AnalyticsReadAccess=Partial<Record<typeof analyticsResources[number],boolean>>;
+export type AnalyticsReadAccess=Partial<Record<typeof analyticsResources[number],boolean>> & { companySupplierScope?: boolean };
 export const analyticsSourceRequirements:Record<string,readonly (typeof analyticsResources[number])[]>={
   filter_suppliers:["suppliers"],filter_warehouses:["warehouses"],filter_categories:["inventory"],filter_departments:["purchases"],filter_owners:["users"],
   procurement:["purchases"],procurement_pipeline:["purchases"],requisition_pipeline:["purchases"],supplier_spend:["purchases","suppliers"],category_spend:["purchases","inventory"],
   inventory:["inventory","warehouses","suppliers"],logistics:["inventory","purchases","suppliers"],finance:["finance","suppliers"],exceptions:["inventory"],supplier_risk:["suppliers","purchases","inventory"],operations_trend:["purchases","inventory","finance"],
 };
 export function canReadAnalyticsSource(source:string,access:AnalyticsReadAccess):boolean {
+  if(source==="supplier_risk"&&access.companySupplierScope===false)return false;
   const required=analyticsSourceRequirements[source];
   return Boolean(required)&&required.every(resource=>access[resource]===true);
 }

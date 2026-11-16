@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { normalizeApiListStrict, requestJson } from "@/lib/queryClient";
 import type { Supplier } from "@shared/schema";
+import { supplierPerformanceReadResources } from "@shared/supplier-performance-evidence";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useAuth } from "@/hooks/use-auth";
 
 export type SupplierPerformanceRow = {
   supplierId: number;
@@ -14,6 +17,10 @@ export type SupplierPerformanceRow = {
 
 /** Primary list + reference data for the suppliers page (colocated hook). */
 export function useSuppliersCoreQueries(filters: { q: string; status: string; page: number; pageSize: number }) {
+  const { user } = useAuth();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const organizationId = (user as (typeof user & { activeOrganizationId?: number | null }))?.activeOrganizationId;
+  const performanceAvailable = Boolean(user && organizationId && user.warehouseId == null && supplierPerformanceReadResources.every(resource => hasPermission(resource, "read")));
   const suppliersQuery = useQuery<{ items: Supplier[]; total: number; page: number; pageSize: number; hasNext: boolean }>({
     queryKey: ["/api/v2/suppliers", filters],
     retry: 1,
@@ -66,8 +73,9 @@ export function useSuppliersCoreQueries(filters: { q: string; status: string; pa
 
   const visibleIds = suppliersQuery.data?.items.map((supplier) => supplier.id) ?? [];
   const performanceQuery = useQuery<SupplierPerformanceRow[]>({
-    queryKey: ["/api/v2/suppliers/performance", visibleIds],
-    enabled: visibleIds.length > 0,
+    queryKey: ["/api/v2/suppliers/performance", organizationId, user?.id, visibleIds],
+    enabled: visibleIds.length > 0 && performanceAvailable,
+    staleTime: 0,
     queryFn: () => requestJson("GET", `/api/v2/suppliers/performance?ids=${visibleIds.join(",")}`),
     throwOnError: false,
   });
@@ -82,5 +90,7 @@ export function useSuppliersCoreQueries(filters: { q: string; status: string; pa
     departmentsQuery,
     contractsQuery,
     performanceQuery,
+    performanceAvailable,
+    performanceRestricted: !permissionsLoading && !performanceAvailable,
   };
 }

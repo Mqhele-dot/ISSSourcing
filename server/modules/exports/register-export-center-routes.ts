@@ -18,11 +18,13 @@ import {
 } from "../../services/procurement-line-report-service";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
 import {requireCompleteQuickExport,quickExportRowLimit,ExportScopeTooLargeError} from "./export-completeness";
-import {requireExportSource,filterExportHistoryForAccess} from "./export-source-access";
+import {requireExportSource,filterExportHistoryForAccess,assertCurrentExportActor} from "./export-source-access";
+import {matchesSupplierPublication,readSupplierPublications,SUPPLIER_EXPORT_REVIEW_GUIDANCE,type SupplierPublication} from "./supplier-export-publication";
 import {readExportArtifacts,openVerifiedExportArtifact,type StoredExportArtifact} from "./paired-export-artifacts";
 import {exportsDir} from "../../http/upload-config";
 import {pipeline} from "node:stream/promises";
 import {shipmentOrderLinkSql} from "../operations/shipment-order-link";
+import {publicSupplierProfile} from "../../../shared/supplier-public-profile";
 
 const createSavedReportSchema = z.object({
   reportName: z.string().trim().min(1),
@@ -65,7 +67,8 @@ function currentUserId(req: Request): number | null {
   return Number.isFinite(userId) && userId > 0 ? userId : null;
 }
 
-function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number],artifacts:StoredExportArtifact[]=[]) {
+function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number],artifacts:StoredExportArtifact[]=[],supplierProof?:SupplierPublication) {
+  const supplierBlocked=row.dataset==="suppliers"&&row.status==="succeeded"&&!matchesSupplierPublication(row,supplierProof);
   let error: { code: string; message: string; hint?: string; requestId?: string | null } | null = null;
   if (row.lastError) {
     try {
@@ -86,11 +89,14 @@ function withDownloadUrl(row: Awaited<ReturnType<typeof listExportJobs>>[number]
   }
   return {
     ...row,
+    ...(supplierBlocked?{downloadToken:null,filePath:null}:{}),
+    downloadBlocked:supplierBlocked,
+    downloadGuidance:supplierBlocked?SUPPLIER_EXPORT_REVIEW_GUIDANCE:null,
     artifacts:artifacts.filter(file=>file.jobId===row.id).map(file=>({kind:file.kind,fileName:file.fileName,fileSize:file.fileSize,mimeType:file.mimeType,snapshotReference:file.snapshotReference,sourceRowCount:file.sourceRowCount})),
     error,
     createdBy: row.createdBy ? `User #${row.createdBy}` : null,
     downloadUrl:
-      row.profile!=="compact_excel" && row.status === "succeeded" && row.downloadToken && (!row.downloadTokenExpiresAt || new Date(row.downloadTokenExpiresAt).getTime() > Date.now())
+      !supplierBlocked && row.profile!=="compact_excel" && row.status === "succeeded" && row.downloadToken && (!row.downloadTokenExpiresAt || new Date(row.downloadTokenExpiresAt).getTime() > Date.now())
         ? `/api/export/download/${row.id}?token=${encodeURIComponent(row.downloadToken)}`
         : null,
     canRetry: row.profile!=="compact_excel" && row.status === "failed",
@@ -189,7 +195,7 @@ async function buildCustomDatasetRows(
       if (q && !`${supplier.name ?? ""} ${supplier.email ?? ""}`.toLowerCase().includes(q)) return false;
       if (status && status !== "all" && String(supplier.status ?? "").toLowerCase() !== status) return false;
       return true;
-    }).slice(offset, offset + limit);
+    }).slice(offset, offset + limit).map(publicSupplierProfile);
   }
   if (dataset === "purchase_orders") {
     return getProcurementLineReportRows({
@@ -303,9 +309,17 @@ export function registerExportCenterRoutes(
 ): void {
   const exportAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "export")];
   const frozenSourceAccess:RequestHandler=async(req,res,next)=>{
-    const job=await getScopedExportJob(Number(req.params.id));
-    if(!job)return next();
-    return requireExportSource(auth,job.dataset,job.filters)(req,res,next);
+    const id=Number(req.params.id);
+    if(!Number.isSafeInteger(id)||id<1||id>2147483647)return sendError(res,400,"INVALID_EXPORT_JOB_ID","Choose a valid export job.");
+    try{
+      const job=await getScopedExportJob(id);
+      if(!job)return next();
+      await assertCurrentExportActor(job.organizationId,Number((req as Request&{user?:{id:number}}).user?.id),job.dataset,job.filters);
+      return requireExportSource(auth,job.dataset,job.filters)(req,res,next);
+    }catch(error){
+      if(error instanceof Error&&"code" in error&&String(error.code).startsWith("EXPORT_"))return sendError(res,403,"EXPORT_SOURCE_DENIED","You no longer have access to this export's source records.");
+      next(error);
+    }
   };
   const requestedSourceAccess:RequestHandler=(req,res,next)=>requireExportSource(auth,String(req.body?.dataset??""),req.body?.filters??{})(req,res,next);
   const reportPreviewAccess = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
@@ -450,8 +464,10 @@ export function registerExportCenterRoutes(
   app.get("/api/export-center/history", ...exportAccess,auth.ensurePermission("reports","read"), async (_req: Request, res: Response,next) => {
     try{
     const rows = await filterExportHistoryForAccess(await listExportJobs());
+    if(rows.some(row=>row.dataset==="suppliers"))await assertCurrentExportActor(getActiveOrganizationId(),Number(currentUserId(_req)),"suppliers");
     const artifacts=await readExportArtifacts(pool,getActiveOrganizationId(),rows.map(row=>row.id));
-    sendOk(res, rows.map(row=>withDownloadUrl(row,artifacts)));
+    const proofs=await readSupplierPublications(pool,getActiveOrganizationId(),rows.filter(row=>row.dataset==="suppliers").map(row=>row.id));
+    sendOk(res, rows.map(row=>withDownloadUrl(row,artifacts,proofs.get(row.id))));
     }catch(error){next(error);}
   });
 
@@ -543,7 +559,8 @@ export function registerExportCenterRoutes(
     if (!job) {
       return sendError(res, 404, "EXPORT_JOB_NOT_FOUND", "Export job not found.");
     }
-    sendOk(res, withDownloadUrl(job,await readExportArtifacts(pool,job.organizationId,[job.id])));
+    const proofs=await readSupplierPublications(pool,job.organizationId,job.dataset==="suppliers"?[job.id]:[]);
+    sendOk(res, withDownloadUrl(job,await readExportArtifacts(pool,job.organizationId,[job.id]),proofs.get(job.id)));
   });
 
   app.post("/api/export-jobs/:id/retry", ...exportAccess, frozenSourceAccess, exportRateLimiter, async (req: Request, res: Response) => {
@@ -579,6 +596,13 @@ export function registerExportCenterRoutes(
     const job=await getScopedExportJob(id);
     if(!job)return sendError(res,404,'EXPORT_JOB_NOT_FOUND','Export job not found.');
     if(job.profile==='compact_excel')return sendError(res,409,'EXPORT_PROFILE_NOT_ENABLED','Compact Excel downloads are not enabled. No download token was changed.');
+    if(job.dataset==="suppliers"){
+      if(selection.data.artifact)return sendError(res,400,"INVALID_EXPORT_ARTIFACT","This supplier export contains one standard file. No download token was changed.");
+      const proof=(await readSupplierPublications(pool,job.organizationId,[job.id])).get(job.id);
+      if(!matchesSupplierPublication(job,proof))return sendError(res,409,"SUPPLIER_EXPORT_UNVERIFIED",SUPPLIER_EXPORT_REVIEW_GUIDANCE);
+      try{const verified=await openVerifiedExportArtifact(exportsDir,job.organizationId,proof!);verified.destroy();}
+      catch{return sendError(res,409,"EXPORT_FILE_VERIFICATION_FAILED","This retained file does not match its saved publication evidence. No download token was changed. Generate a new supplier export.");}
+    }
     const refreshed = await refreshScopedExportDownloadToken(id);
     if (!refreshed?.downloadToken) {
       return sendError(res, 410, "EXPORT_FILE_RETENTION_EXPIRED", "The retained export is no longer available.", {
@@ -613,6 +637,8 @@ export function registerExportCenterRoutes(
       return sendError(res, 403, "EXPORT_DOWNLOAD_TOKEN_INVALID", "Export download token is invalid.");
     }
     if(job.retentionExpiresAt&&new Date(job.retentionExpiresAt).getTime()<=Date.now())return sendError(res,410,"EXPORT_FILE_RETENTION_EXPIRED","This export has expired. Generate a new export from the same saved observation if it is still available.");
+    const supplierProof=job.dataset==="suppliers"?(await readSupplierPublications(pool,job.organizationId,[job.id])).get(job.id):undefined;
+    if(job.dataset==="suppliers"&&!matchesSupplierPublication(job,supplierProof))return sendError(res,409,"SUPPLIER_EXPORT_UNVERIFIED",SUPPLIER_EXPORT_REVIEW_GUIDANCE);
     if (job.downloadTokenExpiresAt && new Date(job.downloadTokenExpiresAt).getTime() < Date.now()) {
       recordServerDiagnosticEvent({
         source: "integration",
@@ -631,6 +657,21 @@ export function registerExportCenterRoutes(
     }
     const artifacts=await readExportArtifacts(pool,job.organizationId,[job.id]);
     const selected=artifacts.find(file=>file.kind===(selection.data??"summary"));
+    if(supplierProof){
+      if(selection.data)return sendError(res,400,"INVALID_EXPORT_ARTIFACT","This supplier export contains one standard file.");
+      let stream:Awaited<ReturnType<typeof openVerifiedExportArtifact>>|undefined;
+      try{
+        stream=await openVerifiedExportArtifact(exportsDir,job.organizationId,supplierProof);
+        res.setHeader("Content-Type",supplierProof.mimeType);res.setHeader("Content-Length",String(supplierProof.fileSize));
+        res.setHeader("Content-Disposition",`attachment; filename="${supplierProof.fileName}"`);
+        res.setHeader("Cache-Control","private, no-store");res.setHeader("X-Content-Type-Options","nosniff");
+        await pipeline(stream,res);return;
+      }catch{
+        stream?.destroy();if(res.headersSent){res.destroy();return;}
+        res.removeHeader("Content-Length");res.removeHeader("Content-Disposition");res.removeHeader("Content-Type");
+        return sendError(res,409,"EXPORT_FILE_VERIFICATION_FAILED","This retained file does not match its saved publication evidence. No replacement data was generated. Generate a new supplier export.");
+      }
+    }
     if(selection.data&&!selected)return sendError(res,404,"EXPORT_ARTIFACT_NOT_FOUND","This export does not have the selected file.");
     if(selected){
       let stream:Awaited<ReturnType<typeof openVerifiedExportArtifact>>|undefined;

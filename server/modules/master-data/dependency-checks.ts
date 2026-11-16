@@ -1,12 +1,13 @@
 import { pool } from "../../db";
+import type { PoolClient } from "pg";
 
 export type DependencyCheck = {
   label: string;
   count: number;
 };
 
-async function count(sqlText: string, params: unknown[]): Promise<number> {
-  const result = await pool.query<{ count: number }>(sqlText, params);
+async function count(sqlText: string, params: unknown[], reader: Pick<PoolClient, "query"> = pool): Promise<number> {
+  const result = await reader.query<{ count: number }>(sqlText, params);
   return Number(result.rows[0]?.count ?? 0);
 }
 
@@ -19,23 +20,23 @@ export function dependencyBlockedMessage(entityLabel: string, action: "disable" 
   return `Cannot ${action} this ${entityLabel} while it is used by ${details}.`;
 }
 
-export async function getSupplierWhereUsed(organizationId: number, supplierId: number): Promise<DependencyCheck[]> {
+export async function getSupplierWhereUsed(organizationId: number, supplierId: number, reader: Pick<PoolClient, "query"> = pool): Promise<DependencyCheck[]> {
+  const countSupplier = (query: string) => count(query, [organizationId, supplierId], reader);
   return compact([
     {
       label: "carrier profiles",
-      count: await count(
+      count: await countSupplier(
         `
           SELECT count(*)::int
           FROM carriers
           WHERE organization_id = $1
             AND supplier_id = $2
         `,
-        [organizationId, supplierId],
       ),
     },
     {
       label: "open requisitions",
-      count: await count(
+      count: await countSupplier(
         `
           SELECT count(*)::int
           FROM purchase_requisitions
@@ -43,12 +44,11 @@ export async function getSupplierWhereUsed(organizationId: number, supplierId: n
             AND supplier_id = $2
             AND upper(COALESCE(status, '')) IN ('DRAFT', 'PENDING', 'APPROVED')
         `,
-        [organizationId, supplierId],
       ),
     },
     {
       label: "open purchase orders",
-      count: await count(
+      count: await countSupplier(
         `
           SELECT count(*)::int
           FROM purchase_orders
@@ -56,12 +56,11 @@ export async function getSupplierWhereUsed(organizationId: number, supplierId: n
             AND supplier_id = $2
             AND lower(COALESCE(status, '')) NOT IN ('received', 'closed', 'cancelled', 'void')
         `,
-        [organizationId, supplierId],
       ),
     },
     {
       label: "active supplier contracts",
-      count: await count(
+      count: await countSupplier(
         `
           SELECT count(*)::int
           FROM supplier_contracts
@@ -69,12 +68,11 @@ export async function getSupplierWhereUsed(organizationId: number, supplierId: n
             AND supplier_id = $2
             AND lower(COALESCE(status, 'active')) NOT IN ('expired', 'terminated', 'cancelled', 'inactive')
         `,
-        [organizationId, supplierId],
       ),
     },
     {
       label: "open AP invoices",
-      count: await count(
+      count: await countSupplier(
         `
           SELECT count(*)::int
           FROM invoices
@@ -82,7 +80,6 @@ export async function getSupplierWhereUsed(organizationId: number, supplierId: n
             AND supplier_id = $2
             AND upper(COALESCE(status, '')) NOT IN ('PAID', 'CANCELLED', 'VOID')
         `,
-        [organizationId, supplierId],
       ),
     },
   ]);

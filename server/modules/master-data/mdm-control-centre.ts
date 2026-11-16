@@ -477,6 +477,7 @@ export async function createMdmDomainRecord(
   input: Record<string, unknown>,
   performedBy?: number,
 ) {
+  if (domain === "supplier-documents") throw new Error("Supplier compliance requires independent approval and publication.");
   const config = mdmDomains[domain];
   const payload = filterPayload(config, input);
   payload.organization_id = organizationId;
@@ -502,6 +503,7 @@ export async function updateMdmDomainRecord(
   input: Record<string, unknown>,
   performedBy?: number,
 ) {
+  if (domain === "supplier-documents") throw new Error("Supplier compliance requires independent approval and publication.");
   const config = mdmDomains[domain];
   const before = await pool.query<Record<string, unknown>>(
     `SELECT * FROM ${config.table} WHERE organization_id = $1 AND id = $2`,

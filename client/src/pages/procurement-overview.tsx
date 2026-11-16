@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { requestJson } from "@/lib/queryClient";
 import { APP_ROUTES } from "@/lib/routes/app-routes";
 import { formatDocumentMoney } from "@shared/document-money";
+import { MaverickSpendEvidence } from "./maverick-spend-evidence";
 
 type Overview = {
 kpis: { openRequisitions: number; pendingApprovals: number; openRfqs: number; openPurchaseOrders: number; awaitingConfirmation: number; partiallyReceived: number; lateDeliveries: number; exceptions: number; spendThisPeriod: string|null; unmatchedInvoices: number };
@@ -48,5 +49,6 @@ export default function ProcurementOverviewPage() {
       </div> : null}
     </PageDataState>
     <FinancialMeasuresPanel />
+    <MaverickSpendEvidence />
   </div>;
 }

@@ -1450,6 +1450,9 @@ function ControlCentreGovernancePanel({
     },
     onSuccess: async (_data, variables) => {
       await refreshChangeRequests();
+      if (variables.action === "apply" && selectedRequest?.domain === "supplier-documents") {
+        await queryClient.invalidateQueries({ queryKey: ["supplier-compliance-evidence"] });
+      }
       if(variables.action==='apply' && selectedRequest?.domain==='exchange-rates') {
         await queryClient.invalidateQueries({queryKey:['/api/v2/analytics/financial-measures']});
         await queryClient.invalidateQueries({queryKey:['/api/v2/ap/aging']});
@@ -1670,7 +1673,7 @@ function ControlCentreGovernancePanel({
                       Apply approved change
                     </Button>
                   ) : null}
-                  {canAdminOverride && selectedRequest.domain !== 'exchange-rates' ? (
+                  {canAdminOverride && !["exchange-rates", "supplier-documents"].includes(selectedRequest.domain) ? (
                     <Button
                       size="sm"
                       variant="destructive"

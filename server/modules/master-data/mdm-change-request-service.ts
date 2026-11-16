@@ -1,5 +1,6 @@
 import { pool } from "../../db";
 import { approveReportingFx, applyReportingFx } from "./governed-fx-service";
+import { approveSupplierCompliance, applySupplierCompliance } from "./governed-supplier-compliance";
 import { fulfillInventoryItemRequest } from "../inventory/item-request-service";
 import {
   createMdmDomainRecord,
@@ -32,6 +33,7 @@ export class MdmApprovalError extends Error {
 }
 
 function toRiskLevel(domain: string, patch: Record<string, unknown>) {
+  if (domain === "supplier-documents") return "critical"; // All edits to evidence identity or lifecycle are governed.
   const registry = getMdmDomainRegistryEntry(domain);
   const hasHighRiskField = Object.keys(patch).some((field) => isHighRiskMdmField(domain, field));
   if (hasHighRiskField) return "critical";
@@ -94,7 +96,8 @@ export async function createMdmChangeRequest(input: {
   submittedBy?: number;
   reason?: string;
 }) {
-  const riskLevel = toRiskLevel(input.domain, input.proposedPatch);
+  const domain = input.domain === "supplier-compliance-documents" ? "supplier-documents" : input.domain;
+  const riskLevel = toRiskLevel(domain, input.proposedPatch);
   const status = riskLevel === "low" || riskLevel === "medium" ? "validation_passed" : "pending_approval";
   const result = await pool.query<Record<string, unknown>>(
     `
@@ -107,11 +110,11 @@ export async function createMdmChangeRequest(input: {
     `,
     [
       input.organizationId,
-      input.domain,
+      domain,
       input.entityId ?? null,
       input.action,
       input.proposedPatch,
-      input.beforeState ?? null,
+      domain === "supplier-documents" ? null : input.beforeState ?? null,
       riskLevel,
       status,
       input.submittedBy ?? null,
@@ -126,7 +129,7 @@ export async function createMdmChangeRequest(input: {
       status: status as MdmChangeRequestStatus,
       actorId: input.submittedBy ?? null,
       reason: input.reason ?? null,
-      beforeState: input.beforeState ?? null,
+      beforeState: domain === "supplier-documents" ? null : input.beforeState ?? null,
       afterState: input.proposedPatch,
     });
   }
@@ -143,6 +146,7 @@ export async function approveMdmChangeRequest(input: {
   const row = await findChangeRequest(input.organizationId, input.id);
   if (!row) return null;
   if(row.domain==='exchange-rates') return approveReportingFx(input);
+  if(row.domain==='supplier-documents') return approveSupplierCompliance(input);
   if (Number(row.submitted_by) === input.actorId && input.allowAdminOverride !== true) {
     throw new MdmApprovalError(
       "MDM_MAKER_CANNOT_APPROVE",
@@ -233,6 +237,7 @@ export async function applyMdmChangeRequest(input: {
   const row = await findChangeRequest(input.organizationId, input.id);
   if (!row) return null;
   if(row.domain==='exchange-rates') return applyReportingFx(input);
+  if(row.domain==='supplier-documents') return applySupplierCompliance(input);
   if (String(row.status) === "applied") {
     throw new MdmApprovalError("MDM_CHANGE_ALREADY_APPLIED", "This Master Data change was already applied.", 409);
   }
@@ -386,16 +391,17 @@ export async function getMdmChangeRequest(organizationId: number, id: number) {
   };
 }
 
-export async function listMdmChangeRequests(organizationId: number) {
+export async function listMdmChangeRequests(organizationId: number, canReviewCompliance = false) {
   const result = await pool.query<Record<string, unknown>>(
     `
       SELECT *
       FROM mdm_change_requests
       WHERE organization_id = $1
+        AND ($2::boolean OR domain NOT IN ('supplier-documents','supplier-compliance-documents'))
       ORDER BY created_at DESC
       LIMIT 100
     `,
-    [organizationId],
+    [organizationId, canReviewCompliance],
   );
   return result.rows.map(rowToCamel);
 }

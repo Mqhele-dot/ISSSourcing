@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect,useMemo,useRef, useState } from "react";
+import {useLocation,useSearch} from "wouter";
+import {useQueryState} from "@/hooks/use-query-state";
+import {parseDocumentView} from "@shared/document-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, FileText, RefreshCcw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -21,6 +24,8 @@ import {
 import { apiRequest, requestJson } from "@/lib/queryClient";
 import { runRetentionJob, uploadDocumentFile } from "@/api/client";
 import { useToast } from "@/hooks/use-toast";
+import {useAuth} from "@/hooks/use-auth";
+import {usePermissions} from "@/hooks/use-permissions";
 
 type DocumentRow = {
   id: number;
@@ -32,13 +37,15 @@ type DocumentRow = {
   archivedAt?: string | null;
   uploadedAt?: string | null;
   fileAvailable?: boolean;
-  fileStatus?: "available" | "missing";
+  fileStatus?: "available" | "missing" | "unverified";
+  evidenceGuidance?:string|null;
   lifecycleStatus?: "active" | "archived";
   lastVerifiedAt?: string | null;
 };
 type DocumentPage = { items: DocumentRow[]; total: number; page: number; pageSize: number; hasNext: boolean; summary: { active: number; archived: number; missing: number } };
 
 type ArchiveFilter = "exclude" | "include" | "only";
+const VIEW_DEFAULTS={entityType:"",entityId:"",documentId:"",archived:"exclude",q:"",page:"1",pageSize:"25",fileStatus:"all",sort:"newest"};
 
 const ENTITY_PRESETS = [
   { value: "__all__", label: "All types" },
@@ -51,6 +58,9 @@ const ENTITY_PRESETS = [
 ] as const;
 
 export default function DocumentsPage() {
+  const {user}=useAuth(),{hasPermission}=usePermissions();
+  const canRead=hasPermission("documents","read");
+  const activeOrg=(user as typeof user&{activeOrganizationId?:number})?.activeOrganizationId;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [entityType, setEntityType] = useState("purchase_order");
@@ -59,12 +69,15 @@ export default function DocumentsPage() {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [archiveCandidate, setArchiveCandidate] = useState<DocumentRow | null>(null);
   const [retentionConfirmOpen, setRetentionConfirmOpen] = useState(false);
-  const [filterEntityType, setFilterEntityType] = useState<string>("__all__");
-  const [filterEntityId, setFilterEntityId] = useState("");
-  const [filterArchived, setFilterArchived] = useState<ArchiveFilter>("exclude");
-  const [filterQuery, setFilterQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const search=useSearch(),[,navigate]=useLocation();
+  const {queryState:view,setQueryState:setView}=useQueryState(VIEW_DEFAULTS);
+  const parsed=useMemo(()=>parseDocumentView(search),[search]);
+  const filterEntityType=view.entityType||"__all__",filterEntityId=view.entityId,filterArchived=view.archived as ArchiveFilter,filterQuery=view.q;
+  const page=parsed.success?parsed.data.page:1,pageSize=parsed.success?parsed.data.pageSize:25;
+  const setPage=(value:number|((current:number)=>number))=>setView({page:String(typeof value==="function"?value(page):value)});
+  const changeFilter=(updates:Partial<typeof VIEW_DEFAULTS>)=>setView({...updates,documentId:"",page:"1"});
+  const focusIdentity=useRef("");
+  useEffect(()=>{setFile(null);setEntityId("");setArchiveCandidate(null);setUploadDialogOpen(false);},[user?.id,activeOrg]);
 
   const normalizedEntityId = filterEntityId.trim();
   const normalizedQuery = filterQuery.trim();
@@ -76,20 +89,25 @@ export default function DocumentsPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["/api/v2/documents", filterEntityType, normalizedEntityId, filterArchived, normalizedQuery, page, pageSize],
+    queryKey: ["/api/v2/documents",user?.id,activeOrg,user?.warehouseId,canRead,search],
+    enabled:Boolean(user&&activeOrg&&canRead&&parsed.success),
+    retry:false,
     queryFn: () => {
-      const search = new URLSearchParams();
-      if (filterEntityType !== "__all__") search.set("entityType", filterEntityType);
-      if (normalizedEntityId) search.set("entityId", normalizedEntityId);
-      if (filterArchived !== "exclude") search.set("archived", filterArchived);
-      if (normalizedQuery) search.set("q", normalizedQuery);
-      search.set("page", String(page));
-      search.set("pageSize", String(pageSize));
-      return requestJson<DocumentPage>("GET", `/api/v2/documents?${search.toString()}`);
+      if(!parsed.success)throw new Error("Document filters are invalid. Clear or correct them before loading evidence.");
+      const params=new URLSearchParams();
+      for(const [key,value]of Object.entries(parsed.data))if(value!==undefined)params.set(key,String(value));
+      return requestJson<DocumentPage>("GET", `/api/v2/documents?${params}`);
     },
-    placeholderData: (previous) => previous,
   });
-  const documents = useMemo(() => documentPage?.items ?? [], [documentPage?.items]);
+  const documents = useMemo(() => canRead&&!isError&&parsed.success?documentPage?.items ?? []:[], [canRead,isError,parsed.success,documentPage?.items]);
+  useEffect(()=>{
+    const target=parsed.success?parsed.data.documentId:undefined;
+    if(!target||!canRead||isError){focusIdentity.current="";return;}
+    const identity=`${user?.id}:${activeOrg}:${search}`;
+    if(focusIdentity.current===identity||!documents.some(row=>row.id===target))return;
+    const row=document.getElementById(`document-row-${target}`);
+    if(row){row.scrollIntoView({block:"center"});row.focus({preventScroll:true});focusIdentity.current=identity;}
+  },[parsed,documents,canRead,isError,user?.id,activeOrg,search]);
 
   const documentStats = useMemo(() => {
     const archived = documentPage?.summary.archived ?? documents.filter((doc) => doc.archivedAt).length;
@@ -181,10 +199,10 @@ export default function DocumentsPage() {
   });
 
   const reconcile = useMutation({
-    mutationFn: () => requestJson<{ checked: number; missing: number }>("POST", "/api/documents/reconcile"),
+    mutationFn: () => requestJson<{ checked: number; missing: number;unverified:number }>("POST", "/api/documents/reconcile"),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/v2/documents"] });
-      toast({ title: "Reconciliation complete", description: `${result.checked} metadata record(s) checked; ${result.missing} file(s) unavailable.` });
+      toast({ title: "Reconciliation complete", description: `${result.checked} authorized records checked; ${result.missing} missing, ${result.unverified} unverified. No history was changed.` });
     },
     onError: (reconcileError) => toast({ title: "Reconciliation failed", description: reconcileError instanceof Error ? reconcileError.message : String(reconcileError), variant: "destructive" }),
   });
@@ -208,7 +226,7 @@ export default function DocumentsPage() {
     normalizedEntityId.length > 0
     || normalizedQuery.length > 0
     || filterEntityType !== "__all__"
-    || filterArchived !== "exclude";
+    || filterArchived !== "exclude"||Boolean(view.documentId)||view.fileStatus!=="all"||view.sort!=="newest";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -217,7 +235,7 @@ export default function DocumentsPage() {
         subtitle="Controlled attachment history with versioning, filters, and archive review."
         actions={
           <div className="flex gap-2">
-            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to reconcile storage"><Button variant="outline" onClick={() => reconcile.mutate()} disabled={reconcile.isPending}>Reconcile files</Button></Can>
+            <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to reconcile storage"><Button variant="outline" onClick={() => reconcile.mutate()} disabled={reconcile.isPending||!hasPermission("documents","verify")||!canRead}>Reconcile files</Button></Can>
             <Button variant="outline" onClick={() => void refetch()} className="gap-2"><RefreshCcw className="h-4 w-4" />Refresh</Button>
           </div>
         }
@@ -229,7 +247,7 @@ export default function DocumentsPage() {
             <CardTitle className="text-base">Visible documents</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{documentStats.total}</div>
+            <div className="text-3xl font-semibold">{canRead&&!isError&&parsed.success?documentStats.total:"Unavailable"}</div>
             <p className="text-sm text-muted-foreground">Current result set after server-side filters.</p>
           </CardContent>
         </Card>
@@ -238,7 +256,7 @@ export default function DocumentsPage() {
             <CardTitle className="text-base">Active history</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{documentStats.active}</div>
+            <div className="text-3xl font-semibold">{canRead&&!isError&&parsed.success?documentStats.active:"Unavailable"}</div>
             <p className="text-sm text-muted-foreground">Unarchived records available to active workflows.</p>
           </CardContent>
         </Card>
@@ -247,7 +265,7 @@ export default function DocumentsPage() {
             <CardTitle className="text-base">Archived history</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{documentStats.archived}</div>
+            <div className="text-3xl font-semibold">{canRead&&!isError&&parsed.success?documentStats.archived:"Unavailable"}</div>
             <p className="text-sm text-muted-foreground">Retained rows removed from live operational views.</p>
           </CardContent>
         </Card>
@@ -307,7 +325,7 @@ export default function DocumentsPage() {
           <DialogHeader>
             <DialogTitle>Run document retention?</DialogTitle>
             <DialogDescription>
-              This archives every active document older than its configured retention period. Archived files remain in
+              This archives only authorized source-linked documents in your current organization that are older than their configured retention period. Archived files remain in
               history, but active workflows will no longer include them.
             </DialogDescription>
           </DialogHeader>
@@ -393,6 +411,10 @@ export default function DocumentsPage() {
           <CardTitle>Document timeline</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!canRead&&<p role="status">Document read access is required. Ask an authorized document steward to review this evidence.</p>}
+          {!parsed.success&&<p role="alert">Document filters are invalid or unsupported. Correct them or clear all filters; no broader evidence was loaded.</p>}
+          {view.documentId&&<div className="flex flex-wrap items-center gap-2"><p role="status">Selected document #{view.documentId}. Current source permissions still apply.</p><Button variant="outline" onClick={()=>setView({documentId:"",page:"1"})}>Show source history</Button></div>}
+          {(hasFilters||!parsed.success)&&<Button variant="outline" onClick={()=>navigate("/admin/documents",{replace:true})}>Clear all document filters</Button>}
           {isError ? (
             <PanelInlineError
               title="Document history unavailable"
@@ -403,7 +425,7 @@ export default function DocumentsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1 min-w-[200px]">
               <Label>Filter by entity type</Label>
-              <Select value={filterEntityType} onValueChange={(value) => { setFilterEntityType(value); setPage(1); }}>
+              <Select value={filterEntityType} onValueChange={(value) => changeFilter({entityType:value==="__all__"?"":value})}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -423,12 +445,12 @@ export default function DocumentsPage() {
                 inputMode="numeric"
                 placeholder="Any"
                 value={filterEntityId}
-                onChange={(event) => { setFilterEntityId(event.target.value); setPage(1); }}
+                onChange={(event) => changeFilter({entityId:event.target.value})}
               />
             </div>
             <div className="space-y-1 min-w-[200px]">
               <Label>Archive state</Label>
-              <Select value={filterArchived} onValueChange={(value) => { setFilterArchived(value as ArchiveFilter); setPage(1); }}>
+              <Select value={filterArchived} onValueChange={(value) => changeFilter({archived:value})}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -445,7 +467,8 @@ export default function DocumentsPage() {
                 id="doc-filter-q"
                 placeholder="File name or entity type"
                 value={filterQuery}
-                onChange={(event) => { setFilterQuery(event.target.value); setPage(1); }}
+                maxLength={120}
+                onChange={(event) => changeFilter({q:event.target.value})}
               />
             </div>
           </div>
@@ -454,14 +477,14 @@ export default function DocumentsPage() {
           </p>
           <div className="space-y-2">
             {isLoading ? <div className="text-sm text-muted-foreground">Loading document history...</div> : null}
-            {!isLoading && documents.length === 0 ? (
+            {canRead&&!isError&&!isLoading && documents.length === 0 ? (
               <div className="text-sm text-muted-foreground">
-                {hasFilters ? "No documents match the current filters." : "No documents uploaded yet."}
+                {!parsed.success?"Correct the invalid document filters to continue.":hasFilters ? "No documents match the current filters." : "No documents uploaded yet."}
               </div>
             ) : null}
             {documents.map((doc) => (
-              <div key={doc.id} className="rounded border p-3 text-sm flex items-center justify-between gap-4">
-                <div>
+              <div key={doc.id} id={`document-row-${doc.id}`} tabIndex={-1} aria-label={`Document ${doc.fileName}, version ${doc.version}`} data-testid={`document-row-${doc.id}`} className="rounded border p-3 text-sm flex flex-wrap md:flex-nowrap items-center justify-between gap-4 focus:outline focus:outline-2 focus:outline-primary">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 font-medium">
                     <span>
                       {doc.entityType} #{doc.entityId} - v{doc.version}
@@ -477,18 +500,19 @@ export default function DocumentsPage() {
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground">
                     <FileText className="h-4 w-4" />
-                    <span>{doc.fileName}</span>
+                    <span className="break-all">{doc.fileName}</span>
+                    {doc.fileStatus==="unverified"&&<p role="status" className="max-w-prose text-amber-700 dark:text-amber-300">{doc.evidenceGuidance}</p>}
                     {doc.archivedAt ? <span>Archived {new Date(doc.archivedAt).toLocaleString()}</span> : null}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex w-full max-w-full flex-wrap items-center gap-2 md:w-auto">
                   {doc.fileAvailable ? (
                     <Button asChild size="sm" variant="outline">
                       <a href={`/api/documents/${doc.id}/download`}>Download</a>
                     </Button>
                   ) : (
                     <Can roles={["manager", "admin"]} reason="Requires Manager or Admin to attach a replacement">
-                      <label className="inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm font-medium hover:bg-accent">
+                      <label className="inline-flex min-h-9 max-w-full cursor-pointer items-center whitespace-normal rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
                         File unavailable — reattach replacement
                         <input className="sr-only" type="file" aria-label={`Reattach replacement for ${doc.fileName}`} onChange={(event) => void reattach(doc, event.target.files?.[0] ?? null)} />
                       </label>
@@ -513,7 +537,7 @@ export default function DocumentsPage() {
             ))}
             {!isLoading && (documentPage?.total ?? 0) > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-sm">
-                <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}><SelectTrigger className="w-32" aria-label="Documents per page"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="25">25 rows</SelectItem><SelectItem value="50">50 rows</SelectItem><SelectItem value="100">100 rows</SelectItem></SelectContent></Select>
+                <Select value={String(pageSize)} onValueChange={(value) => setView({pageSize:value,page:"1"})}><SelectTrigger className="w-32" aria-label="Documents per page"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="25">25 rows</SelectItem><SelectItem value="50">50 rows</SelectItem><SelectItem value="100">100 rows</SelectItem></SelectContent></Select>
                 <div className="flex gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(1)}>First</Button><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button size="sm" variant="outline" disabled={!documentPage?.hasNext} onClick={() => setPage((value) => value + 1)}>Next</Button><Button size="sm" variant="outline" disabled={page >= Math.max(1, Math.ceil((documentPage?.total ?? 0) / pageSize))} onClick={() => setPage(Math.max(1, Math.ceil((documentPage?.total ?? 0) / pageSize)))}>Last</Button></div>
               </div>
             ) : null}

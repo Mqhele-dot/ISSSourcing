@@ -1,4 +1,5 @@
 /** Evidence-based rates: absence of observations is not a successful outcome. */
+export const supplierPerformanceReadResources = ["suppliers", "purchases", "inventory", "finance"] as const;
 export function supplierPerformanceEvidence(ordersMeasured: number, onTime: number, invoicesMeasured: number, disputed: number) {
   const round = (value: number) => Math.round(value * 10) / 10;
   const onTimeDeliveryRate = ordersMeasured > 0 ? round(onTime / ordersMeasured * 100) : null;

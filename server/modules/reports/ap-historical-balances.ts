@@ -1,6 +1,7 @@
 import type {PoolClient} from "pg";
 import type {FinancialContribution,FinancialExclusion,FinancialMeasure} from "../../../shared/financial-measures";
 import {parseReportingDecimal,addReportingDecimals} from "../../lib/exact-reporting-decimal";
+import {OrganizationCalendarError,readOrganizationCalendar} from "../../lib/organization-calendar";
 
 const error=(code:string,message:string,status=400)=>Object.assign(new Error(message),{code,status});
 export const apAgingBuckets=["not_due","due_7","due_30","od_1_30","od_31_60","od_60p","unknown_due_date"] as const;
@@ -29,11 +30,11 @@ export const apHistoricalEvidenceQuery=`WITH universe AS (
     ORDER BY u.invoice_id`;
 
 export async function apObservationScope(c:PoolClient,organizationId:number,asOf?:string) {
-  const org=(await c.query("SELECT timezone FROM organizations WHERE id=$1",[organizationId])).rows[0];
-  if(!org) throw error("AP_ORGANIZATION_UNAVAILABLE","Your organization is not available.",403);
-  const timezone=String(org.timezone??"").trim()||"Africa/Johannesburg";
-  if(!(await c.query("SELECT 1 FROM pg_timezone_names WHERE name=$1",[timezone])).rowCount) throw error("AP_TIMEZONE_SETUP_REQUIRED","Ask an administrator to configure a valid organization timezone.",409);
-  const today=(await c.query("SELECT (transaction_timestamp() AT TIME ZONE $1)::date::text AS today",[timezone])).rows[0].today;
+  const {timezone,today}=await readOrganizationCalendar(c,organizationId).catch((e:unknown)=>{
+    if(!(e instanceof OrganizationCalendarError)) throw e;
+    if(e.reason==="missing_organization") throw error("AP_ORGANIZATION_UNAVAILABLE",e.message,403);
+    throw error("AP_TIMEZONE_SETUP_REQUIRED",e.message,409);
+  });
   const day=asOf??today;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day))||new Date(`${day}T00:00:00Z`).toISOString().slice(0,10)!==day||day>today) throw error("AP_INVALID_AS_OF","Choose a valid as-of date no later than today in your organization's timezone.");
   const times=(await c.query("SELECT ($1::date+1)::timestamp AT TIME ZONE $2 AS cutoff,transaction_timestamp() AS observed",[day,timezone])).rows[0];

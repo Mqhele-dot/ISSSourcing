@@ -5,6 +5,7 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 const tenant = read("server/organization-context.ts");
 const tenantMiddleware = read("server/middleware/organization-context.ts");
 const audit = read("server/services/audit-chain-service.ts");
+const auditClient = read("server/services/audit-chain-client.ts");
 const sourcingService = read("server/modules/sourcing/service.ts");
 const sourcingRoutes = read("server/modules/sourcing/register-sourcing-routes.ts");
 const procurement = read("server/modules/procurement/register-procurement-routes.ts");
@@ -27,7 +28,7 @@ const checks = [
   [/TENANT_CONTEXT_REQUIRED/.test(tenant), "missing TenantContext fails closed with a structured code"],
   [/organizationMembers/.test(tenantMiddleware) && /membershipActive/.test(tenantMiddleware), "request tenancy is derived from active membership"],
   [/MEMBERSHIP_NOT_ACTIVE/.test(tenantMiddleware), "inactive membership has a structured denial"],
-  [/previousHash/.test(audit) && /eventHash/.test(audit) && /pg_advisory_xact_lock/.test(audit), "audit events are serialized and hash chained"],
+  [/appendAuditEventWithClient\(client, input\)/.test(audit) && /previousHash/.test(auditClient) && /eventHash/.test(auditClient) && /pg_advisory_xact_lock/.test(auditClient), "audit events are serialized and hash chained"],
   [/SUPPLIER_NOT_INVITED/.test(sourcingRoutes) && /supplierPortalMappings/.test(sourcingRoutes), "supplier RFQ access uses tenant mapping and invitation"],
   [/mappedSupplierId\(req\)/.test(sourcingRoutes) && !/req\.body\.supplierId[^\n]*submitSupplierQuote/.test(sourcingRoutes), "supplier quote identity is not selected by request body"],
   [/requireIdempotencyKey/.test(sourcingService) && /SEGREGATION_OF_DUTIES_VIOLATION/.test(sourcingService), "high-risk sourcing actions enforce idempotency and independent approval"],

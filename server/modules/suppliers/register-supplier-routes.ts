@@ -5,10 +5,11 @@ import { storage } from "../../storage";
 import { sendError, sendFunctionError, sendOk } from "../../api-response";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
-import { getActiveOrganizationId, getOptionalTenantContext } from "../../organization-context";
+import { getActiveOrganizationId, getOptionalTenantContext, getTenantContext } from "../../organization-context";
+import {documentAccess,DocumentAccessError} from "../documents/document-access";
 import { createSupplierRepository } from "../../repositories";
 import { createSupplierService } from "../../services/supplier-service";
-import { carriers, insertSupplierSchema, insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
+import { insertSupplierLogoSchema, PurchaseOrderStatus } from "@shared/schema";
 import { detectSupplierDocumentMismatches } from "../procurement/supplier-defaults";
 import type { AuthBundle } from "../procurement/types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
@@ -19,79 +20,23 @@ import {
 } from "../master-data/dependency-checks";
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "../../db";
-import { mdmSupplierDocuments, organizationMembers, organizations, supplierPortalMappings, suppliers as supplierTable, users } from "@shared/schema";
-import { appendAuditEvent, appendAuditEventWithClient } from "../../services/audit-chain-service";
-import { getCountryPack } from "../master-data/country-pack-registry";
-import { supplierPerformanceEvidence } from "@shared/supplier-performance-evidence";
+import { organizationMembers, organizations, supplierPortalMappings, suppliers as supplierTable, users } from "@shared/schema";
+import { appendAuditEventWithClient } from "../../services/audit-chain-service";
+import { registerSupplierDeliveryScorecardRoutes } from "./register-delivery-scorecard-routes";
+import { registerSupplierPerformanceRoutes } from "./register-performance-routes";
+import { publicSupplierProfile } from "../../../shared/supplier-public-profile";
+import { hasSupplierBankingFields, hasSupplierDecisionFields, supplierProfileCommandSchema, supplierProfilePatchSchema } from "./supplier-profile-command";
+import { approveSupplierOnboarding, startSupplierOnboarding, SupplierOnboardingError, updateSupplierProfile } from "./supplier-onboarding";
+import { readPublishedSupplierCompliance } from "../master-data/governed-supplier-compliance";
 
 const supplierRepo = createSupplierRepository(storage);
 const supplierService = createSupplierService(supplierRepo, storage);
 
 const SUPPLIER_TYPES = new Set(["goods", "service", "carrier", "logistics_provider", "contractor", "fuel"]);
-const CARRIER_SUPPLIER_TYPES = new Set(["carrier", "logistics_provider"]);
 
-function isCarrierSupplierType(value: unknown): boolean {
-  return CARRIER_SUPPLIER_TYPES.has(String(value ?? "").trim().toLowerCase());
-}
-
-async function syncCarrierProfile(
-  organizationId: number,
-  supplier: typeof supplierTable.$inferSelect,
-): Promise<void> {
-  const [linkedCarrier] = await db
-    .select()
-    .from(carriers)
-    .where(and(eq(carriers.organizationId, organizationId), eq(carriers.supplierId, supplier.id)))
-    .limit(1);
-
-  if (!isCarrierSupplierType(supplier.supplierType)) {
-    if (linkedCarrier?.active !== false) {
-      await db
-        .update(carriers)
-        .set({ active: false, updatedAt: new Date() })
-        .where(and(eq(carriers.organizationId, organizationId), eq(carriers.id, linkedCarrier.id)));
-    }
-    return;
-  }
-
-  const requestedCode = String(supplier.supplierCode ?? `CAR-${supplier.id}`).trim().toUpperCase();
-  const [codeOwner] = await db
-    .select({ id: carriers.id, supplierId: carriers.supplierId, name: carriers.name })
-    .from(carriers)
-    .where(and(eq(carriers.organizationId, organizationId), eq(carriers.code, requestedCode)))
-    .limit(1);
-  const mayAdoptLegacy =
-    codeOwner?.supplierId == null &&
-    String(codeOwner?.name ?? "").trim().toLowerCase() === supplier.name.trim().toLowerCase();
-  const carrierCode = codeOwner && codeOwner.supplierId !== supplier.id && !mayAdoptLegacy
-    ? `${requestedCode}-${supplier.id}`
-    : requestedCode;
-  const contact = supplier.logisticsContactName || supplier.email || supplier.phone || null;
-  const active =
-    String(supplier.status ?? "").toLowerCase() === "active" &&
-    String(supplier.onboardingStatus ?? "").toLowerCase() === "approved";
-  const carrierValues = {
-    supplierId: supplier.id,
-    code: carrierCode,
-    name: supplier.name,
-    contact,
-    active,
-    updatedAt: new Date(),
-  };
-
-  if (linkedCarrier) {
-    await db
-      .update(carriers)
-      .set(carrierValues)
-      .where(and(eq(carriers.organizationId, organizationId), eq(carriers.id, linkedCarrier.id)));
-  } else if (mayAdoptLegacy && codeOwner) {
-    await db
-      .update(carriers)
-      .set(carrierValues)
-      .where(and(eq(carriers.organizationId, organizationId), eq(carriers.id, codeOwner.id)));
-  } else {
-    await db.insert(carriers).values({ organizationId, ...carrierValues });
-  }
+function supplierCommandActor(req: Request) {
+  const { organizationId, userId, correlationId } = getTenantContext();
+  return { organizationId, userId, requestId: correlationId, ipAddress: req.ip, userAgent: req.get("user-agent") ?? null };
 }
 
 async function recordSupplierConsistencyDiagnostics(orgId: number, supplierId: number): Promise<void> {
@@ -127,6 +72,8 @@ async function recordSupplierConsistencyDiagnostics(orgId: number, supplierId: n
  * Supplier CRUD, supplier portal, logos - org-scoped via repositories/storage.
  */
 export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
+  registerSupplierDeliveryScorecardRoutes(app, auth);
+  registerSupplierPerformanceRoutes(app, auth);
   // Supplier endpoints - RBAC: viewer read-only; manager/admin can create/update/delete
   const supplierRead = [auth.ensureAuthenticated];
   const supplierWrite = [
@@ -134,6 +81,31 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     auth.ensureTwoFactorAuthenticated,
     auth.ensureRole(["manager", "admin"]),
   ];
+
+  app.get("/api/v2/suppliers/:id/compliance-evidence", ...supplierRead, auth.ensurePermission("suppliers", "read"), auth.ensurePermission("documents", "read"), async (req, res) => {
+    const supplierId = Number(req.params.id);
+    if (!Number.isSafeInteger(supplierId) || supplierId < 1 || supplierId > 2147483647) return sendError(res, 400, "INVALID_SUPPLIER_ID", "Choose a valid supplier.");
+    let client;
+    try {
+      const actor = getTenantContext();
+      client = await pool.connect();
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const access = await documentAccess(client, actor);
+      if (!access.types.includes("supplier")) throw new DocumentAccessError(403, "SUPPLIER_COMPLIANCE_ACCESS_DENIED", "Current supplier and document access are required.");
+      const { rows: [supplier] } = await client.query("SELECT o.country_code FROM suppliers s JOIN organizations o ON o.id=s.organization_id WHERE s.organization_id=$1 AND s.id=$2", [actor.organizationId, supplierId]);
+      if (!supplier) { await client.query("ROLLBACK"); return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found."); }
+      const { getCountryPack } = await import("../master-data/country-pack-registry");
+      const rows = await readPublishedSupplierCompliance(client, actor.organizationId, supplierId, new Date());
+      await client.query("COMMIT");
+      res.setHeader("Cache-Control", "private, no-store");
+      return sendOk(res, { requiredTypes: getCountryPack(supplier.country_code).supplierCompliance,
+        items: rows.map(({ sha256: _hash, sourceMatches: _sourceMatches, ...item }) => item) });
+    } catch (error) {
+      await client?.query("ROLLBACK").catch(() => undefined);
+      if (error instanceof DocumentAccessError) return sendError(res, error.status, error.code, error.message);
+      return sendError(res, 503, "SUPPLIER_COMPLIANCE_UNAVAILABLE", "Published compliance evidence is unavailable. Retry or ask an administrator to check migration prerequisites.");
+    } finally { client?.release(); }
+  });
 
   const resolveSupplierIdForUser = async (req: Request): Promise<number | null> => {
     const user = (req as Request & { user?: { id: number; role?: string; email?: string } }).user;
@@ -179,10 +151,10 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     return null;
   };
 
-  app.get("/api/suppliers", ...supplierRead, async (_req: Request, res: Response) => {
+  app.get("/api/suppliers", ...supplierRead, auth.ensurePermission("suppliers", "read"), async (_req: Request, res: Response) => {
     try {
       const suppliers = await supplierRepo.findAll();
-      res.json(suppliers);
+      res.json(suppliers.map(publicSupplierProfile));
     } catch (error) {
       console.error("Error fetching suppliers:", error);
       recordServerDiagnosticEvent({
@@ -198,106 +170,31 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get(["/api/suppliers/performance", "/api/v2/suppliers/performance"], ...supplierRead, auth.ensurePermission("suppliers", "read"), async (req: Request, res: Response) => {
-    try {
-      const requestedIds = req.path.startsWith("/api/v2/")
-        ? String(req.query.ids ?? "").split(",").filter(Boolean).map(Number)
-        : [];
-      if (req.path.startsWith("/api/v2/") && (requestedIds.length === 0 || requestedIds.length > 100 || requestedIds.some((id) => !Number.isInteger(id) || id <= 0))) {
-        return sendError(res, 400, "INVALID_SUPPLIER_IDS", "ids must contain between 1 and 100 comma-separated supplier IDs");
-      }
-      if (req.path.startsWith("/api/v2/")) {
-        const result = await pool.query(`WITH selected AS (
-          SELECT id,name FROM suppliers WHERE organization_id=$1 AND id=ANY($2::int[])
-        ), receipts AS (
-          SELECT po.id,po.supplier_id,po.expected_delivery_date,
-            min(coalesce(m.received_at,m.timestamp)) AS first_receipt
-          FROM purchase_orders po JOIN selected s ON s.id=po.supplier_id
-          JOIN stock_movements m ON m.organization_id=po.organization_id
-            AND m.reference_type='purchase_order' AND m.reference_id=po.id AND m.type='RECEIPT'
-          WHERE po.organization_id=$1 AND po.expected_delivery_date IS NOT NULL
-          GROUP BY po.id,po.supplier_id,po.expected_delivery_date
-        ), delivery AS (
-          SELECT supplier_id,count(*)::int AS measured,
-            count(*) FILTER (WHERE first_receipt<=expected_delivery_date)::int AS on_time
-          FROM receipts GROUP BY supplier_id
-        ), billing AS (
-          SELECT i.supplier_id,count(*)::int AS measured,
-            count(*) FILTER (WHERE upper(i.status::text)='DISPUTED')::int AS disputed
-          FROM invoices i JOIN selected s ON s.id=i.supplier_id
-          WHERE i.organization_id=$1 GROUP BY i.supplier_id
-        ) SELECT s.id,s.name,coalesce(d.measured,0) AS orders,coalesce(d.on_time,0) AS on_time,
-          coalesce(b.measured,0) AS invoices,coalesce(b.disputed,0) AS disputed
-          FROM selected s LEFT JOIN delivery d ON d.supplier_id=s.id
-          LEFT JOIN billing b ON b.supplier_id=s.id ORDER BY s.id`,
-        [getActiveOrganizationId(), requestedIds]);
-        return sendOk(res, result.rows.map(row => ({supplierId: row.id, supplierName: row.name,
-          ...supplierPerformanceEvidence(Number(row.orders), Number(row.on_time), Number(row.invoices), Number(row.disputed))})));
-      }
-      const allSuppliers = await supplierRepo.findAll();
-      const supplierList = requestedIds.length ? allSuppliers.filter((supplier) => requestedIds.includes(supplier.id)) : allSuppliers;
-      const purchaseOrders = await storage.getAllPurchaseOrders();
-      const stockMovements = await storage.getAllStockMovements();
-      const invoices = await storage.getAllInvoices();
-
-      const performance = supplierList.map((supplier) => {
-        const supplierOrders = purchaseOrders.filter((po) => po.supplierId === supplier.id);
-        const supplierInvoices = invoices.filter((invoice) => Number((invoice as any).supplierId ?? 0) === supplier.id);
-
-        let onTimeCount = 0;
-        let measuredOrders = 0;
-        for (const order of supplierOrders) {
-          if (!order.expectedDeliveryDate) continue;
-          const receipts = stockMovements
-            .filter(
-              (movement) =>
-                movement.referenceType === "purchase_order" &&
-                Number(movement.referenceId ?? 0) === order.id &&
-                movement.type === "RECEIPT",
-            )
-            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          if (receipts.length === 0) continue;
-          measuredOrders += 1;
-          const eta = new Date(order.expectedDeliveryDate);
-          const firstReceipt = new Date(receipts[0].receivedAt ?? receipts[0].timestamp);
-          if (!Number.isNaN(eta.getTime()) && !Number.isNaN(firstReceipt.getTime()) && firstReceipt <= eta) {
-            onTimeCount += 1;
-          }
-        }
-
-        const disputeCount = supplierInvoices.filter((invoice) => String(invoice.status).toUpperCase() === "DISPUTED").length;
-        const invoiceMeasured = supplierInvoices.length;
-        return {
-          supplierId: supplier.id,
-          supplierName: supplier.name,
-          ...supplierPerformanceEvidence(measuredOrders, onTimeCount, invoiceMeasured, disputeCount),
-        };
-      });
-
-      return req.path.startsWith("/api/v2/") ? sendOk(res, performance) : res.json(performance);
-    } catch (error) {
-      console.error("Error fetching supplier performance:", error);
-      res.status(500).json({ message: "Failed to fetch supplier performance" });
-    }
-  });
-
-  app.get("/api/suppliers/:id/portal-users", ...supplierRead, async (req: Request, res: Response) => {
+  app.get("/api/suppliers/:id/portal-users", ...supplierRead, auth.ensurePermission("suppliers","read"),auth.ensurePermission("users","read"), async (req: Request, res: Response) => {
+    let client;
     try {
       const supplierId = Number(req.params.id);
-      if (!Number.isInteger(supplierId) || supplierId <= 0) return sendError(res, 400, "INVALID_SUPPLIER_ID", "A valid supplier ID is required.");
-      const rows = await db
-        .select({ id: supplierPortalMappings.id, userId: users.id, username: users.username, email: users.email, fullName: users.fullName, active: supplierPortalMappings.active })
-        .from(supplierPortalMappings)
-        .innerJoin(users, eq(users.id, supplierPortalMappings.userId))
-        .where(and(eq(supplierPortalMappings.organizationId, getActiveOrganizationId()), eq(supplierPortalMappings.supplierId, supplierId)));
-      return res.json(rows);
+      const page=Number(req.query.page??1),pageSize=Number(req.query.pageSize??25),org=getActiveOrganizationId();
+      if (!Number.isSafeInteger(supplierId)||supplierId<1||supplierId>2147483647||!Number.isSafeInteger(page)||page<1||page>100000||![25,50,100].includes(pageSize)||Object.keys(req.query).some(key=>!["page","pageSize"].includes(key))) return sendError(res,400,"INVALID_SUPPLIER_QUERY","Choose a valid supplier and 25, 50 or 100 rows.");
+      client=await pool.connect();const access=await documentAccess(client,getTenantContext(),false);
+      if(!await access.can("suppliers")||!await access.can("users"))throw new DocumentAccessError(403,"SUPPLIER_PORTAL_USERS_DENIED","Supplier and user read access is required to review portal identities.");
+      const owned=await client.query("SELECT id FROM suppliers WHERE organization_id=$1 AND id=$2",[org,supplierId]);
+      if(!owned.rowCount)return sendError(res,404,"SUPPLIER_NOT_FOUND","Supplier not available in your organization.");
+      const rows=await client.query(`SELECT m.id,u.id AS "userId",u.username,u.email,u.full_name AS "fullName",m.active FROM supplier_portal_mappings m
+        JOIN users u ON u.id=m.user_id AND u.active=true JOIN organization_members member ON member.user_id=u.id AND member.organization_id=m.organization_id
+        AND member.active=true AND member.status='active' WHERE m.organization_id=$1 AND m.supplier_id=$2 AND m.active=true ORDER BY m.id LIMIT $3 OFFSET $4`,[org,supplierId,pageSize+1,(page-1)*pageSize]);
+      res.setHeader("X-Page",String(page));res.setHeader("X-Page-Size",String(pageSize));res.setHeader("X-Has-Next",String(rows.rows.length>pageSize));res.setHeader("Cache-Control","private, no-store");
+      if(rows.rows.length>pageSize)res.setHeader("Link",`</api/suppliers/${supplierId}/portal-users?page=${page+1}&pageSize=${pageSize}>; rel="next"`);
+      return res.json(rows.rows.slice(0,pageSize));
     } catch (error) {
+      if(error instanceof DocumentAccessError)return sendError(res,error.status,error.code,error.message);
       console.error("Error fetching supplier portal mappings:", error);
       return sendError(res, 500, "SUPPLIER_PORTAL_MAPPINGS_FAILED", "Supplier portal mappings could not be loaded.");
-    }
+    }finally{client?.release();}
   });
 
-  app.post("/api/suppliers/:id/portal-users", ...supplierWrite, async (req: Request, res: Response) => {
+  app.post("/api/suppliers/:id/portal-users", ...supplierWrite,auth.ensurePermission("suppliers","update"),auth.ensurePermission("users","update"), async (req: Request, res: Response) => {
+    let client;
     try {
       const supplierId = Number(req.params.id);
       const userId = Number(req.body?.userId);
@@ -305,18 +202,26 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         return sendError(res, 400, "SUPPLIER_PORTAL_MAPPING_INVALID", "Valid supplier and user IDs are required.");
       }
       const organizationId = getActiveOrganizationId();
-      const [[supplier], [membership]] = await Promise.all([
-        db.select({ id: supplierTable.id }).from(supplierTable).where(and(eq(supplierTable.id, supplierId), eq(supplierTable.organizationId, organizationId))).limit(1),
-        db.select({ id: organizationMembers.id }).from(organizationMembers).where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId), eq(organizationMembers.active, true))).limit(1),
-      ]);
-      if (!supplier || !membership) return sendError(res, 404, "SUPPLIER_PORTAL_MAPPING_TARGET_NOT_FOUND", "Supplier and active user membership must belong to this organization.");
-      const [mapping] = await db.insert(supplierPortalMappings).values({ organizationId, supplierId, userId, active: true, createdByUserId: req.user!.id }).onConflictDoUpdate({ target: [supplierPortalMappings.organizationId, supplierPortalMappings.userId], set: { supplierId, active: true, updatedAt: new Date(), createdByUserId: req.user!.id } }).returning();
-      await appendAuditEvent({ organizationId, actor: { userId: req.user!.id }, action: "SUPPLIER_PORTAL_MAPPING_UPDATED", resourceType: "supplier", resourceId: supplierId, after: { mappingId: mapping.id, userId, supplierId }, reason: String(req.body?.reason ?? "Supplier portal user mapping"), requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
-      return res.status(201).json(mapping);
+      client=await pool.connect();await client.query("BEGIN");await client.query("SET LOCAL statement_timeout='5s'");
+      const access=await documentAccess(client,getTenantContext(),false,true);
+      if(!await access.can("suppliers","update")||!await access.can("users","update"))throw new DocumentAccessError(403,"SUPPLIER_PORTAL_MAPPING_DENIED","Supplier and user update permission is required.");
+      const supplier=await client.query("SELECT id FROM suppliers WHERE organization_id=$1 AND id=$2 FOR SHARE",[organizationId,supplierId]);
+      const membership=await client.query("SELECT m.id FROM organization_members m JOIN users u ON u.id=m.user_id AND u.active=true WHERE m.organization_id=$1 AND m.user_id=$2 AND m.active=true AND m.status='active' FOR SHARE OF m,u",[organizationId,userId]);
+      if(!supplier.rowCount||!membership.rowCount)throw new DocumentAccessError(404,"SUPPLIER_PORTAL_MAPPING_TARGET_NOT_FOUND","Supplier and active user must belong to your organization.");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`supplier-portal:${organizationId}:${userId}`]);
+      const previous=await client.query("SELECT id,supplier_id,active FROM supplier_portal_mappings WHERE organization_id=$1 AND user_id=$2 FOR UPDATE",[organizationId,userId]);
+      if(previous.rows[0]?.supplier_id===supplierId&&previous.rows[0]?.active){await client.query("COMMIT");return res.json({id:previous.rows[0].id,supplierId,userId,active:true,replayed:true});}
+      const inserted=await client.query(`INSERT INTO supplier_portal_mappings(organization_id,supplier_id,user_id,active,created_by_user_id) VALUES($1,$2,$3,true,$4)
+        ON CONFLICT(organization_id,user_id) DO UPDATE SET supplier_id=$2,active=true,updated_at=clock_timestamp(),created_by_user_id=$4 RETURNING id`,[organizationId,supplierId,userId,req.user!.id]);
+      await appendAuditEventWithClient(client,{organizationId,actor:{userId:req.user!.id},action:"SUPPLIER_PORTAL_MAPPING_UPDATED",resourceType:"supplier",resourceId:supplierId,
+        after:{mappingId:inserted.rows[0].id,userId,supplierId},reason:String(req.body?.reason??"Supplier portal user mapping"),requestId:String(res.locals.requestId??"unknown-request-id")});
+      await client.query("COMMIT");return res.status(201).json({id:inserted.rows[0].id,supplierId,userId,active:true});
     } catch (error) {
+      await client?.query("ROLLBACK").catch(()=>undefined);
+      if(error instanceof DocumentAccessError)return sendError(res,error.status,error.code,error.message);
       console.error("Error saving supplier portal mapping:", error);
       return sendError(res, 500, "SUPPLIER_PORTAL_MAPPING_FAILED", "Supplier portal mapping could not be saved.");
-    }
+    }finally{client?.release();}
   });
 
   app.get("/api/v2/suppliers/:id/communications", auth.ensureAuthenticated, auth.ensurePermission("suppliers", "read"), async (req: Request, res: Response) => {
@@ -326,37 +231,45 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     if (!Number.isSafeInteger(supplierId) || supplierId <= 0 || !Number.isSafeInteger(page) || page <= 0 || ![25,50,100].includes(pageSize))
       return sendError(res, 400, "SUPPLIER_TIMELINE_QUERY_INVALID", "Choose a valid supplier and page size.");
     const org = getActiveOrganizationId();
+    let client;
     try {
-      const owned = await pool.query("SELECT 1 FROM suppliers WHERE organization_id=$1 AND id=$2", [org, supplierId]);
-      if (!owned.rowCount) return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found.");
+      client=await pool.connect();await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");await client.query("SET LOCAL statement_timeout='5s'");
+      const access=await documentAccess(client,getTenantContext(),false);
+      if(!await access.can("suppliers"))throw new DocumentAccessError(403,"SUPPLIER_SOURCE_DENIED","Supplier access is unavailable.");
+      const canPurchases=await access.can("purchases"),canDocuments=access.types.includes("supplier");
+      const owned = await client.query("SELECT 1 FROM suppliers WHERE organization_id=$1 AND id=$2", [org, supplierId]);
+      if (!owned.rowCount){await client.query("ROLLBACK");return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found.");}
       const source = `WITH timeline AS (
         SELECT ('invitation:'||i.id) AS key,'rfq_invitation' AS kind,i.invited_at AS occurred_at,
           ('RFQ invitation — '||i.status) AS summary,'sourcing_event' AS entity_type,i.event_id AS entity_id,i.invited_by_user_id AS actor_user_id,NULL::int AS document_id
-        FROM sourcing_invitations i WHERE i.organization_id=$1 AND i.supplier_id=$2
+        FROM sourcing_invitations i WHERE i.organization_id=$1 AND i.supplier_id=$2 AND $3::boolean
         UNION ALL SELECT ('quote:'||q.id),'rfq_response',q.created_at,('Supplier quotation — '||q.status),'sourcing_event',q.event_id,q.submitted_by_user_id,NULL::int
-        FROM supplier_quotes q WHERE q.organization_id=$1 AND q.supplier_id=$2
+        FROM supplier_quotes q WHERE q.organization_id=$1 AND q.supplier_id=$2 AND $3::boolean
         UNION ALL SELECT ('po:'||p.id),'purchase_order',coalesce(p.email_sent_date,p.created_at),
           ('Purchase order '||p.order_number||' created'),
-          'purchase_order',p.id,p.created_by_user_id,NULL::int FROM purchase_orders p WHERE p.organization_id=$1 AND p.supplier_id=$2
+          'purchase_order',p.id,p.created_by_user_id,NULL::int FROM purchase_orders p WHERE p.organization_id=$1 AND p.supplier_id=$2 AND $3::boolean
         UNION ALL SELECT ('delivery:'||e.id),'outbound_email',e.occurred_at,
           (CASE WHEN e.source_type='sourcing_event' THEN 'RFQ invitation email — ' ELSE 'Purchase order email — ' END||e.status||CASE WHEN e.error_summary IS NOT NULL THEN ': '||e.error_summary ELSE '' END),
           e.source_type,e.source_id,e.actor_user_id,NULL::int FROM supplier_communication_events e
-          WHERE e.organization_id=$1 AND e.supplier_id=$2 AND e.source_type IN ('purchase_order','sourcing_event')
+          WHERE e.organization_id=$1 AND e.supplier_id=$2 AND e.source_type IN ('purchase_order','sourcing_event') AND $3::boolean
         UNION ALL SELECT ('confirmation:'||c.id),'po_confirmation',c.created_at,('PO confirmation — '||c.status),
-          'purchase_order',c.purchase_order_id,c.actor_user_id,NULL::int FROM po_supplier_confirmations c WHERE c.organization_id=$1 AND c.supplier_id=$2
+          'purchase_order',c.purchase_order_id,c.actor_user_id,NULL::int FROM po_supplier_confirmations c WHERE c.organization_id=$1 AND c.supplier_id=$2 AND $3::boolean
         UNION ALL SELECT ('document:'||d.id),'document',d.uploaded_at,('Document: '||d.file_name),
-          'document',d.id,d.uploaded_by,d.id FROM documents d WHERE d.organization_id=$1 AND d.entity_type='supplier' AND d.entity_id=$2
+          'document',d.id,d.uploaded_by,d.id FROM documents d WHERE d.organization_id=$1 AND d.entity_type='supplier' AND d.entity_id=$2 AND d.archived_at IS NULL AND $4::boolean
         UNION ALL SELECT ('note:'||n.id),'contact_note',n.occurred_at,(n.channel||': '||n.summary),
-          'supplier',n.supplier_id,n.actor_user_id,n.document_id FROM supplier_communication_notes n WHERE n.organization_id=$1 AND n.supplier_id=$2
+          'supplier',n.supplier_id,n.actor_user_id,CASE WHEN $4::boolean AND EXISTS(SELECT 1 FROM documents linked WHERE linked.organization_id=$1 AND linked.entity_type='supplier' AND linked.entity_id=$2 AND linked.id=n.document_id AND linked.archived_at IS NULL) THEN n.document_id ELSE NULL END FROM supplier_communication_notes n WHERE n.organization_id=$1 AND n.supplier_id=$2
       )`;
-      const count = await pool.query(`${source} SELECT count(*)::int AS total FROM timeline`, [org, supplierId]);
-      const items = await pool.query(`${source} SELECT key,kind,occurred_at AS "occurredAt",summary,entity_type AS "entityType",entity_id AS "entityId",actor_user_id AS "actorUserId",document_id AS "documentId" FROM timeline ORDER BY occurred_at DESC,key DESC LIMIT $3 OFFSET $4`, [org, supplierId, pageSize, (page-1)*pageSize]);
+      const count = await client.query(`${source} SELECT count(*)::int AS total FROM timeline`, [org, supplierId,canPurchases,canDocuments]);
+      const items = await client.query(`${source} SELECT key,kind,occurred_at AS "occurredAt",summary,entity_type AS "entityType",entity_id AS "entityId",actor_user_id AS "actorUserId",document_id AS "documentId" FROM timeline ORDER BY occurred_at DESC,key DESC LIMIT $5 OFFSET $6`, [org, supplierId,canPurchases,canDocuments,pageSize,(page-1)*pageSize]);
       const total = Number(count.rows[0]?.total ?? 0);
-      return sendOk(res, { items: items.rows, total, page, pageSize, hasNext: page*pageSize<total });
+      await client.query("COMMIT");res.setHeader("Cache-Control","private, no-store");
+      return sendOk(res, { items: items.rows, total, page, pageSize, hasNext: page*pageSize<total,scope:{documents:canDocuments,procurement:canPurchases},scopeNotice:"Only authorized source records are included. Restricted sources and archived attachments are not counted." });
     } catch (error) {
+      await client?.query("ROLLBACK").catch(()=>undefined);
+      if(error instanceof DocumentAccessError)return sendError(res,error.status,error.code,error.message);
       console.error("Supplier communication timeline failed:", error);
       return sendError(res, 500, "SUPPLIER_TIMELINE_FAILED", "Could not load this supplier's activity. Retry after checking setup.");
-    }
+    } finally{client?.release();}
   });
 
   app.post("/api/v2/suppliers/:id/communications/notes", auth.ensureAuthenticated, auth.ensurePermission("suppliers", "update"), async (req: Request, res: Response) => {
@@ -372,9 +285,12 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      const access=await documentAccess(client,getTenantContext(),false,true);
+      if(!await access.can("suppliers","update")){await client.query("ROLLBACK");return sendError(res,403,"SUPPLIER_UPDATE_DENIED","You need supplier update access to record a contact.");}
       const supplier = await client.query("SELECT id FROM suppliers WHERE organization_id=$1 AND id=$2", [org, supplierId]);
       if (!supplier.rowCount) { await client.query("ROLLBACK"); return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found."); }
       if (documentId !== null) {
+        if(!access.types.includes("supplier")){await client.query("ROLLBACK");return sendError(res,403,"SUPPLIER_DOCUMENT_DENIED","You need document and supplier read access to link this attachment.");}
         const document = await client.query("SELECT id FROM documents WHERE organization_id=$1 AND entity_type='supplier' AND entity_id=$2 AND id=$3 AND archived_at IS NULL", [org, supplierId, documentId]);
         if (!document.rowCount) { await client.query("ROLLBACK"); return sendError(res, 400, "SUPPLIER_DOCUMENT_INVALID", "This document is unavailable for this supplier."); }
       }
@@ -385,15 +301,16 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, { id: inserted.rows[0].id, occurredAt: inserted.rows[0].occurred_at }, 201);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
+      if(error instanceof DocumentAccessError)return sendError(res,error.status,error.code,error.message);
       console.error("Supplier contact note failed:", error);
       return sendError(res, 500, "SUPPLIER_CONTACT_FAILED", "Could not save the contact note. Please retry.");
     } finally { client.release(); }
   });
 
-  app.get("/api/suppliers/:id", ...supplierRead, async (req: Request, res: Response) => {
+  app.get("/api/suppliers/:id", ...supplierRead, auth.ensurePermission("suppliers", "read"), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) {
+      if (!Number.isSafeInteger(id) || id < 1 || id > 2147483647) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
 
@@ -403,48 +320,40 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         return res.status(404).json({ message: "Supplier not found" });
       }
 
-      res.json(supplier);
+      res.json(publicSupplierProfile(supplier));
     } catch (error) {
       console.error("Error fetching supplier:", error);
       res.status(500).json({ message: "Failed to fetch supplier" });
     }
   });
 
-  app.post("/api/suppliers", ...supplierWrite, async (req: Request, res: Response) => {
+  const rejectSupplierDecisionFields = (req: Request, res: Response, next: import("express").NextFunction) => {
+    if (hasSupplierDecisionFields(req.body)) {
+      return sendError(res, 409, "SUPPLIER_DECISION_FIELDS_PROTECTED", "Supplier ownership and approval evidence are managed by the server. Use the supplier approval and compliance workflows.");
+    }
+    next();
+  };
+
+  app.post("/api/suppliers", ...supplierWrite, auth.ensurePermission("suppliers", "create"), rejectSupplierDecisionFields, async (req: Request, res: Response) => {
     try {
-      if (["bankName", "bankAccountNumber", "bankSwift"].some((field) => Object.prototype.hasOwnProperty.call(req.body ?? {}, field))) {
+      if (hasSupplierBankingFields(req.body)) {
         return sendError(res, 409, "SUPPLIER_BANK_GOVERNANCE_REQUIRED", "Supplier banking details must be created through the governed supplier-bank workflow.", {
           hint: "Create the supplier first, then submit a supplier-bank Master Data change request for independent verification and approval.",
         });
       }
-      const validatedData = insertSupplierSchema.parse(req.body);
+      const validatedData = supplierProfileCommandSchema.parse(req.body);
       const supplierType = String(validatedData.supplierType ?? "goods").trim().toLowerCase();
       if (!SUPPLIER_TYPES.has(supplierType)) {
         return sendError(res, 400, "INVALID_SUPPLIER_TYPE", "Supplier type must be goods, service, carrier, contractor, or fuel.");
       }
 
-      // Check if supplier with this name already exists
-      const existingSupplier = await supplierRepo.findByName(validatedData.name);
-      if (existingSupplier) {
-        return res.status(400).json({ message: "Supplier with this name already exists" });
-      }
-
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const orgId = getActiveOrganizationId();
-      const newSupplier = await supplierService.create({
-        ...validatedData,
-        supplierType,
-        status: "prospective",
-        onboardingStatus: "prospective",
-        approvedAt: null,
-        approvedByUserId: null,
-        createdByUserId: userId,
-      }, userId);
-      await syncCarrierProfile(orgId, newSupplier);
-      await appendAuditEvent({ organizationId: orgId, actor: { userId }, action: "SUPPLIER_ONBOARDING_STARTED", resourceType: "supplier", resourceId: newSupplier.id, after: newSupplier, requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
-      void recordSupplierConsistencyDiagnostics(orgId, newSupplier.id);
-      res.status(201).json(newSupplier);
+      const actor = supplierCommandActor(req);
+      const newSupplier = await startSupplierOnboarding(actor, { ...validatedData, supplierType });
+      await storage.createActivityLog({ action: "Supplier Created", description: `Created supplier "${newSupplier.name}" (ID ${newSupplier.id})`, referenceType: "supplier", referenceId: newSupplier.id, userId: actor.userId }).catch(() => {});
+      void recordSupplierConsistencyDiagnostics(actor.organizationId, newSupplier.id);
+      res.status(201).json(publicSupplierProfile(newSupplier));
     } catch (error) {
+      if (error instanceof SupplierOnboardingError) return sendError(res, error.status, error.code, error.message, { details: error.details });
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
         res.status(400).json({ message: validationError.message });
@@ -458,10 +367,15 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
   const handleUpdateSupplier = async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) {
+      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
         return res.status(400).json({ message: "Invalid supplier ID" });
       }
-      const validatedData = insertSupplierSchema.partial().parse(req.body);
+      if (hasSupplierBankingFields(req.body)) {
+        return sendError(res, 409, "SUPPLIER_BANK_GOVERNANCE_REQUIRED", "Supplier banking details must be changed through the governed supplier-bank workflow.", {
+          hint: "Create a supplier-bank Master Data change request for independent verification and approval.",
+        });
+      }
+      const validatedData = supplierProfilePatchSchema.parse(req.body);
       if (validatedData.supplierType != null) {
         const supplierType = String(validatedData.supplierType).trim().toLowerCase();
         if (!SUPPLIER_TYPES.has(supplierType)) {
@@ -469,46 +383,13 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
         }
         validatedData.supplierType = supplierType;
       }
-      if (["bankName", "bankAccountNumber", "bankSwift"].some((field) => Object.prototype.hasOwnProperty.call(req.body ?? {}, field))) {
-        return sendError(res, 409, "SUPPLIER_BANK_GOVERNANCE_REQUIRED", "Supplier banking details must be changed through the governed supplier-bank workflow.", {
-          hint: "Create a supplier-bank Master Data change request for independent verification and approval.",
-        });
-      }
-      const userId = (req as Request & { user?: { id: number } }).user?.id ?? null;
-      const orgId = getActiveOrganizationId();
-      const existingSupplier = await supplierRepo.findById(id);
-      if (!existingSupplier) return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found.");
-      const requestedOnboardingStatus = String((validatedData as { onboardingStatus?: unknown }).onboardingStatus ?? "").toLowerCase();
-      if (requestedOnboardingStatus === "approved" || (String(existingSupplier.onboardingStatus).toLowerCase() !== "approved" && String((validatedData as { status?: unknown }).status ?? "").toLowerCase() === "active")) {
-        return sendError(res, 409, "SUPPLIER_APPROVAL_WORKFLOW_REQUIRED", "Prospective suppliers must be approved through the controlled onboarding action.", { hint: `Use POST /api/suppliers/${id}/approve with an independent approver and reason.` });
-      }
-      const status = String((validatedData as { status?: unknown }).status ?? "").toLowerCase();
-      if (["inactive", "blocked", "suspended", "archived"].includes(status)) {
-        const dependencies = await getSupplierWhereUsed(orgId, id);
-        if (dependencies.length > 0) {
-          await storage.createActivityLog({
-            action: "Supplier Disable Blocked",
-            description: dependencyBlockedMessage("supplier", "disable", dependencies),
-            referenceType: "supplier",
-            referenceId: id,
-            userId: userId ?? undefined,
-          }).catch(() => {});
-          return res.status(409).json({
-            code: "MASTER_DATA_RECORD_IN_USE",
-            message: dependencyBlockedMessage("supplier", "disable", dependencies),
-            hint: "Close or reassign open requisitions, POs, contracts, and AP records before disabling this supplier.",
-            details: { action: "disable", dependencies },
-          });
-        }
-      }
-      const updatedSupplier = await supplierService.update(id, validatedData, userId);
-      if (!updatedSupplier) {
-        return res.status(404).json({ message: "Supplier not found" });
-      }
-      await syncCarrierProfile(orgId, updatedSupplier);
-      void recordSupplierConsistencyDiagnostics(orgId, updatedSupplier.id);
-      res.json(updatedSupplier);
+      const actor = supplierCommandActor(req);
+      const updatedSupplier = await updateSupplierProfile(actor, id, validatedData);
+      await storage.createActivityLog({ action: "Supplier Updated", description: `Updated supplier "${updatedSupplier.name}" (ID ${id})`, referenceType: "supplier", referenceId: id, userId: actor.userId }).catch(() => {});
+      void recordSupplierConsistencyDiagnostics(actor.organizationId, updatedSupplier.id);
+      res.json(publicSupplierProfile(updatedSupplier));
     } catch (error) {
+      if (error instanceof SupplierOnboardingError) return sendError(res, error.status, error.code, error.message, { details: error.details });
       if (error instanceof ZodError) {
         const validationError = fromZodError(error);
         res.status(400).json({ message: validationError.message });
@@ -519,38 +400,24 @@ export function registerSupplierRoutes(app: Express, auth: AuthBundle): void {
     }
   };
 
-  app.put("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
-  app.patch("/api/suppliers/:id", ...supplierWrite, handleUpdateSupplier);
+  app.put("/api/suppliers/:id", ...supplierWrite, auth.ensurePermission("suppliers", "update"), rejectSupplierDecisionFields, handleUpdateSupplier);
+  app.patch("/api/suppliers/:id", ...supplierWrite, auth.ensurePermission("suppliers", "update"), rejectSupplierDecisionFields, handleUpdateSupplier);
 
-  app.post("/api/suppliers/:id/approve", ...supplierWrite, async (req: Request, res: Response) => {
+  app.post("/api/suppliers/:id/approve", ...supplierWrite, auth.ensurePermission("suppliers", "update"), rejectSupplierDecisionFields, async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      const approverId = Number(req.user?.id);
-      const reason = String(req.body?.reason ?? "").trim();
-      if (!Number.isInteger(id) || id <= 0) return sendError(res, 400, "INVALID_SUPPLIER_ID", "A valid supplier ID is required.");
-      if (reason.length < 5) return sendError(res, 400, "SUPPLIER_APPROVAL_REASON_REQUIRED", "An approval reason of at least 5 characters is required.");
-      const organizationId = getActiveOrganizationId();
-      const [supplier] = await db.select().from(supplierTable).where(and(eq(supplierTable.id, id), eq(supplierTable.organizationId, organizationId))).limit(1);
-      if (!supplier) return sendError(res, 404, "SUPPLIER_NOT_FOUND", "Supplier not found.");
-      if (supplier.createdByUserId === approverId) return sendError(res, 403, "SEGREGATION_OF_DUTIES_VIOLATION", "The supplier onboarding maker cannot approve their own supplier.", { hint: "Ask another authorized manager or administrator to complete approval." });
-      if (!supplier.defaultCurrencyCode || !supplier.paymentTermsId || !supplier.taxCodeId) {
-        return sendError(res, 409, "SUPPLIER_ONBOARDING_INCOMPLETE", "Supplier currency, payment terms, and tax code are required before approval.", { details: { missing: [!supplier.defaultCurrencyCode && "defaultCurrencyCode", !supplier.paymentTermsId && "paymentTermsId", !supplier.taxCodeId && "taxCodeId"].filter(Boolean) } });
-      }
-      if (supplier.isOnceOff && (!supplier.onceOffExpiresAt || supplier.onceOffExpiresAt.getTime() <= Date.now())) {
-        return sendError(res, 409, "ONCE_OFF_SUPPLIER_EXPIRY_REQUIRED", "Once-off suppliers require a future expiration date before approval.");
-      }
-      const [organization] = await db.select({ countryCode: organizations.countryCode }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
-      const pack = getCountryPack(organization?.countryCode);
-      const documents = await db.select().from(mdmSupplierDocuments).where(and(eq(mdmSupplierDocuments.organizationId, organizationId), eq(mdmSupplierDocuments.supplierId, id)));
-      const validDocumentTypes = new Set(documents.filter((document) => String(document.status).toLowerCase() === "approved" && (!document.expiryDate || document.expiryDate.getTime() > Date.now())).map((document) => document.documentType));
-      const missingDocuments = pack.supplierCompliance.filter((documentType) => !validDocumentTypes.has(documentType));
-      if (missingDocuments.length > 0) return sendError(res, 409, "SUPPLIER_COMPLIANCE_INCOMPLETE", `Supplier is missing ${pack.name} compliance evidence.`, { hint: "Upload and approve the required compliance documents in Master Data.", details: { missingDocuments } });
-      const [approved] = await db.update(supplierTable).set({ status: "active", onboardingStatus: "approved", approvedAt: new Date(), approvedByUserId: approverId, complianceStatus: "compliant", updatedAt: new Date() }).where(and(eq(supplierTable.id, id), eq(supplierTable.organizationId, organizationId))).returning();
-      await syncCarrierProfile(organizationId, approved);
-      await appendAuditEvent({ organizationId, actor: { userId: approverId }, action: "SUPPLIER_ONBOARDING_APPROVED", resourceType: "supplier", resourceId: id, before: supplier, after: approved, reason, requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
-      return res.json(approved);
+      const { organizationId, userId: approverId, correlationId } = getTenantContext();
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+      const expectedRevision = req.body?.expectedRevision;
+      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) return sendError(res, 400, "INVALID_SUPPLIER_ID", "A valid supplier ID is required.");
+      if (reason.length < 5 || reason.length > 1000) return sendError(res, 400, "SUPPLIER_APPROVAL_REASON_REQUIRED", "An approval reason of 5–1000 characters is required.");
+      if (typeof expectedRevision !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(expectedRevision)) return sendError(res, 400, "SUPPLIER_PROFILE_REVISION_REQUIRED", "Reload and review the supplier profile before approval.");
+      const approved = await approveSupplierOnboarding({ organizationId, supplierId: id, approverId, reason, expectedRevision, requestId: correlationId, ipAddress: req.ip, userAgent: req.get("user-agent") ?? null });
+      return res.json(publicSupplierProfile(approved));
     } catch (error) {
-      console.error("Error approving supplier onboarding:", error);
+      if (error instanceof SupplierOnboardingError) return sendError(res, error.status, error.code, error.message, { details: error.details });
+      if (error instanceof Error && "status" in error && "code" in error && typeof error.status === "number" && typeof error.code === "string") return sendError(res, error.status, error.code, error.message);
+      console.error("Supplier onboarding transaction failed", { code: (error as { code?: string } | null)?.code ?? "UNKNOWN" });
       return sendError(res, 500, "SUPPLIER_APPROVAL_FAILED", "Supplier approval could not be completed.");
     }
   });

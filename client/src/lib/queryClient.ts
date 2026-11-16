@@ -505,6 +505,7 @@ export async function invTrackFetch<T>(
       }
       const msg = formatServerErrorPayload(payload) ?? res.statusText;
       scheduleAuthInvalidateOn401(res.status, method, url);
+      const requestId = res.headers.get("X-Request-Id") ?? getRequestIdFromPayload(payload);
       reportRequestError({
         method,
         url,
@@ -512,12 +513,12 @@ export async function invTrackFetch<T>(
         reason: msg,
         payload,
         requestPayload: data,
-        requestId: res.headers.get("X-Request-Id") ?? undefined,
+        requestId,
         payloadSummary: summarizeRequestPayload(data),
         stack: isDevRuntime ? new Error().stack : undefined,
         durationMs,
       });
-      const err = attachRequestId(new Error(userFacingError({ message: msg, status: res.status, code: extractApiErrorCode(payload) })), res.headers.get("X-Request-Id")) as Error & {
+      const err = attachRequestId(new Error(userFacingError({ message: msg, status: res.status, code: extractApiErrorCode(payload) })), requestId) as Error & {
         status?: number;
         code?: string;
         details?: unknown;

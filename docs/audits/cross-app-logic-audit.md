@@ -135,17 +135,17 @@ The AST inventory and contract-model tests prove route discovery, duplicate-path
 
 - Capability: `supplier_bank.change`
 - Entry points: Suppliers edit sheet -> PATCH /api/suppliers/:id ↔ Master Data supplier-banks change-request workflow
-- Files and lines: `client/src/pages/suppliers.tsx:410`, `server/modules/suppliers/register-supplier-routes.ts:296`, `server/modules/suppliers/register-supplier-routes.ts:324`, `server/modules/master-data/mdm-domain-registry.ts:104`
-- Routes: `POST/PATCH /api/suppliers/:id`, `/api/mdm/change-requests`
-- Permissions: supplierWrite rejects governed fields; master-data:read + supplier-bank:manage / maker-checker
-- Services: supplierService.update, MDM change request service
+- Files: `client/src/pages/suppliers.tsx`, `server/modules/suppliers/register-supplier-routes.ts`, `server/modules/suppliers/supplier-onboarding.ts`, `server/modules/master-data/mdm-domain-registry.ts`
+- Routes: `POST /api/suppliers`, `PUT/PATCH /api/suppliers/:id`, `/api/mdm/change-requests`
+- Permissions: supplierWrite + suppliers:create/update; governed fields rejected; master-data:read + supplier-bank:manage / maker-checker
+- Services: startSupplierOnboarding, updateSupplierProfile, MDM change request service
 - Tables: suppliers, mdm_supplier_bank_accounts, mdm_change_requests
 - Expected rule: Supplier bank changes use the governed supplier-bank domain with independent approval, verification state, masked account data, tenant scope, and audit evidence.
-- Actual behaviour: Generic supplier create/update returns SUPPLIER_BANK_GOVERNANCE_REQUIRED when bank fields are present; the supplier form omits those fields and links to governed supplier-bank Master Data.
+- Actual behaviour: Generic supplier create/update and its PostgreSQL compatibility commands reject bank fields and snake-case aliases before writing. The supplier form omits these fields and links to governed Master Data.
 - Why this does not/may make sense: Supplier profile maintenance and payment-destination governance now have separate, explicit control planes.
-- Impact: Generic supplier editing can no longer redirect supplier payments.
-- Reproduction: Submit bankName through generic supplier create/update and expect 409 → Use the supplier-bank Master Data maker-checker workflow
-- Test evidence: test:cross-path-invariants: supplier-bank direct-write contract
+- Impact: Generic supplier profile commands cannot overwrite bank fields.
+- Reproduction: Submit bankName or bank_name through generic supplier create/update and expect 409 → Repeat via compatibility storage and verify no state or audit changes → Use the supplier-bank Master Data maker-checker workflow
+- Test evidence: test:cross-path-contracts and test:supplier-carrier-profile (disposable HTTP and storage denial).
 - Canonical path: supplier-banks MDM change request -> approve -> apply
 - Retain/restrict/redirect/deprecate/remove: resolved; generic profile rejects bank fields and UI redirects to governed workflow
 

@@ -11,7 +11,9 @@ import {
   governedApprovalEntityTypes,
   isGovernedApprovalEntityType,
 } from "../../services/approval-workflow-service";
-import { getActiveOrganizationId } from "../../organization-context";
+import { getActiveOrganizationId, getTenantContext } from "../../organization-context";
+import {runDocumentRetention} from "../documents/document-retention";
+import { documentAccess, DocumentAccessError } from "../documents/document-access";
 import { getCanonicalReportingCurrencyCode } from "../../lib/org-reporting-money";
 import {
   insertApprovalPolicySchema,
@@ -217,7 +219,7 @@ function governedMdmFields(domain: string, payload: Record<string, unknown>): st
 
 function requireGovernedMdmChange(res: Response, domain: string, payload: Record<string, unknown>) {
   const fields = governedMdmFields(domain, payload);
-  if (fields.length === 0) return false;
+  if (fields.length === 0 && domain !== "supplier-documents") return false;
   sendError(
     res,
     409,
@@ -306,11 +308,22 @@ function buildDependencyBlockedErrorMessage(
 export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
   const masterRead = [auth.ensureAuthenticated];
   const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const complianceDomain = (domain: string) => ["supplier-documents", "supplier-compliance-documents"].includes(domain);
+  async function canReviewCompliance() {
+    const client = await pool.connect();
+    try {
+      const access = await documentAccess(client, getTenantContext());
+      return access.types.includes("supplier") && (await access.can("suppliers", "update") || await access.can("suppliers", "manage"));
+    } catch (error) {
+      if (error instanceof DocumentAccessError) return false;
+      throw error;
+    } finally { client.release(); }
+  }
 
   app.get("/api/master-data/overview", ...masterRead, async (_req: Request, res: Response) => {
     try {
       res.setHeader("Cache-Control", "private, no-store");
-      return sendOk(res, await getMasterDataGovernanceOverview(getActiveOrganizationId()));
+      return sendOk(res, await getMasterDataGovernanceOverview(getActiveOrganizationId(), await canReviewCompliance()));
     } catch (error) {
       console.error("Error building Master Data governance overview:", error);
       return sendError(res, 500, "MASTER_DATA_OVERVIEW_FAILED", "Master Data governance could not be summarized.", {
@@ -384,6 +397,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
   function requireMdmPermission(domainInput: string | ((req: Request) => string), action: MdmPermissionAction): RequestHandler {
     return async (req: Request, res: Response, next) => {
       const domain = typeof domainInput === "function" ? domainInput(req) : domainInput;
+      if (complianceDomain(domain) && !(await canReviewCompliance().catch(() => false))) return sendError(res, 403, "SUPPLIER_COMPLIANCE_ACCESS_DENIED", "Current supplier stewardship and document access are required.");
       const requiredPermissions = requiredPermissionsForDomain(domain, action);
       for (const permission of requiredPermissions) {
         const aliases = resolvePermissionAliases(permission);
@@ -411,6 +425,10 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       return false;
     }
     const domain = String((change as { domain?: unknown }).domain ?? "");
+    if (complianceDomain(domain) && !await canReviewCompliance()) {
+      sendError(res, 403, "SUPPLIER_COMPLIANCE_ACCESS_DENIED", "Current supplier stewardship and document access are required.");
+      return false;
+    }
     const requiredPermissions = requiredPermissionsForDomain(domain, action);
     for (const permission of requiredPermissions) {
       const aliases = resolvePermissionAliases(permission);
@@ -523,7 +541,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
 
   app.get("/api/mdm/change-requests", ...masterRead, async (_req: Request, res: Response) => {
     try {
-      return sendOk(res, await listMdmChangeRequests(getActiveOrganizationId()));
+      return sendOk(res, await listMdmChangeRequests(getActiveOrganizationId(), await canReviewCompliance()));
     } catch (error) {
       console.error("Error listing MDM change requests:", error);
       return sendError(res, 500, "MDM_CHANGE_REQUEST_LIST_FAILED", "Failed to list MDM change requests");
@@ -536,6 +554,7 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
       if (!Number.isFinite(id)) return sendError(res, 400, "INVALID_ID", "Invalid change request ID");
       const change = await getMdmChangeRequest(getActiveOrganizationId(), id);
       if (!change) return sendError(res, 404, "NOT_FOUND", "MDM change request not found");
+      if (complianceDomain(String((change as { domain?: unknown }).domain ?? "")) && !await canReviewCompliance()) return sendError(res, 404, "NOT_FOUND", "MDM change request not found");
       return sendOk(res, change);
     } catch (error) {
       console.error("Error fetching MDM change request:", error);
@@ -1616,30 +1635,10 @@ export function registerMasterDataRoutes(app: Express, auth: AuthBundle): void {
 
   app.post("/api/retention-policies/run", ...masterWrite, async (_req: Request, res: Response) => {
     try {
-      const policies = await db.select().from(retentionPolicies);
-      let archivedCount = 0;
-      for (const policy of policies as any[]) {
-        const years = Number(policy.retentionYears ?? 0);
-        if (!Number.isFinite(years) || years <= 0) continue;
-        const cutoff = new Date();
-        cutoff.setFullYear(cutoff.getFullYear() - years);
-        const updatedRows = (await db
-          .update(documents)
-          .set({ archivedAt: new Date() } as any)
-          .where(
-            and(
-              eq(documents.entityType, String(policy.documentType ?? "")),
-              isNull(documents.archivedAt),
-              lte(documents.uploadedAt, cutoff),
-            ),
-          )
-          .returning({ id: documents.id })) as any[];
-        archivedCount += updatedRows.length;
-      }
-      return sendOk(res, { archivedCount });
+      return sendOk(res,await runDocumentRetention(pool,getTenantContext(),String(res.locals.requestId??"unknown-request-id")));
     } catch (error) {
-      console.error("Error running retention policy job:", error);
-      return sendError(res, 500, "RETENTION_RUN_FAILED", "Failed to run retention policies");
+      if(error instanceof DocumentAccessError)return sendError(res,error.status,error.code,error.message);
+      return sendError(res,503,"RETENTION_RUN_FAILED","Authorized retention could not be completed. No partial archive was committed. Retry or give your administrator the request ID.");
     }
   });
 

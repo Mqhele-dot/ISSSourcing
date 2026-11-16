@@ -36,6 +36,7 @@ import {
 import { format } from 'date-fns';
 import { REPORTING_CURRENCY_FALLBACK_CODE } from "../lib/org-reporting-money";
 import {buildGenericSummaryMetrics} from "./operational-report-summary";
+import {publicSupplierProfile} from "../../shared/supplier-public-profile";
 
 // ——— Shared PDF layout (matches app style: ISSSourcing, accent blue, clean table) ———
 const PDF_LAYOUT = {
@@ -1724,7 +1725,8 @@ export async function generateSupplierProfilePdf(
   const ph = PDF_LAYOUT.pageHeight;
   const page = pdfDoc.addPage([pw, ph]);
   drawPdfReportHeader(page, title, font, boldFont);
-  let y = ph - PDF_LAYOUT.headerHeight - 16;
+  // Clear the shared title/date/rule band before metadata and profile content.
+  let y = ph - PDF_LAYOUT.headerHeight - PDF_LAYOUT.margin;
   if (metadataLines.length) y = drawPdfExtraMetadataLines(page, font, metadataLines, y) - 8;
 
   page.drawText(sanitizePdfText(`Supplier profile: ${supplier.name}`), {
@@ -1754,9 +1756,8 @@ export async function generateSupplierProfilePdf(
   y -= 4;
   page.drawText("Banking", { x: PDF_LAYOUT.margin, y, size: 11, font: boldFont, color: PDF_LAYOUT.accent });
   y -= 16;
-  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Bank", String(supplier.bankName ?? "—"), w);
-  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Account", String(supplier.bankAccountNumber ?? "—"), w);
-  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "SWIFT", String(supplier.bankSwift ?? "—"), w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Governed workflow", "Review Supplier Banks in Master Data with an authorized steward.", w);
+  y = drawLabelValueColumn(page, boldFont, font, PDF_LAYOUT.margin, y, "Payment instruction", "This supplier profile is not a verified beneficiary or payment instruction.", w);
   y -= 4;
   page.drawText("Compliance & notes", { x: PDF_LAYOUT.margin, y, size: 11, font: boldFont, color: PDF_LAYOUT.accent });
   y -= 16;
@@ -1779,7 +1780,7 @@ export async function generateSupplierProfilePdf(
     PDF_LAYOUT.margin,
     y,
     "Summary",
-    "File versions and retention are tracked in ISSSourcing (Supplier → Documents). This PDF summarizes master-data fields only.",
+    "File versions and retention are tracked in ISSSourcing (Supplier / Documents). This PDF summarizes master-data fields only.",
     w,
   );
 
@@ -2365,7 +2366,7 @@ export async function generateDocument(
   const columns = getReportColumns(reportType);
   const entry = getReportExportEntry(reportType);
   const pdfTemplate = options?.pdfTemplate === "custom" ? "standard" : (options?.pdfTemplate ?? "standard");
-  const normalizedData = Array.isArray(data) ? data : [];
+  const normalizedData = Array.isArray(data) ? (reportType === "suppliers" ? data.map(publicSupplierProfile) : data) : [];
   const metadataLines = options?.metadataLines ?? [];
 
   const prevFooter = activePdfOrganizationFooter;

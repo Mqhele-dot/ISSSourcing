@@ -52,7 +52,13 @@ test('ordinary users cannot retrieve technical diagnostic evidence',async({page}
 
 test('historical AP filters preserve entered dates and apply only on confirmation',async({page})=>{
   test.setTimeout(90000);requireDisposableE2eDatabase();
+  const current=page.waitForResponse(r=>{
+    const url=new URL(r.url());
+    return url.pathname==='/api/v2/ap/aging'&&!url.searchParams.has('asOf')&&r.request().method()==='GET';
+  },{timeout:25_000});
   await gotoAuthed(page,'/finance/accounts-payable/aging');
+  const currentResponse=await current;
+  expect(currentResponse.status(),`Current AP observation ${currentResponse.headers()['x-request-id']??'unknown'}`).toBe(200);
   const date=page.getByLabel('As-of date (blank means current)',{exact:true});
   const apply=page.getByRole('button',{name:'Apply AP filters',exact:true});
   await expect(apply).toBeEnabled();
@@ -80,6 +86,7 @@ test('AP reporting explains failures and recovers through retry without losing e
   const report=page.getByRole('region',{name:'AP balance reporting',exact:true});
   await expect(report.getByRole('alert')).toContainText('AP reporting is unavailable'); // 1
   await expect(report.getByRole('alert')).not.toContainText('AP_AGING_UNAVAILABLE'); // 2
+  await expect(report.getByRole('alert')).toContainText('Request ID: test-owned-report-failure');
   await expect(report.getByRole('region',{name:'Financial measures',exact:true})).toHaveCount(0); // 3: no invented totals
   await expect(report.getByRole('button',{name:'Retry AP report',exact:true})).toBeEnabled(); // 4
   const retryFailure=page.waitForResponse(r=>endpoint.test(r.url())&&r.status()===503);

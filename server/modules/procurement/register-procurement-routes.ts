@@ -2,7 +2,9 @@ import type { Express, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { ZodError, z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import type { PoolClient } from "pg";
 import { storage } from "../../storage";
 import { db, pool } from "../../db";
 import { sendError, sendFunctionError, sendOk } from "../../api-response";
@@ -25,6 +27,8 @@ import {
   mdmCostCentres,
   mdmProcurementPolicies,
   purchaseOrders,
+  purchaseOrderItems,
+  purchaseRequisitions,
   sourcingAwards,
   sourcingEvents,
   workflowIdempotency,
@@ -39,10 +43,13 @@ import { canUpdatePurchaseOrder } from "@shared/purchase-order-status";
 import { getActiveOrganizationId } from "../../organization-context";
 import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "./supplier-defaults";
 import { validatePurchaseOrderWorkflowReadiness } from "./po-validation";
+import { lockConversionRequisition, writeRequisitionPurchaseOrder } from "./requisition-po-conversion";
+import { transferRequisitionBudget } from "./requisition-budget-transfer";
 import { validateMdmTransaction } from "../master-data/mdm-control-centre";
 import type { AuthBundle } from "./types";
 import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
 import { appendAuditEvent } from "../../services/audit-chain-service";
+import { appendAuditEventWithClient } from "../../services/audit-chain-client";
 import { authorizeApprovalStep } from "../../services/approval-workflow-service";
 
 async function resolveWorkflowReplay(input: {
@@ -94,9 +101,10 @@ async function assertRequisitionSourcingEvidence(input: {
   organizationId: number;
   requisitionId: number;
   reportingValue: number;
-}): Promise<{ ok: true } | { ok: false; code: string; message: string; hint: string }> {
-  const policies = await db
-    .select({ config: mdmProcurementPolicies.config })
+}, database: Pick<typeof db, "select"> = db) {
+  const policies = await database
+    .select({ id: mdmProcurementPolicies.id, code: mdmProcurementPolicies.code,
+      updatedAt: mdmProcurementPolicies.updatedAt, config: mdmProcurementPolicies.config })
     .from(mdmProcurementPolicies)
     .where(
       and(
@@ -104,14 +112,16 @@ async function assertRequisitionSourcingEvidence(input: {
         eq(mdmProcurementPolicies.policyType, "sourcing"),
         eq(mdmProcurementPolicies.active, true),
       ),
-    );
-  const policy = policies
-    .map((row) => row.config ?? {})
-    .find((config) => config.competitionRequired === true || config.competitionRequired === "true");
-  const threshold = Number(policy?.competitionThreshold ?? Number.POSITIVE_INFINITY);
-  if (!Number.isFinite(threshold) || input.reportingValue < threshold) return { ok: true };
-  const evidence = await db
-    .select({ eventId: sourcingEvents.id, eventNumber: sourcingEvents.eventNumber, awardStatus: sourcingAwards.status })
+    ).orderBy(asc(mdmProcurementPolicies.id)).for("share");
+  const policy = policies.find(({ config }) => config?.competitionRequired === true || config?.competitionRequired === "true");
+  const threshold = Number(policy?.config?.competitionThreshold ?? Number.POSITIVE_INFINITY);
+  const decision = { requisitionId: input.requisitionId, reportingValue: input.reportingValue,
+    threshold: Number.isFinite(threshold) ? threshold : null,
+    policy: policy ? { id: policy.id, code: policy.code, updatedAt: policy.updatedAt.toISOString() } : null };
+  if (!Number.isFinite(threshold) || input.reportingValue < threshold) return { ok: true as const,
+    decision: { ...decision, outcome: !policy ? "not_configured" : !Number.isFinite(threshold) ? "threshold_unavailable" : "below_threshold", award: null } };
+  const evidence = await database
+    .select({ eventId: sourcingEvents.id, awardId: sourcingAwards.id, awardStatus: sourcingAwards.status, awardVersion: sourcingAwards.version })
     .from(sourcingEvents)
     .innerJoin(
       sourcingAwards,
@@ -125,12 +135,13 @@ async function assertRequisitionSourcingEvidence(input: {
         eq(sourcingEvents.organizationId, input.organizationId),
         eq(sourcingEvents.requisitionId, input.requisitionId),
       ),
-    );
-  if (evidence.some((row) => ["APPROVED", "CONVERTED"].includes(String(row.awardStatus).toUpperCase()))) {
-    return { ok: true };
+    ).orderBy(asc(sourcingAwards.id));
+  const award = evidence.find((row) => ["APPROVED", "CONVERTED"].includes(String(row.awardStatus).toUpperCase()));
+  if (award) {
+    return { ok: true as const, decision: { ...decision, outcome: "award_found", award } };
   }
   return {
-    ok: false,
+    ok: false as const,
     code: "RFQ_EVIDENCE_REQUIRED",
     message: `This requisition exceeds the competitive sourcing threshold of ${threshold.toFixed(2)} in reporting currency.`,
     hint: "Create an RFQ, obtain compliant supplier responses, and complete independent award approval before PO conversion.",
@@ -1062,12 +1073,13 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   });
 
   app.post("/api/purchase-requisitions/:id/convert", ...poWrite, async (req: Request, res: Response) => {
+    let client: PoolClient | undefined;
+    let committed = false;
     try {
       const id = Number(req.params.id);
-      if (isNaN(id)) {
-        return sendFunctionError(res, 400, "convertPurchaseRequisitionToPO", "Invalid purchase requisition ID");
+      if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+        return sendError(res, 400, "INVALID_ID", "Invalid purchase requisition ID");
       }
-      
       const organizationId = getActiveOrganizationId();
       const idempotencyKey = String(req.get("Idempotency-Key") ?? "").trim();
       if (process.env.NODE_ENV === "production" && !idempotencyKey) {
@@ -1075,120 +1087,75 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
           hint: "Retry with one stable unique key for this conversion action.",
         });
       }
+
+      client = await pool.connect();
+      await client.query("BEGIN");
+      await client.query("SET LOCAL statement_timeout='10s'");
+      const transactionDb = drizzle(client);
+      const requisition = await lockConversionRequisition(transactionDb, organizationId, id);
+      if (!requisition) return sendError(res, 404, "REQUISITION_NOT_FOUND", "Purchase requisition not found.");
+
       if (idempotencyKey) {
-        const [duplicate] = await db
-          .select()
-          .from(workflowIdempotency)
-          .where(
-            and(
-              eq(workflowIdempotency.organizationId, organizationId),
-              eq(workflowIdempotency.idempotencyKey, idempotencyKey),
-            ),
-          )
-          .limit(1);
-        if (duplicate) {
-          if (duplicate.action !== "REQUISITION_CONVERT_TO_PO") {
-            return sendError(res, 409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key belongs to another workflow action.");
+        const [replay] = await transactionDb.select().from(workflowIdempotency).where(and(
+          eq(workflowIdempotency.organizationId, organizationId), eq(workflowIdempotency.idempotencyKey, idempotencyKey)));
+        if (replay) {
+          const orderId = Number((replay.response as Record<string, unknown> | null)?.purchaseOrderId ?? 0);
+          const [existing] = replay.action === "REQUISITION_CONVERT_TO_PO" && Number.isInteger(orderId) && orderId > 0
+            ? await transactionDb.select().from(purchaseOrders).where(and(eq(purchaseOrders.id, orderId),
+              eq(purchaseOrders.organizationId, organizationId), eq(purchaseOrders.requisitionId, id)))
+            : [];
+          if (!existing || replay.resourceId !== existing.id) {
+            return sendError(res, 409, "IDEMPOTENCY_KEY_REUSED", "This key belongs to a different workflow action or requisition.");
           }
-          const purchaseOrderId = Number((duplicate.response as Record<string, unknown> | null)?.purchaseOrderId ?? 0);
-          const existingOrder = purchaseOrderId ? await storage.getPurchaseOrder(purchaseOrderId) : undefined;
-          if (existingOrder) return sendOk(res, { ...existingOrder, duplicate: true });
+          return sendOk(res, { ...existing, duplicate: true });
         }
       }
-      const requisition = await storage.getPurchaseRequisition(id);
-      if (!requisition) return sendError(res, 404, "REQUISITION_NOT_FOUND", "Purchase requisition not found.");
+
+      if (requisition.status !== PurchaseRequisitionStatus.APPROVED) {
+        return sendError(res, 409, "REQUISITION_NOT_APPROVED", "Only an approved requisition can be converted.");
+      }
       const sourcingEvidence = await assertRequisitionSourcingEvidence({
-        organizationId,
-        requisitionId: id,
+        organizationId, requisitionId: id,
         reportingValue: Number(requisition.totalAmount ?? 0) * Number(requisition.exchangeRateToZar ?? 1),
-      });
+      }, transactionDb);
       if (!sourcingEvidence.ok) {
         return sendError(res, 409, sourcingEvidence.code, sourcingEvidence.message, { hint: sourcingEvidence.hint });
       }
-      const purchaseOrder = await storage.createPurchaseOrderFromRequisition(id);
 
-      if (!purchaseOrder) {
-        return sendError(
-          res,
-          404,
-          "CONVERT_REQUISITION_FAILED",
-          "Could not convert: the requisition must exist, be approved, and have valid lines and supplier.",
-        );
-      }
+      const userId = Number(req.user?.id);
+      const actorUserId = Number.isInteger(userId) && userId > 0 ? userId : null;
+      const { order, supplierDecision } = await writeRequisitionPurchaseOrder(transactionDb, requisition, { actorUserId, canonical: true });
+      const transferred = await transferRequisitionBudget(client, organizationId, id, order.id);
 
-      const actorUserId = Number(req.user?.id);
-      const [attributedOrder] = await db
-        .update(purchaseOrders)
-        .set({ createdByUserId: Number.isInteger(actorUserId) && actorUserId > 0 ? actorUserId : null, updatedAt: new Date() })
-        .where(and(eq(purchaseOrders.id, purchaseOrder.id), eq(purchaseOrders.organizationId, organizationId)))
-        .returning();
-      const commitmentClient = await pool.connect();
-      try {
-        await commitmentClient.query("BEGIN");
-        const commitment = await commitmentClient.query(
-          `UPDATE budget_commitments SET status='TRANSFERRED',updated_at=now()
-           WHERE organization_id=$1 AND source_type='REQUISITION' AND source_id=$2 AND status='ACTIVE'
-           RETURNING id,budget_id,amount,currency_code`,
-          [organizationId, id],
-        );
-        if (commitment.rows[0]) {
-          await commitmentClient.query(
-            `INSERT INTO budget_commitments
-              (organization_id,budget_id,source_type,source_id,parent_commitment_id,amount,currency_code,status)
-             VALUES ($1,$2,'PURCHASE_ORDER',$3,$4,$5,$6,'ACTIVE')
-             ON CONFLICT (organization_id,source_type,source_id) DO NOTHING`,
-            [organizationId, commitment.rows[0].budget_id, purchaseOrder.id, commitment.rows[0].id, commitment.rows[0].amount, commitment.rows[0].currency_code],
-          );
-        }
-        await commitmentClient.query(
-          `UPDATE purchase_requisitions SET status='CONVERTED_TO_PO',updated_at=now()
-           WHERE id=$1 AND organization_id=$2`,
-          [id, organizationId],
-        );
-        await commitmentClient.query("COMMIT");
-      } catch (commitmentError) {
-        await commitmentClient.query("ROLLBACK");
-        throw commitmentError;
-      } finally {
-        commitmentClient.release();
-      }
+      await appendAuditEventWithClient(client, {
+        organizationId, actor: { userId: actorUserId }, action: "REQUISITION_CONVERTED_TO_PO", resourceType: "purchase_order", resourceId: order.id,
+        before: { requisitionId: id, requisitionStatus: requisition.status }, after: order,
+        details: { conversionPolicyDecision: { schemaVersion: 1, sourcing: sourcingEvidence.decision, supplier: supplierDecision,
+          budgetTransferred: Boolean(transferred), budgetTransfer: transferred } },
+        requestId: String(res.locals.requestId ?? "unknown-request-id"), ipAddress: req.ip, userAgent: req.get("user-agent") ?? null,
+      });
       if (idempotencyKey) {
-        await db.insert(workflowIdempotency).values({
-          organizationId,
-          idempotencyKey,
-          action: "REQUISITION_CONVERT_TO_PO",
-          resourceType: "purchase_order",
-          resourceId: purchaseOrder.id,
-          response: { purchaseOrderId: purchaseOrder.id },
+        await transactionDb.insert(workflowIdempotency).values({
+          organizationId, idempotencyKey, action: "REQUISITION_CONVERT_TO_PO", resourceType: "purchase_order", resourceId: order.id,
+          response: { purchaseOrderId: order.id },
         });
       }
-      await appendAuditEvent({
-        organizationId,
-        actor: { userId: actorUserId },
-        action: "REQUISITION_CONVERTED_TO_PO",
-        resourceType: "purchase_order",
-        resourceId: purchaseOrder.id,
-        before: { requisitionId: id, requisitionStatus: requisition.status },
-        after: attributedOrder ?? purchaseOrder,
-        requestId: String(res.locals.requestId ?? "unknown-request-id"),
-        ipAddress: req.ip,
-        userAgent: req.get("user-agent") ?? null,
-      });
-
-      return sendOk(res, attributedOrder ?? purchaseOrder, 201);
+      await client.query("COMMIT");
+      committed = true;
+      return sendOk(res, order, 201);
     } catch (error) {
-      const e = error as { code?: string; status?: number; message?: string };
-      if (e?.code && e?.status) {
-        return sendError(res, e.status, e.code, e.message || "Failed to convert requisition to purchase order");
+      const e = error as { code?: string; status?: number; message?: string; cause?: { code?: string } };
+      if (e.status && e.code) return sendError(res, e.status, e.code, e.message ?? "Conversion was not allowed.");
+      if (["40001", "40P01", "23505"].includes(e.cause?.code ?? e.code ?? "")) {
+        return sendError(res, 409, "REQUISITION_CONVERSION_CONFLICT", "The requisition or retry key changed while converting. Refresh and retry.");
       }
       console.error("Error converting requisition to purchase order:", error);
-      return sendFunctionError(
-        res,
-        500,
-        "convertPurchaseRequisitionToPO",
-        "Failed to convert requisition to purchase order",
-        error instanceof Error ? error.message : String(error),
-      );
+      return sendError(res, 500, "CONVERT_REQUISITION_FAILED", "Failed to convert requisition to purchase order. No changes were saved.");
+    } finally {
+      if (client) {
+        if (!committed) await client.query("ROLLBACK").catch(() => undefined);
+        client.release();
+      }
     }
   });
 
@@ -1766,6 +1733,8 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
   });
 
   app.post("/api/purchase-orders/:id/submit", ...poWrite, async (req: Request, res: Response) => {
+    let client: PoolClient | undefined;
+    let committed = false;
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) return sendError(res, 400, "INVALID_PURCHASE_ORDER_ID", "Invalid purchase order ID");
@@ -1774,47 +1743,59 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
       if (process.env.NODE_ENV === "production" && !idempotencyKey) {
         return sendError(res, 400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required for PO submission.");
       }
-      const replay = await resolveWorkflowReplay({ organizationId, idempotencyKey, action: "PURCHASE_ORDER_SUBMIT", resourceId: id });
-      if (replay?.conflict) return sendError(res, 409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key belongs to another workflow action.");
-      if (replay) {
-        const current = await storage.getPurchaseOrder(id);
-        return sendOk(res, { ...current, duplicate: true });
-      }
-      const order = await storage.getPurchaseOrder(id);
+      client = await pool.connect();
+      // The shared audit chain reads its latest predecessor after acquiring
+      // the tenant chain lock. A fixed snapshot could miss that predecessor.
+      await client.query("BEGIN");
+      await client.query("SET LOCAL statement_timeout='10s'");
+      const transactionDb = drizzle(client);
+      const scope = and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, organizationId));
+      const [order] = await transactionDb.select().from(purchaseOrders).where(scope).for("update");
       if (!order) return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+      if (idempotencyKey) {
+        const [replay] = await transactionDb.select().from(workflowIdempotency).where(and(
+          eq(workflowIdempotency.organizationId, organizationId), eq(workflowIdempotency.idempotencyKey, idempotencyKey)));
+        if (replay && (replay.action !== "PURCHASE_ORDER_SUBMIT" || replay.resourceId !== id)) {
+          return sendError(res, 409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key belongs to another workflow action.");
+        }
+        if (replay) return sendOk(res, { ...order, duplicate: true });
+      }
       if (String(order.approvalStatus).toUpperCase() !== "DRAFT") {
         return sendError(res, 409, "PO_APPROVAL_STATUS_INVALID", `Only draft POs can be submitted; current approval status is ${order.approvalStatus}.`);
       }
-      const items = await storage.getPurchaseOrderItems(id);
+      const items = await transactionDb.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id)).orderBy(asc(purchaseOrderItems.id)).for("share");
       const validation = await validatePurchaseOrderWorkflowReadiness({
         organizationId,
         currencyCode: order.currencyCode,
         taxCodeId: order.taxCodeId,
         items,
-      });
+      }, client, transactionDb);
       if (!validation.ok) return sendError(res, validation.status, validation.code, validation.message, { details: validation.details });
+      let sourcingDecision = null;
       if (order.requisitionId) {
-        const requisition = await storage.getPurchaseRequisition(order.requisitionId);
+        const [requisition] = await transactionDb.select().from(purchaseRequisitions).where(and(
+          eq(purchaseRequisitions.id, order.requisitionId), eq(purchaseRequisitions.organizationId, organizationId))).for("share");
         const evidence = await assertRequisitionSourcingEvidence({
           organizationId,
           requisitionId: order.requisitionId,
           reportingValue: Number(requisition?.totalAmount ?? order.totalAmount) * Number(requisition?.exchangeRateToZar ?? 1),
-        });
+        }, transactionDb);
         if (!evidence.ok) return sendError(res, 409, evidence.code, evidence.message, { hint: evidence.hint });
+        if (requisition) sourcingDecision = evidence.decision;
       }
-      const [updated] = await db
+      const [updated] = await transactionDb
         .update(purchaseOrders)
         .set({ status: "OPEN", approvalStatus: "PENDING", updatedAt: new Date() })
-        .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, organizationId), eq(purchaseOrders.approvalStatus, "DRAFT")))
+        .where(scope)
         .returning();
       if (!updated) return sendError(res, 409, "PO_CONCURRENT_UPDATE", "The PO changed while it was being submitted. Refresh and retry.");
-      await db.insert(approvalHistory).values({
+      await transactionDb.insert(approvalHistory).values({
         organizationId, entityType: "purchase_order", entityId: id, level: 0,
         action: "submitted", performedBy: Number(req.user?.id),
         previousStatus: String(order.approvalStatus), newStatus: "PENDING",
         comment: typeof req.body?.reason === "string" ? req.body.reason : null,
       } as any);
-      await appendAuditEvent({
+      await appendAuditEventWithClient(client, {
         organizationId,
         actor: { userId: Number(req.user?.id) },
         action: "PURCHASE_ORDER_SUBMITTED",
@@ -1822,22 +1803,31 @@ export function registerProcurementRoutes(app: Express, auth: AuthBundle): void 
         resourceId: id,
         before: order,
         after: updated,
+        details: { submissionPolicyDecision: { schemaVersion: 1, readiness: validation.decision, sourcing: sourcingDecision } },
         reason: typeof req.body?.reason === "string" ? req.body.reason : null,
         requestId: String(res.locals.requestId ?? "unknown-request-id"),
         ipAddress: req.ip,
         userAgent: req.get("user-agent") ?? null,
       });
-      await recordWorkflowResult({
-        organizationId,
-        idempotencyKey,
-        action: "PURCHASE_ORDER_SUBMIT",
-        resourceId: id,
+      if (idempotencyKey) await transactionDb.insert(workflowIdempotency).values({
+        organizationId, idempotencyKey, action: "PURCHASE_ORDER_SUBMIT", resourceType: "purchase_order", resourceId: id,
         response: { purchaseOrderId: id, approvalStatus: updated.approvalStatus },
       });
+      await client.query("COMMIT");
+      committed = true;
       return sendOk(res, updated);
     } catch (error) {
+      const code = (error as { code?: string; cause?: { code?: string } }).cause?.code ?? (error as { code?: string }).code;
+      if (code === "40001" || code === "40P01" || code === "23505") {
+        return sendError(res, 409, "PO_CONCURRENT_UPDATE", "The PO or retry key changed while submitting. Refresh and retry.");
+      }
       console.error("Error submitting purchase order:", error);
       return sendError(res, 500, "PO_SUBMIT_FAILED", "Purchase order could not be submitted for approval.");
+    } finally {
+      if (client) {
+        if (!committed) await client.query("ROLLBACK").catch(() => undefined);
+        client.release();
+      }
     }
   });
 

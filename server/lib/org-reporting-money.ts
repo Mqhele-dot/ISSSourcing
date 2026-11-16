@@ -34,14 +34,14 @@ export function reportingCurrencyCodeFromAppSettings(settings: AppSettings | nul
  * so reads prefer the tenant settings row until the next settings save repairs
  * both records atomically.
  */
-export async function getCanonicalReportingCurrencyCode(organizationId = getActiveOrganizationId()): Promise<string> {
+export async function getCanonicalReportingCurrencyCode(organizationId = getActiveOrganizationId(), database: Pick<typeof db, "select"> = db): Promise<string> {
   const [settingsRows, organizationRows] = await Promise.all([
-    db
+    database
       .select({ currencyCode: appSettings.currencyCode })
       .from(appSettings)
       .where(eq(appSettings.organizationId, organizationId))
       .limit(1),
-    db
+    database
       .select({ defaultCurrencyCode: organizations.defaultCurrencyCode })
       .from(organizations)
       .where(eq(organizations.id, organizationId))

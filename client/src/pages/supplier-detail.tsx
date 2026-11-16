@@ -1,4 +1,4 @@
-import { useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { requestJson } from "@/lib/queryClient";
@@ -13,8 +13,13 @@ import { parseSupplierRouteId, SUPPLIER_DETAIL_ROUTE_PATTERN } from "@/lib/suppl
 import { SupplierCommunications } from "./supplier-communications";
 import { FinancialMeasuresPanel } from "@/components/financial-measures-panel";
 import { ApAgingPanel } from "@/pages/accounts-payable/ap-aging-panel";
+import { SupplierDeliveryScorecard } from "./suppliers/supplier-delivery-scorecard";
+import { SupplierComplianceEvidence } from "./suppliers/supplier-compliance-evidence";
+import { SUPPLIER_BANKING_GUIDANCE } from "@shared/supplier-public-profile";
+import { usePermissions } from "@/hooks/use-permissions";
 
 export default function SupplierDetailPage() {
+  const { hasPermission } = usePermissions();
   const [, setLocation] = useLocation();
   const [, params] = useRoute<{ id: string }>(SUPPLIER_DETAIL_ROUTE_PATTERN);
   const parsed = parseSupplierRouteId(params?.id);
@@ -53,7 +58,7 @@ export default function SupplierDetailPage() {
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6" data-testid="supplier-detail-page">
       <PageHeader
         title={isLoading ? "Supplier" : data?.name ?? "Supplier"}
-        description="Supplier profile and receipt inspection policy. Use the suppliers list for contact edits."
+        description="Supplier 360: contact, delivery evidence, communications and authorized financial views. Use the suppliers list for contact edits."
         breadcrumb={
           <button
             type="button"
@@ -114,10 +119,17 @@ export default function SupplierDetailPage() {
             <p>
               <span className="text-muted-foreground">Default currency:</span> {data.defaultCurrencyCode ?? "-"}
             </p>
+            <p data-testid="supplier-banking-guidance" className="rounded border p-3 text-muted-foreground">{SUPPLIER_BANKING_GUIDANCE}
+              {hasPermission("settings", "read") && (hasPermission("suppliers", "update") || hasPermission("suppliers", "manage"))
+                ? <Link className="mt-2 block underline" href="/admin/master-data">Open governed Master Data</Link>
+                : <span className="mt-2 block">Ask an authorized Master Data steward to review banking evidence.</span>}
+            </p>
           </CardContent>
         </Card>
       ) : null}
       {data&&!isError&&<InspectionRuleEditor subjectType="supplier" subjectId={id}/>}
+      {data&&!isError&&<SupplierDeliveryScorecard key={`delivery-${id}`} supplierId={id}/>}
+      {data&&!isError&&<SupplierComplianceEvidence key={`compliance-${id}`} supplierId={id} revision={String(data.updatedAt)} onboardingStatus={data.onboardingStatus}/>}
       {data&&!isError&&<SupplierCommunications supplierId={id}/>}
       {data&&!isError&&<FinancialMeasuresPanel filters={{supplierId:id}}/>}
       {data&&!isError&&<ApAgingPanel key={id} initialSupplierId={id} showDetails={false}/>}

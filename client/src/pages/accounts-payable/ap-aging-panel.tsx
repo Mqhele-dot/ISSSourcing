@@ -1,6 +1,7 @@
 import {useEffect,useState} from "react";
 import {useQuery,useQueryClient} from "@tanstack/react-query";
 import {requestJson} from "@/lib/queryClient";
+import {userFacingError} from "@/lib/user-facing-error";
 import {usePermissions} from "@/hooks/use-permissions";
 import {FinancialMeasuresPanel,type FinancialMeasureSummary} from "@/components/financial-measures-panel";
 import {Card,CardContent,CardHeader,CardTitle} from "@/components/ui/card";
@@ -31,11 +32,12 @@ export function ApAgingPanel({showDetails=true,initialSupplierId}:{showDetails?:
   function refresh(){setRuns(null);void client.invalidateQueries({queryKey:["/api/v2/ap/aging"]});}
   if(permissions.isLoading)return <p role="status">Checking financial-report access…</p>;
   if(!allowed)return <p role="status">Finance and reporting read access are required for AP balances.</p>;
+  const requestId=(query.error as {requestId?:unknown}|null)?.requestId;
   return <section aria-label="AP balance reporting" className="space-y-4">
     <div className="flex flex-wrap items-end gap-3"><label className="space-y-1">As-of date (blank means current)<Input type="date" value={draftAsOf} onChange={e=>setDraftAsOf(e.target.value)}/></label><label className="space-y-1">Supplier ID (optional)<Input type="number" min="1" value={draftSupplier} onChange={e=>setDraftSupplier(e.target.value)}/></label><Button variant="outline" disabled={query.isFetching} onClick={()=>changeScope(()=>{setAsOf(draftAsOf);setSupplier(draftSupplier);})}>Apply AP filters</Button><Button variant="outline" disabled={query.isFetching} onClick={refresh}>Refresh AP observation</Button></div>
     {(draftAsOf!==asOf||draftSupplier!==supplier)?<p role="status" className="text-sm">Filter changes are not applied yet. Select Apply AP filters to update the report. Displayed figures still use the previous scope.</p>:null}
     <p className="text-sm text-muted-foreground">These reporting filters are separate from invoice/payment table filters. Historical dates require verified coverage; earlier balances are not reconstructed.</p>
-    {query.isPending?<p role="status">Preparing AP balance evidence…</p>:query.isError?<div role="alert"><p>AP reporting is unavailable. Check the date and filters, or ask an administrator to verify the AP history migration and opening coverage.</p><Button onClick={()=>void query.refetch()}>Retry AP report</Button></div>:query.data?<>
+    {query.isPending?<p role="status">Preparing AP balance evidence…</p>:query.isError?<div role="alert" className="space-y-2"><p>AP reporting is unavailable. {userFacingError(query.error)}</p>{typeof requestId==="string"&&requestId&&<p className="break-all text-xs">Request ID: {requestId}</p>}<Button disabled={query.isFetching} onClick={()=>void query.refetch()}>Retry AP report</Button></div>:query.data?<>
       <FinancialMeasuresPanel snapshot={{generatedAt:query.data.generatedAt,measures:query.data.measures}} filters={{asOf:query.data.asOf,supplierId:supplier?Number(supplier):undefined}} measures={query.data.measures.map(m=>m.measure)} onRefresh={refresh}/>
       <p className="text-xs text-muted-foreground">{query.data.notice} {query.isFetching?"Refreshing this view…":""}</p>
       {showDetails?<>

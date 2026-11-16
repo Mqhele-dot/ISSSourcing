@@ -40,9 +40,23 @@ assert.deepEqual(apMatch.middleware, aliasMatch.middleware, "duplicate invoice m
 const supplierPage = fs.readFileSync(path.join(ROOT, "client/src/pages/suppliers.tsx"), "utf8");
 const supplierRoutes = fs.readFileSync(path.join(ROOT, "server/modules/suppliers/register-supplier-routes.ts"), "utf8");
 const supplierBankDomain = fs.readFileSync(path.join(ROOT, "server/modules/master-data/mdm-domain-registry.ts"), "utf8");
+const supplierCommands = fs.readFileSync(path.join(ROOT, "server/modules/suppliers/supplier-profile-command.ts"), "utf8");
+const supplierOnboarding = fs.readFileSync(path.join(ROOT, "server/modules/suppliers/supplier-onboarding.ts"), "utf8");
 assert.match(supplierPage, /bankName:\s*undefined[\s\S]{0,300}bankAccountNumber:\s*undefined[\s\S]{0,300}bankSwift:\s*undefined/, "generic supplier UI must omit governed bank fields");
-assert.match(supplierRoutes, /insertSupplierSchema\.partial\(\)\.parse\(req\.body\)[\s\S]{0,5000}supplierService\.update\(id, validatedData, userId\)/, "supplier direct-write evidence changed; update LOGIC-007 before remediation");
-assert.match(supplierRoutes, /SUPPLIER_BANK_GOVERNANCE_REQUIRED/, "generic supplier updates must reject governed banking fields");
+const createProfile = supplierRoutes.slice(supplierRoutes.indexOf('app.post("/api/suppliers",'), supplierRoutes.indexOf("const handleUpdateSupplier"));
+const updateProfile = supplierRoutes.slice(supplierRoutes.indexOf("const handleUpdateSupplier"), supplierRoutes.indexOf('app.put("/api/suppliers/:id",'));
+for (const [handler, schema, writer] of [
+  [createProfile, "supplierProfileCommandSchema", "startSupplierOnboarding"],
+  [updateProfile, "supplierProfilePatchSchema", "updateSupplierProfile"],
+]) {
+  assert.match(handler, new RegExp(`hasSupplierBankingFields\\(req\\.body\\)[\\s\\S]*?SUPPLIER_BANK_GOVERNANCE_REQUIRED[\\s\\S]*?${schema}\\.parse\\(req\\.body\\)[\\s\\S]*?${writer}\\(actor,`));
+  assert.doesNotMatch(handler, /supplierService\.(create|update)\(|insertSupplierSchema/);
+  assert.match(supplierOnboarding, new RegExp(`function ${writer}\\([^\\n]+\\n\\s*assertNoSupplierBankingFields\\(payload\\);`));
+}
+assert.match(supplierRoutes, /app\.put\("\/api\/suppliers\/:id",.*rejectSupplierDecisionFields, handleUpdateSupplier\)/);
+assert.match(supplierRoutes, /app\.patch\("\/api\/suppliers\/:id",.*rejectSupplierDecisionFields, handleUpdateSupplier\)/);
+assert.match(supplierCommands, /insertSupplierSchema\.omit\(\{ \.\.\.protectedFields, \.\.\.bankingFields \}\)/);
+assert.match(supplierOnboarding, /hasSupplierBankingFields\(payload\)[\s\S]{0,150}SUPPLIER_BANK_GOVERNANCE_REQUIRED/);
 assert.match(supplierBankDomain, /key:\s*"supplier-banks"[\s\S]{0,500}requiredPermissions:\s*\["master-data:read",\s*"supplier-bank:manage"\]/, "governed supplier-bank domain missing");
 assert(audit.findings.some((item) => item.id === "LOGIC-007" && item.classification === "resolved control"), "supplier-bank control must be documented as resolved");
 

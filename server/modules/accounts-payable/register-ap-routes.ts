@@ -7,7 +7,8 @@ import {
   insertApReceiptSchema,
   insertPaymentSchema,
 } from "@shared/schema";
-import { sendError, sendOk } from "../../api-response";
+import { resolveRequestId, sendError, sendOk } from "../../api-response";
+import { logger } from "../../lib/logger";
 import { getActiveOrganizationId,getTenantContext } from "../../organization-context";
 import { generateGenericPdf } from "../../services/document-generator-service";
 import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
@@ -1272,9 +1273,17 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if(!pending){pending=execute();if(!parsed.data.runId){pendingApObservations.set(key,pending);void pending.finally(()=>{if(pendingApObservations.get(key)===pending)pendingApObservations.delete(key);}).catch(()=>undefined);}}
       const result=await pending;res.setHeader("Cache-Control","private, no-store");return sendOk(res,result);
     }catch(error) {
-      const e=error as {code?:string;status?:number;message?:string};
-      if(e.code?.startsWith("AP_")&&[400,403,404,409].includes(e.status??0)) return sendError(res,e.status!,e.code,e.message??"Review the AP reporting scope.");
-      return sendError(res,503,"AP_AGING_UNAVAILABLE","AP reporting could not be prepared. Verify the reporting and AP history prerequisites, then retry.");
+      const e=error as {code?:string;status?:number;message?:string;cause?:{code?:unknown}} | null;
+      if(e?.code?.startsWith("AP_")&&[400,403,404,409].includes(e.status??0)) return sendError(res,e.status!,e.code,e.message??"Review the AP reporting scope.");
+      const rawCode=e?.cause?.code??e?.code;
+      const databaseCode=typeof rawCode==="string"&&/^[0-9A-Z]{5}$/.test(rawCode)?rawCode:null;
+      const schemaMissing=databaseCode==="42P01"||databaseCode==="42703";
+      const requestId=resolveRequestId(res);
+      logger.error("AP aging observation failed",{requestId,organizationId:scope.organizationId,route:"/api/v2/ap/aging",
+        mode:parsed.data.runId?"saved":"live",databaseCode:databaseCode??"UNKNOWN"});
+      return sendError(res,503,"AP_AGING_UNAVAILABLE",schemaMissing
+        ?"Required AP reporting schema is unavailable. Ask an administrator to verify the reporting migrations."
+        :"AP Aging could not be loaded. Retry and share the request ID with support if the problem persists.");
     }
   });
 

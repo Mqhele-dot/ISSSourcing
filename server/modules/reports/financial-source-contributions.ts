@@ -9,11 +9,20 @@ export interface FinancialSourceFilters { from?: string; to?: string; supplierId
 // are not silently interpreted as approval.
 export const approvedOrderStates = ["APPROVED", "SENT", "ACKNOWLEDGED", "PARTIALLY_RECEIVED", "RECEIVED", "COMPLETED", "CLOSED"];
 export const approvedInvoiceStates = ["APPROVED", "SENT", "OVERDUE", "PARTIALLY_PAID", "PAID"];
+export const approvedOrderScopeSql = "upper(p.approval_status)='APPROVED' AND upper(p.status)=ANY";
+
+/** Both the ordered value and purchase evidence list use PO issue dates (inclusive calendar dates). */
+export function orderDateSupplierScopeSql(from: `$${number}`, to: `$${number}`, supplier: `$${number}`) {
+  return `(${from}::date IS NULL OR p.order_date >= ${from}::date)
+    AND (${to}::date IS NULL OR p.order_date < ${to}::date+interval '1 day')
+    AND (${supplier}::int IS NULL OR p.supplier_id=${supplier})`;
+}
 
 /** All joins start from an organization-owned source. Legacy REAL values are cast
  * before arithmetic; this preserves their stored precision, not precision lost earlier. */
 export async function readFinancialSourceContributions(client: PoolClient, organizationId: number,
-  measure: FinancialMeasure, filters: FinancialSourceFilters): Promise<FinancialContribution[]> {
+  measure: FinancialMeasure, filters: FinancialSourceFilters, orderedSourceIds?: readonly number[]): Promise<FinancialContribution[]> {
+  if (orderedSourceIds && (measure !== "ordered" || orderedSourceIds.length > 100)) throw new Error("Unsupported order contribution scope");
   if(isApBalanceMeasure(measure)) {
     if(filters.from||filters.to) throw Object.assign(new Error("AP balances use an as-of date, not a lifecycle date range."),{code:"AP_INVALID_FILTERS",status:400});
     return readApHistoricalContributions(client,organizationId,measure,filters);
@@ -30,12 +39,10 @@ export async function readFinancialSourceContributions(client: PoolClient, organ
         p.order_date AS date, ${open ? "(GREATEST(l.quantity::numeric-COALESCE(l.received_quantity,0)::numeric,0)*l.unit_price::numeric)" : "p.total_amount::numeric"}::text AS amount,
         p.currency_code AS "currencyCode"
         FROM purchase_orders p ${open ? "JOIN purchase_order_items l ON l.order_id=p.id" : ""}
-        WHERE p.organization_id=$1 AND upper(p.approval_status)='APPROVED'
-        AND upper(p.status)=ANY($5::text[])
+        WHERE p.organization_id=$1 AND ${approvedOrderScopeSql}($5::text[])
+        ${orderedSourceIds ? "AND p.id=ANY($6::int[])" : ""}
         ${open ? "AND upper(p.status) NOT IN ('CLOSED','COMPLETED','RECEIVED') AND l.quantity>COALESCE(l.received_quantity,0)" : ""}
-        AND ($2::date IS NULL OR p.order_date >= $2::date)
-        AND ($3::date IS NULL OR p.order_date < $3::date+interval '1 day')
-        AND ($4::int IS NULL OR p.supplier_id=$4)
+        AND ${orderDateSupplierScopeSql("$2","$3","$4")}
         ORDER BY p.order_date,${open ? "l.id" : "p.id"}`;
       break;
     }
@@ -82,7 +89,8 @@ export async function readFinancialSourceContributions(client: PoolClient, organ
       break;
   }
   const result = await client.query(query,[organizationId,filters.from ?? null,filters.to ?? null,
-    filters.supplierId ?? null,measure === "ordered" || measure === "open_commitment" ? approvedOrderStates : approvedInvoiceStates]);
+    filters.supplierId ?? null,measure === "ordered" || measure === "open_commitment" ? approvedOrderStates : approvedInvoiceStates,
+    ...(orderedSourceIds ? [orderedSourceIds] : [])]);
   return result.rows.map(row => ({...row,date:row.date ? new Date(row.date).toISOString() : null,
     ...(row.exclusion ? {exclusion:row.exclusion} : {exclusion:undefined})}));
 }

@@ -76,7 +76,6 @@ export const REPORT_EXPORT_CONFIG: Record<ReportType, ReportExportEntry> = {
       { header: "Phone", key: "phone", width: 16 },
       { header: "Address", key: "address", width: 36 },
       { header: "Tax ID", key: "taxIdentificationNumber", width: 18 },
-      { header: "Bank", key: "bankName", width: 18 },
       { header: "Currency", key: "defaultCurrencyCode", width: 12 },
     ],
   },

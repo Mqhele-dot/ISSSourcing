@@ -3,8 +3,10 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
+import {randomUUID} from "node:crypto";
 import { appEnv } from "../config/env";
 import { exportsDirResolution, uploadsDirResolution } from "../lib/deployment-behavior";
+import {isProtectedExportUploadPath} from "./protected-export-path";
 
 export const uploadsDir = uploadsDirResolution();
 export const documentsDir = path.join(uploadsDir, "documents");
@@ -36,8 +38,8 @@ function createSafeDiskStorage(targetDir: string) {
       cb(null, targetDir);
     },
     filename: (_req, file, cb) => {
-      const safeBase = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      cb(null, `${Date.now()}-${safeBase}`);
+      const safeBase = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0,160);
+      cb(null, `${randomUUID()}-${safeBase}`);
     },
   });
 }
@@ -97,5 +99,8 @@ export function mountUploadsStatic(app: Express): void {
     });
     return;
   }
-  app.use("/uploads", express.static(uploadsDir));
+  app.use("/uploads", (req,res,next)=>{
+    if(isProtectedExportUploadPath(req.path))return res.status(404).json({message:"Stored documents and exports require an authorized application download."});
+    next();
+  },express.static(uploadsDir));
 }

@@ -60,12 +60,15 @@ import { appendAuditEventWithClient } from "./services/audit-chain-service";
 import {queryRolePermission,queryUserCustomRoleId,queryCustomRolePermission} from "./services/permission-query-service";
 import { addReportingDecimals,parseReportingDecimal,formatReportingDecimal } from "./lib/exact-reporting-decimal";
 import { eq, and, or, like, desc, lte, gte, gt, lt, inArray, isNull, isNotNull, ne, sql, getTableColumns } from "drizzle-orm";
-import { getActiveOrganizationId, getOptionalTenantContext } from "./organization-context";
+import { getActiveOrganizationId, getOptionalTenantContext, getTenantContext } from "./organization-context";
+import { hasSupplierDecisionFields } from "./modules/suppliers/supplier-profile-command";
+import { startSupplierOnboarding, SupplierOnboardingError, updateSupplierProfile } from "./modules/suppliers/supplier-onboarding";
 import { appEnv } from "./config/env";
 import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
 import { inventoryLineValue } from "./forecast-service";
-import { applySupplierDefaultsToPurchaseOrder, assertSupplierTransactionAllowed } from "./modules/procurement/supplier-defaults";
+import { assertSupplierTransactionAllowed } from "./modules/procurement/supplier-defaults";
+import { lockConversionRequisition, writeRequisitionPurchaseOrder } from "./modules/procurement/requisition-po-conversion";
 import {
   repoCreateInventoryItem,
   repoGetAllInventoryItems,
@@ -1469,20 +1472,20 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
-    const [created] = await db
-      .insert(suppliers)
-      .values({ ...supplier, organizationId: supplier.organizationId ?? getActiveOrganizationId() })
-      .returning();
-    return created;
+    if (hasSupplierDecisionFields(supplier)) throw new Error("Supplier decision fields require the governed workflow.");
+    const { organizationId, userId, correlationId } = getTenantContext();
+    return startSupplierOnboarding({ organizationId, userId, requestId: correlationId }, supplier);
   }
   
   async updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
-    const [updated] = await db
-      .update(suppliers)
-      .set(supplier)
-      .where(and(eq(suppliers.id, id), eq(suppliers.organizationId, getActiveOrganizationId())))
-      .returning();
-    return updated;
+    if (hasSupplierDecisionFields(supplier)) throw new Error("Supplier decision fields require the governed workflow.");
+    const { organizationId, userId, correlationId } = getTenantContext();
+    try {
+      return await updateSupplierProfile({ organizationId, userId, requestId: correlationId }, id, supplier);
+    } catch (error) {
+      if (error instanceof SupplierOnboardingError && error.status === 404) return undefined;
+      throw error;
+    }
   }
   
   async deleteSupplier(id: number): Promise<boolean> {
@@ -2795,120 +2798,9 @@ export class DatabaseStorage implements IStorage {
   async createPurchaseOrderFromRequisition(requisitionId: number): Promise<PurchaseOrder | undefined> {
     const orgId = getActiveOrganizationId();
     return db.transaction(async (tx) => {
-      const [requisition] = await tx
-        .select()
-        .from(purchaseRequisitions)
-        .where(
-          and(
-            eq(purchaseRequisitions.id, requisitionId),
-            eq(purchaseRequisitions.organizationId, orgId),
-          ),
-        );
+      const requisition = await lockConversionRequisition(tx, orgId, requisitionId);
       if (!requisition) return undefined;
-      if (requisition.status !== PurchaseRequisitionStatus.APPROVED) {
-        throw new Error(`Cannot create purchase order from requisition with status: ${requisition.status}`);
-      }
-      if (requisition.supplierId == null) {
-        throw new Error("Requisition must have a supplier to create a purchase order");
-      }
-
-      const requisitionItems = await tx
-        .select()
-        .from(purchaseRequisitionItems)
-        .where(eq(purchaseRequisitionItems.requisitionId, requisitionId));
-      if (requisitionItems.length === 0) {
-        throw new Error("Requisition has no line items to convert");
-      }
-
-      const orderNumber = `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
-      const expectedDeliveryDate =
-        requisition.requiredDate ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-      const commercialDefaults = await applySupplierDefaultsToPurchaseOrder({
-        supplierId: requisition.supplierId,
-        departmentId: requisition.departmentId ?? null,
-        contractId: null,
-        paymentTermsId: null,
-        incotermId: null,
-        currencyCode: requisition.currencyCode ?? null,
-        taxCodeId: null,
-      });
-
-      const [order] = await tx
-        .insert(purchaseOrders)
-        .values({
-          organizationId: orgId,
-          orderNumber,
-          supplierId: requisition.supplierId,
-          requisitionId: requisition.id,
-          departmentId: Number(commercialDefaults.departmentId ?? requisition.departmentId ?? null) || null,
-          contractId: Number(commercialDefaults.contractId ?? null) || null,
-          paymentTermsId: Number(commercialDefaults.paymentTermsId ?? null) || null,
-          incotermId: Number(commercialDefaults.incotermId ?? null) || null,
-          currencyCode: String(commercialDefaults.currencyCode ?? "ZAR").trim().toUpperCase(),
-          taxCodeId: Number(commercialDefaults.taxCodeId ?? null) || null,
-          projectId: requisition.projectId ?? null,
-          status: PurchaseOrderStatus.DRAFT,
-          orderDate: new Date(),
-          expectedDeliveryDate,
-          deliveryAddress: "",
-          totalAmount: Number(requisition.totalAmount ?? 0),
-          notes: requisition.notes ?? null,
-          paymentStatus: PaymentStatus.UNPAID,
-          emailSent: false,
-          updatedAt: new Date(),
-        })
-        .returning();
-
-      for (const item of requisitionItems) {
-        const inv = item.itemId
-          ? await tx.select().from(inventoryItems).where(eq(inventoryItems.id, item.itemId)).limit(1)
-          : [];
-        const invRow = inv[0];
-        await tx.insert(purchaseOrderItems).values({
-          orderId: order.id,
-          itemId: item.itemId,
-          lineNumber: item.lineNumber,
-          lineType: item.lineType,
-          description: item.description,
-          itemCodeSnapshot: item.itemCodeSnapshot ?? invRow?.sku ?? null,
-          itemDescriptionSnapshot: item.itemDescriptionSnapshot ?? invRow?.name ?? item.description,
-          manualEntryReason: item.manualEntryReason,
-          fulfilmentType: item.fulfilmentType,
-          receiptRequired: item.receiptRequired,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-          receivedQuantity: 0,
-          notes: item.notes ?? null,
-          unitOfMeasureId: item.unitOfMeasureId ?? invRow?.unitOfMeasureId ?? null,
-          commodityCodeId: invRow?.commodityCodeId ?? null,
-          taxCodeId: item.taxCodeId ?? (Number(commercialDefaults.taxCodeId ?? null) || null),
-          costCentreId: item.costCentreId ?? null,
-          glAccountCode: item.glAccountCode ?? null,
-        });
-      }
-
-      await tx
-        .update(purchaseRequisitions)
-        .set({
-          status: PurchaseRequisitionStatus.CONVERTED,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(purchaseRequisitions.id, requisitionId),
-            eq(purchaseRequisitions.organizationId, orgId),
-          ),
-        );
-
-      await this.createActivityLog({
-        action: "Purchase Order Created from Requisition",
-        description: `Created PO ${orderNumber} from requisition ${requisition.requisitionNumber}`,
-        referenceType: "purchase_order",
-        referenceId: order.id,
-        userId: requisition.approverId ?? requisition.requestorId ?? null,
-      });
-
+      const { order } = await writeRequisitionPurchaseOrder(tx, requisition);
       return order;
     });
   }

@@ -1,4 +1,4 @@
-import { pool } from "../../db";
+import { db, pool } from "../../db";
 import { getCanonicalReportingCurrencyCode } from "../../lib/org-reporting-money";
 
 export type PurchaseOrderValidationLine = {
@@ -18,7 +18,8 @@ export type PurchaseOrderValidationInput = {
 };
 
 export type PurchaseOrderValidationResult =
-  | { ok: true }
+  | { ok: true; decision: { policy: { id: number; code: string; updatedAt: string } | null; rules: ProcurementValidationPolicy;
+      catalogueItemIds: number[]; manualLineCount: number } }
   | {
       ok: false;
       status: 400 | 409;
@@ -38,25 +39,31 @@ function asPolicyBool(config: Record<string, unknown>, key: keyof ProcurementVal
   return config[key] === true || config[key] === "true";
 }
 
-async function loadPurchaseOrderValidationPolicy(organizationId: number): Promise<ProcurementValidationPolicy> {
-  const rows = await pool.query<{ config: Record<string, unknown> | null }>(
+type QuerySource = Pick<typeof pool, "query">;
+async function loadPurchaseOrderValidationPolicy(organizationId: number, source: QuerySource) {
+  const rows = await source.query<{ id: number; code: string; updated_at: string; config: Record<string, unknown> | null }>(
     `
-      SELECT config
+      SELECT id,code,updated_at::text,config
       FROM mdm_procurement_policies
       WHERE organization_id = $1
         AND COALESCE(active, TRUE) = TRUE
         AND lower(policy_type) IN ('purchase_order', 'po_validation', 'procurement_control')
       ORDER BY id DESC
       LIMIT 1
+      FOR SHARE
     `,
     [organizationId],
   );
-  const config = rows.rows[0]?.config ?? {};
+  const row = rows.rows[0];
+  const config = row?.config ?? {};
   return {
-    requireUomConversion: asPolicyBool(config, "requireUomConversion"),
-    requireTaxCode: asPolicyBool(config, "requireTaxCode"),
-    requireGlMapping: asPolicyBool(config, "requireGlMapping"),
-    requireFxRate: asPolicyBool(config, "requireFxRate"),
+    policy: row ? { id: row.id, code: row.code, updatedAt: row.updated_at } : null,
+    rules: {
+      requireUomConversion: asPolicyBool(config, "requireUomConversion"),
+      requireTaxCode: asPolicyBool(config, "requireTaxCode"),
+      requireGlMapping: asPolicyBool(config, "requireGlMapping"),
+      requireFxRate: asPolicyBool(config, "requireFxRate"),
+    },
   };
 }
 
@@ -65,9 +72,9 @@ async function hasUomConversion(params: {
   itemId: number;
   fromUomId: number;
   toUomId: number;
-}): Promise<boolean> {
+}, source: QuerySource): Promise<boolean> {
   if (params.fromUomId === params.toUomId) return true;
-  const rows = await pool.query<{ id: number }>(
+  const rows = await source.query<{ id: number }>(
     `
       SELECT id
       FROM mdm_uom_conversions
@@ -89,14 +96,14 @@ async function hasGlMapping(params: {
   organizationId: number;
   itemId: number;
   commodityCodeId: number | null;
-}): Promise<boolean> {
+}, source: QuerySource): Promise<boolean> {
   const sourceIds = [String(params.itemId)];
   const sourceTypes = ["item", "inventory_item"];
   if (params.commodityCodeId != null) {
     sourceIds.push(String(params.commodityCodeId));
     sourceTypes.push("commodity", "commodity_code", "category");
   }
-  const rows = await pool.query<{ id: number }>(
+  const rows = await source.query<{ id: number }>(
     `
       SELECT id
       FROM mdm_gl_mappings
@@ -112,10 +119,10 @@ async function hasGlMapping(params: {
   return rows.rows.length > 0;
 }
 
-async function hasActiveFxRate(organizationId: number, currencyCode: string): Promise<boolean> {
-  const reportingCurrency = await getCanonicalReportingCurrencyCode(organizationId);
+async function hasActiveFxRate(organizationId: number, currencyCode: string, source: QuerySource, database: Pick<typeof db, "select">): Promise<boolean> {
+  const reportingCurrency = await getCanonicalReportingCurrencyCode(organizationId, database);
   if (!currencyCode || currencyCode.toUpperCase() === reportingCurrency) return true;
-  const rows = await pool.query<{ id: number }>(
+  const rows = await source.query<{ id: number }>(
     `
       SELECT id
       FROM mdm_exchange_rates
@@ -135,6 +142,8 @@ async function hasActiveFxRate(organizationId: number, currencyCode: string): Pr
 
 export async function validatePurchaseOrderWorkflowReadiness(
   input: PurchaseOrderValidationInput,
+  source: QuerySource = pool,
+  database: Pick<typeof db, "select"> = db,
 ): Promise<PurchaseOrderValidationResult> {
   const catalogLines = input.items.filter((line) => String(line.lineType ?? "CATALOG").toUpperCase() === "CATALOG");
   const manualLines = input.items.filter((line) => String(line.lineType ?? "CATALOG").toUpperCase() !== "CATALOG");
@@ -146,8 +155,8 @@ export async function validatePurchaseOrderWorkflowReadiness(
     return { ok: false, status: 400, code: "PO_MANUAL_LINE_DESCRIPTION_REQUIRED", message: "Every manual PO line requires a description." };
   }
 
-  const policy = await loadPurchaseOrderValidationPolicy(input.organizationId);
-  const itemRows = await pool.query<{
+  const { policy: observedPolicy, rules: policy } = await loadPurchaseOrderValidationPolicy(input.organizationId, source);
+  const itemRows = await source.query<{
     id: number;
     sku: string;
     status: string | null;
@@ -180,8 +189,8 @@ export async function validatePurchaseOrderWorkflowReadiness(
     }
   }
 
-  if (policy.requireFxRate && !(await hasActiveFxRate(input.organizationId, String(input.currencyCode ?? "")))) {
-    const reportingCurrency = await getCanonicalReportingCurrencyCode(input.organizationId);
+  if (policy.requireFxRate && !(await hasActiveFxRate(input.organizationId, String(input.currencyCode ?? ""), source, database))) {
+    const reportingCurrency = await getCanonicalReportingCurrencyCode(input.organizationId, database);
     return {
       ok: false,
       status: 409,
@@ -219,7 +228,7 @@ export async function validatePurchaseOrderWorkflowReadiness(
       organizationId: input.organizationId,
       itemId: item.id,
       commodityCodeId: item.commodity_code_id,
-    }))) {
+    }, source))) {
       return {
         ok: false,
         status: 409,
@@ -244,7 +253,7 @@ export async function validatePurchaseOrderWorkflowReadiness(
         itemId: item.id,
         fromUomId: purchaseUomId,
         toUomId: itemUomId,
-      }))) {
+      }, source))) {
         return {
           ok: false,
           status: 409,
@@ -255,5 +264,5 @@ export async function validatePurchaseOrderWorkflowReadiness(
     }
   }
 
-  return { ok: true };
+  return { ok: true, decision: { policy: observedPolicy, rules: policy, catalogueItemIds: itemIds, manualLineCount: manualLines.length } };
 }

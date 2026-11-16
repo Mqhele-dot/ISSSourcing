@@ -115,7 +115,8 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
 
       // A stock quantity is not evidence of configured physical bin capacity.
       const warehouseUtilization:never[]=[];
-      const supplierPerformance = supplierList.map((supplier) => {
+      const companySupplierScope = (await resolveAnalyticsReadAccess()).companySupplierScope === true;
+      const supplierPerformance = !companySupplierScope ? [] : supplierList.map((supplier) => {
         const supplierOrders = filteredPoList.filter((po) => po.supplierId === supplier.id);
         let onTimeCount = 0;
         let measured = 0;
@@ -165,7 +166,8 @@ export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, {
         spendBySupplier,
         financialMeasures:{state:"unavailable",deprecatedFields:["spendBySupplier"],summaryEndpoint:"/api/v2/analytics/financial-measures",reason:"Supplier spend requires dated reporting-currency evidence. Legacy document-currency totals are no longer returned."},
-        unavailableMetrics:{warehouseUtilization:"Verified capacity evidence is required; capacity is never inferred from current stock."},
+        unavailableMetrics:{warehouseUtilization:"Verified capacity evidence is required; capacity is never inferred from current stock.",
+          ...(!companySupplierScope ? { supplierPerformance: "Organization-wide supplier evidence is unavailable for the current warehouse assignment." } : {})},
         observationScope:{purchaseOrders:scope.data,inventory:"current snapshot",movements:"recorded movement history",exceptions:"current organization"},
         inventoryTurnover,
         warehouseUtilization,

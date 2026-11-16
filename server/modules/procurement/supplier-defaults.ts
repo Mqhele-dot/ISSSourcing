@@ -75,10 +75,12 @@ export function assertSupplierTransactionAllowed(
   }
 }
 
-async function activeCurrencyCode(value: unknown): Promise<string | null> {
+type DefaultsDatabase = Pick<typeof db, "select">;
+
+async function activeCurrencyCode(value: unknown, database: DefaultsDatabase = db): Promise<string | null> {
   const code = normalizeCurrency(value);
   if (!code) return null;
-  const [row] = await db
+  const [row] = await database
     .select({ code: currencies.code })
     .from(currencies)
     .where(and(eq(currencies.code, code), eq(currencies.active, true)))
@@ -86,9 +88,9 @@ async function activeCurrencyCode(value: unknown): Promise<string | null> {
   return row?.code ?? null;
 }
 
-async function activePaymentTermsId(id: number | null): Promise<number | null> {
+async function activePaymentTermsId(id: number | null, database: DefaultsDatabase = db): Promise<number | null> {
   if (id == null) return null;
-  const [row] = await db
+  const [row] = await database
     .select({ id: paymentTerms.id })
     .from(paymentTerms)
     .where(and(eq(paymentTerms.id, id), eq(paymentTerms.active, true)))
@@ -96,9 +98,9 @@ async function activePaymentTermsId(id: number | null): Promise<number | null> {
   return row?.id ?? null;
 }
 
-async function activeTaxCodeId(id: number | null): Promise<number | null> {
+async function activeTaxCodeId(id: number | null, database: DefaultsDatabase = db): Promise<number | null> {
   if (id == null) return null;
-  const [row] = await db
+  const [row] = await database
     .select({ id: taxCodes.id })
     .from(taxCodes)
     .where(and(eq(taxCodes.id, id), eq(taxCodes.active, true)))
@@ -106,9 +108,9 @@ async function activeTaxCodeId(id: number | null): Promise<number | null> {
   return row?.id ?? null;
 }
 
-async function activeIncotermId(id: number | null): Promise<number | null> {
+async function activeIncotermId(id: number | null, database: DefaultsDatabase = db): Promise<number | null> {
   if (id == null) return null;
-  const [row] = await db
+  const [row] = await database
     .select({ id: incoterms.id })
     .from(incoterms)
     .where(and(eq(incoterms.id, id), eq(incoterms.active, true)))
@@ -140,8 +142,9 @@ async function resolveSupplierCommercialDefaultsForOrg(
   contractId: number | null,
   transactionLabel: string,
   useDefaultContract = true,
+  database: DefaultsDatabase = db,
 ): Promise<SupplierCommercialDefaults> {
-  const [supplier] = await db
+  const supplierQuery = database
     .select({
       id: suppliers.id,
       name: suppliers.name,
@@ -162,6 +165,7 @@ async function resolveSupplierCommercialDefaultsForOrg(
     .from(suppliers)
     .where(and(eq(suppliers.id, supplierId), eq(suppliers.organizationId, orgId)))
     .limit(1);
+  const [supplier] = await (database === db ? supplierQuery : supplierQuery.for("share"));
 
   if (!supplier) {
     throw Object.assign(new Error("Supplier not found in this organization."), { code: "SUPPLIER_NOT_FOUND", status: 400 });
@@ -181,7 +185,7 @@ async function resolveSupplierCommercialDefaultsForOrg(
   const effectiveContractId = contractId ?? (useDefaultContract ? supplierDefaultContractId : null);
   const [contract] =
     effectiveContractId != null
-      ? await db
+      ? await database
           .select({
             id: supplierContracts.id,
             currency: supplierContracts.currency,
@@ -221,13 +225,13 @@ async function resolveSupplierCommercialDefaultsForOrg(
     supplierComplianceStatus: supplier.complianceStatus,
     supplierBlockedReason: supplier.blockedReason ?? null,
     departmentId: numberOrNull(supplier.defaultDepartmentId),
-    supplierCurrencyCode: await activeCurrencyCode(supplier.defaultCurrencyCode),
-    contractCurrencyCode: await activeCurrencyCode(contract?.currency),
+    supplierCurrencyCode: await activeCurrencyCode(supplier.defaultCurrencyCode, database),
+    contractCurrencyCode: await activeCurrencyCode(contract?.currency, database),
     allowCurrencyOverride: supplier.allowCurrencyOverride === true,
     requireApprovalForOverride: supplier.requireApprovalForOverride !== false,
-    paymentTermsId: await activePaymentTermsId(contract?.paymentTermsId ?? supplier.paymentTermsId ?? null),
-    taxCodeId: await activeTaxCodeId(contract?.defaultTaxCodeId ?? supplier.taxCodeId ?? null),
-    incotermId: await activeIncotermId(contract?.incotermId ?? supplier.incotermId ?? null),
+    paymentTermsId: await activePaymentTermsId(contract?.paymentTermsId ?? supplier.paymentTermsId ?? null, database),
+    taxCodeId: await activeTaxCodeId(contract?.defaultTaxCodeId ?? supplier.taxCodeId ?? null, database),
+    incotermId: await activeIncotermId(contract?.incotermId ?? supplier.incotermId ?? null, database),
     contractId: contract?.id ?? null,
     carrierId: numberOrNull(supplier.defaultCarrierId),
     transportMode:
@@ -241,6 +245,7 @@ export async function resolveSupplierCommercialDefaults(
     contractId?: unknown;
     transactionLabel?: string;
     useDefaultContract?: boolean;
+    database?: DefaultsDatabase;
   },
 ): Promise<SupplierCommercialDefaults | null> {
   const resolvedSupplierId = numberOrNull(supplierId);
@@ -253,16 +258,18 @@ export async function resolveSupplierCommercialDefaults(
     numberOrNull(options?.contractId),
     options?.transactionLabel ?? "new purchase orders",
     options?.useDefaultContract !== false,
+    options?.database,
   );
 }
 
 export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDefaultsInput>(input: T,
-  options: { applyDefaults?: boolean } = {}): Promise<T> {
+  options: { applyDefaults?: boolean; database?: DefaultsDatabase; observe?: (defaults: SupplierCommercialDefaults) => void } = {}): Promise<T> {
   const applyDefaults = options.applyDefaults !== false;
   const defaults = await resolveSupplierCommercialDefaults(input.supplierId, {
     contractId: input.contractId,
     transactionLabel: "new purchase orders",
     useDefaultContract: applyDefaults,
+    database: options.database,
   });
   if (!defaults) return input;
   const requestedCurrency = normalizeCurrency(input.currencyCode);
@@ -294,6 +301,7 @@ export async function applySupplierDefaultsToPurchaseOrder<T extends SupplierDef
 
   // Existing documents validate their selected terms; editing must not silently
   // reattach a default agreement or refill fields the user explicitly cleared.
+  options.observe?.(defaults);
   if (!applyDefaults) return input;
   if (resolvedCurrency) input.currencyCode = resolvedCurrency;
   if (input.departmentId == null && defaults.departmentId != null) input.departmentId = defaults.departmentId;

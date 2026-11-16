@@ -7,6 +7,8 @@ assert.equal(canReadAnalyticsSource("unknown",Object.fromEntries(analyticsResour
 assert.equal(canReadAnalyticsSource("finance",{finance:true}),false,"Joined supplier evidence also requires permission");
 assert.equal(canReadAnalyticsSource("finance",{finance:true,suppliers:true}),true);
 assert.equal(canReadAnalyticsSource("inventory",{inventory:true,warehouses:true,suppliers:true}),true);
+assert.equal(canReadAnalyticsSource("supplier_risk",{suppliers:true,purchases:true,inventory:true,companySupplierScope:false}),false);
+assert.equal(canReadAnalyticsSource("supplier_risk",{suppliers:true,purchases:true,inventory:true,companySupplierScope:true}),true);
 assert.deepEqual(unsupportedAnalyticsSourceFilters("finance",{warehouseId:1}),["warehouseId"]);
 assert.deepEqual(unsupportedAnalyticsSourceFilters("inventory",{dateFrom:"2026-01-01"}),[],"Inventory is explicitly labelled as a current snapshot");
 assert.deepEqual(unsupportedAnalyticsSourceFilters("inventory",{supplierId:1,warehouseId:2,categoryId:3}),[]);

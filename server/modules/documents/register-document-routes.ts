@@ -1,292 +1,112 @@
-import type { Express, Request, Response } from "express";
-import fs from "node:fs";
-import path from "node:path";
-import { and, desc, eq, ilike, isNotNull, isNull, or } from "drizzle-orm";
-import { z } from "zod";
-import { db, pool } from "../../db";
-import { getActiveOrganizationId } from "../../organization-context";
-import { documents } from "@shared/schema";
-import { documentUpload, documentsDir } from "../../http/upload-config";
-import type { AuthBundle } from "../procurement/types";
-import { sendError, sendOk } from "../../api-response";
-import { recordServerDiagnosticEvent } from "../../diagnostics/server-diagnostics-store";
+import type {Express,Request,Response} from "express";
+import {createReadStream} from "node:fs";
+import {unlink} from "node:fs/promises";
+import {createHash} from "node:crypto";
+import {pipeline} from "node:stream/promises";
+import {z} from "zod";
+import {pool} from "../../db";
+import {getTenantContext} from "../../organization-context";
+import {documentUpload} from "../../http/upload-config";
+import type {AuthBundle} from "../procurement/types";
+import {sendError,sendOk,resolveRequestId} from "../../api-response";
+import {appendAuditEventWithClient} from "../../services/audit-chain-client";
+import {recordServerDiagnosticEvent} from "../../diagnostics/server-diagnostics-store";
+import {documentAccess,documentSources,DocumentAccessError,ownedDocumentSql,type DocumentEntity} from "./document-access";
+import {documentPage,documentColumnsSql,documentProofsSql,openDocument,DOCUMENT_UPLOAD_ACTION,type EvidenceRow} from "./document-evidence";
+import {documentEntity as entity,documentPageQuery as pageQuery,documentLegacyQuery as legacyQuery} from "../../../shared/document-query";
 
-const documentPageQuery = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().refine((value) => [25, 50, 100].includes(value), "pageSize must be 25, 50, or 100").default(25),
-  q: z.string().trim().max(120).optional(),
-  entityType: z.string().trim().max(60).optional(),
-  entityId: z.coerce.number().int().positive().optional(),
-  archived: z.enum(["exclude", "include", "only"]).default("exclude"),
-  fileStatus: z.enum(["all", "available", "missing"]).default("all"),
-  sort: z.enum(["newest", "oldest", "name_asc", "name_desc"]).default("newest"),
-});
+const uploadBody=z.object({entityType:entity,entityId:z.coerce.number().int().positive().max(2147483647)}).strict();
+const validId=(value:unknown)=>z.coerce.number().int().positive().max(2147483647).parse(value);
 
-const DOCUMENT_ENTITY_TABLES: Record<string, string> = {
-  purchase_order: "purchase_orders",
-  requisition: "purchase_requisitions",
-  invoice: "invoices",
-  supplier: "suppliers",
-  warehouse: "warehouses",
-  contract: "supplier_contracts",
-};
-
-function storedDocumentPath(fileUrl: string): string | null {
-  const fileName = path.basename(String(fileUrl ?? ""));
-  if (!fileName) return null;
-  const root = path.resolve(documentsDir);
-  const candidate = path.resolve(root, fileName);
-  return path.dirname(candidate) === root ? candidate : null;
+function failure(res:Response,error:unknown){
+  if(error instanceof DocumentAccessError)return sendError(res,error.status,error.code,error.message);
+  if(error instanceof z.ZodError)return sendError(res,400,"DOCUMENT_INPUT_INVALID","Choose a valid record, supported filters and page size. Unsupported inputs cannot be ignored.");
+  const requestId=resolveRequestId(res);
+  recordServerDiagnosticEvent({source:"request",severity:"error",title:"Document evidence unavailable",message:"Document evidence could not be observed. Retry or review storage and permissions.",status:503,details:{requestId}});
+  return sendError(res,503,"DOCUMENT_EVIDENCE_UNAVAILABLE","Document evidence could not be loaded. Retry; give your administrator the request ID if it continues.");
 }
-
-async function documentEntityExists(organizationId: number, entityType: string, entityId: number): Promise<boolean> {
-  const table = DOCUMENT_ENTITY_TABLES[entityType];
-  if (!table || !Number.isInteger(entityId) || entityId <= 0) return false;
-  const result = await pool.query(`SELECT 1 FROM ${table} WHERE organization_id = $1 AND id = $2 LIMIT 1`, [
-    organizationId,
-    entityId,
-  ]);
-  return (result.rowCount ?? 0) > 0;
-}
-
-/** Document metadata, upload, soft-delete (archive). */
-export function registerDocumentRoutes(app: Express, auth: AuthBundle): void {
-  const masterRead = [auth.ensureAuthenticated];
-  const masterWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
-
-  app.get("/api/v2/documents", ...masterRead, async (req: Request, res: Response) => {
-    const parsed = documentPageQuery.safeParse(req.query);
-    if (!parsed.success) return sendError(res, 400, "INVALID_QUERY", "Invalid document pagination or filter value", { details: parsed.error.flatten() });
-    const query = parsed.data;
-    try {
-      const filters = [eq(documents.organizationId, getActiveOrganizationId())];
-      if (query.entityType) filters.push(eq(documents.entityType, query.entityType));
-      if (query.entityId) filters.push(eq(documents.entityId, query.entityId));
-      if (query.archived === "exclude") filters.push(isNull(documents.archivedAt));
-      if (query.archived === "only") filters.push(isNotNull(documents.archivedAt));
-      if (query.q) {
-        const pattern = `%${query.q}%`;
-        filters.push(or(ilike(documents.fileName, pattern), ilike(documents.entityType, pattern), ilike(documents.fileUrl, pattern))!);
-      }
-      const rows = await db.select().from(documents).where(and(...filters));
-      const withState = rows.map((row) => {
-        const storedPath = storedDocumentPath(row.fileUrl);
-        const fileStatus = storedPath && fs.existsSync(storedPath) ? "available" as const : "missing" as const;
-        return { ...row, fileAvailable: fileStatus === "available", fileStatus, lifecycleStatus: row.archivedAt ? "archived" as const : "active" as const };
-      }).filter((row) => query.fileStatus === "all" || row.fileStatus === query.fileStatus);
-      withState.sort((left, right) => {
-        if (query.sort === "name_asc" || query.sort === "name_desc") {
-          const result = left.fileName.localeCompare(right.fileName) || left.id - right.id;
-          return query.sort === "name_desc" ? -result : result;
-        }
-        const result = new Date(left.uploadedAt).getTime() - new Date(right.uploadedAt).getTime() || left.id - right.id;
-        return query.sort === "newest" ? -result : result;
-      });
-      const total = withState.length;
-      const offset = (query.page - 1) * query.pageSize;
-      return sendOk(res, { items: withState.slice(offset, offset + query.pageSize), total, page: query.page, pageSize: query.pageSize, hasNext: query.page * query.pageSize < total, summary: { active: withState.filter((row) => !row.archivedAt).length, archived: withState.filter((row) => row.archivedAt).length, missing: withState.filter((row) => row.fileStatus === "missing").length } });
-    } catch (error) {
-      return sendError(res, 500, "DOCUMENTS_FETCH_FAILED", "Failed to fetch document history", { details: String(error) });
+export function registerDocumentRoutes(app:Express,auth:AuthBundle){
+  const read=[auth.ensureAuthenticated,auth.ensurePermission("documents","read")];
+  const write=[auth.ensureAuthenticated,auth.ensureRole(["manager","admin"]),auth.ensurePermission("documents","read")];
+  const list=(legacy:boolean)=>async(req:Request,res:Response)=>{
+    let client;
+    try{
+      const query=legacy?legacyQuery.parse(req.query):pageQuery.parse(req.query),actor=getTenantContext();
+      client=await pool.connect();await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");await client.query("SET LOCAL statement_timeout='5s'");
+      const access=await documentAccess(client,actor);
+      if(query.entityType&&!access.types.includes(query.entityType))throw new DocumentAccessError(403,"DOCUMENT_SOURCE_DENIED","You do not have access to this document's source records.");
+      const offset="offset" in query?query.offset:(query.page-1)*query.pageSize,limit="limit" in query?query.limit:query.pageSize;
+      const result=await documentPage(client,actor.organizationId,access.types,query,offset,limit);
+      await client.query("COMMIT");res.setHeader("Cache-Control","private, no-store");
+      if(legacy){res.setHeader("X-Total-Count",String(result.total));res.setHeader("Deprecation","true");return res.json(result.items);}
+      return sendOk(res,{...result,page:"page" in query?query.page:1,pageSize:limit});
+    }catch(error){await client?.query("ROLLBACK").catch(()=>undefined);return failure(res,error);}finally{client?.release();}
+  };
+  app.get("/api/v2/documents",...read,list(false));app.get("/api/documents",...read,list(true));
+  app.post("/api/documents/reconcile",...write,auth.ensurePermission("documents","verify"),async(_req,res)=>{
+    let client;
+    try{client=await pool.connect();await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");await client.query("SET LOCAL statement_timeout='5s'");
+      const actor=getTenantContext(),access=await documentAccess(client,actor);
+      const result=await documentPage(client,actor.organizationId,access.types,{archived:"include",sort:"newest",fileStatus:"all"},0,0);
+      await client.query("COMMIT");return sendOk(res,{checked:result.total,available:result.total-result.summary.missing-result.summary.unverified,missing:result.summary.missing,
+        unverified:result.summary.unverified,verifiedAt:result.observationAt,changesApplied:false});
+    }catch(error){await client?.query("ROLLBACK").catch(()=>undefined);return failure(res,error);}finally{client?.release();}
+  });
+  // Caller-supplied paths cannot establish file ownership, even for a manager.
+  app.post("/api/documents",...write,auth.ensurePermission("documents","create"),(_req,res)=>sendError(res,409,"DOCUMENT_REGISTRATION_UNVERIFIED","No changes were applied. Upload an original through Documents to establish an authorized file binding; arbitrary stored paths cannot be registered."));
+  app.post("/api/documents/upload",...write,auth.ensurePermission("documents","create"),documentUpload.single("file"),async(req,res)=>{
+    let client,committed=false;
+    try{
+      if(!req.file)return sendError(res,400,"DOCUMENT_FILE_REQUIRED","Choose an original file to upload.");
+      if(req.file.originalname.length>255||/[\u0000-\u001f\u007f]/.test(req.file.originalname))throw new DocumentAccessError(400,"DOCUMENT_NAME_INVALID","Use a filename of at most 255 characters without control characters.");
+      const input=uploadBody.parse(req.body),actor=getTenantContext(),source=documentSources[input.entityType];
+      const hash=createHash("sha256");for await(const chunk of createReadStream(req.file.path))hash.update(chunk);
+      const sha256=hash.digest("hex");client=await pool.connect();await client.query("BEGIN");await client.query("SET LOCAL statement_timeout='5s'");
+      const access=await documentAccess(client,actor,true,true);
+      if(!access.types.includes(input.entityType)||!await access.can("documents","create"))throw new DocumentAccessError(403,"DOCUMENT_SOURCE_DENIED","You do not have permission to attach evidence to this source record.");
+      const owned=await client.query(`SELECT id FROM ${source.table} WHERE organization_id=$1 AND id=$2 FOR SHARE`,[actor.organizationId,input.entityId]);
+      if(!owned.rowCount)throw new DocumentAccessError(404,"DOCUMENT_SOURCE_NOT_FOUND","This source record is unavailable in your organization.");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`document-version:${actor.organizationId}:${input.entityType}:${input.entityId}`]);
+      const version=await client.query("SELECT COALESCE(MAX(version),0)+1 AS next FROM documents WHERE organization_id=$1 AND entity_type=$2 AND entity_id=$3",[actor.organizationId,input.entityType,input.entityId]);
+      const fileUrl=`/uploads/documents/${req.file.filename}`;
+      const created=await client.query(`INSERT INTO documents(organization_id,entity_type,entity_id,file_url,file_name,mime_type,file_size,checksum,version,uploaded_by)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,[actor.organizationId,input.entityType,input.entityId,fileUrl,req.file.originalname,req.file.mimetype,req.file.size,sha256,version.rows[0].next,actor.userId]);
+      const id=created.rows[0].id;
+      await appendAuditEventWithClient(client,{organizationId:actor.organizationId,actor:{userId:actor.userId},action:DOCUMENT_UPLOAD_ACTION,resourceType:"document",resourceId:id,
+        details:{fileUrl,fileSize:req.file.size,sha256,entityType:input.entityType,entityId:input.entityId,fileName:req.file.originalname,mimeType:req.file.mimetype},requestId:resolveRequestId(res)});
+      await client.query("COMMIT");committed=true;return res.status(201).json({id,entityType:input.entityType,entityId:input.entityId,fileName:req.file.originalname,version:version.rows[0].next,fileUrl:`/api/documents/${id}/download`});
+    }catch(error){await client?.query("ROLLBACK").catch(()=>undefined);return failure(res,error);}finally{
+      client?.release();if(req.file&&!committed)await unlink(req.file.path).catch(()=>recordServerDiagnosticEvent({source:"request",severity:"warning",title:"Private upload cleanup needs review",message:"A rejected upload could not be removed. Ask an administrator to review its private cleanup evidence; no document record was published.",details:{requestId:resolveRequestId(res),uploadId:req.file!.filename.slice(0,36),errorCode:"DOCUMENT_UPLOAD_CLEANUP_FAILED"}}));
     }
   });
-
-  app.post("/api/documents/reconcile", ...masterWrite, async (_req: Request, res: Response) => {
-    try {
-      const orgId = getActiveOrganizationId();
-      const rows = await db.select().from(documents).where(eq(documents.organizationId, orgId));
-      const missingIds = rows.filter((row) => {
-        const storedPath = storedDocumentPath(row.fileUrl);
-        return !storedPath || !fs.existsSync(storedPath);
-      }).map((row) => row.id);
-      const verifiedAt = new Date();
-      await db.update(documents).set({ lastVerifiedAt: verifiedAt }).where(eq(documents.organizationId, orgId));
-      if (missingIds.length) {
-        recordServerDiagnosticEvent({ severity: "warning", source: "system", title: "Document files missing", message: `${missingIds.length} document file(s) are unavailable; metadata was retained.`, route: "/admin/documents", method: "RECONCILE", details: { organizationId: orgId, missingCount: missingIds.length, documentIds: missingIds.slice(0, 50) } });
+  app.get("/api/documents/:id/download",...read,async(req,res)=>{
+    let client,stream:Awaited<ReturnType<typeof openDocument>>|undefined;
+    try{const id=validId(req.params.id),actor=getTenantContext();client=await pool.connect();await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");await client.query("SET LOCAL statement_timeout='5s'");
+      const access=await documentAccess(client,actor);
+      const result=await client.query<EvidenceRow>(`${documentProofsSql} SELECT ${documentColumnsSql} FROM documents d LEFT JOIN proofs p ON p.resource_id=d.id
+        WHERE d.organization_id=$1 AND d.id=$2 AND d.entity_type=ANY($3::text[]) AND ${ownedDocumentSql()}`,[actor.organizationId,id,access.types]);
+      if(!result.rowCount)throw new DocumentAccessError(404,"DOCUMENT_NOT_FOUND","Document not available in your authorized scope.");
+      const row=result.rows[0];await client.query("COMMIT");client.release();client=undefined;
+      try{stream=await openDocument(row);}catch(error){
+        if(["ENOENT","ENOTDIR"].includes(String((error as NodeJS.ErrnoException).code)))return sendError(res,410,"DOCUMENT_FILE_MISSING","The original file is unavailable. Metadata and history have been preserved.");
+        return sendError(res,409,"DOCUMENT_FILE_UNVERIFIED","File ownership or bytes could not be verified. Reattach an original through the authorized Documents workflow; no replacement was generated.");
       }
-      return sendOk(res, { checked: rows.length, available: rows.length - missingIds.length, missing: missingIds.length, missingIds, verifiedAt: verifiedAt.toISOString() });
-    } catch (error) {
-      return sendError(res, 500, "DOCUMENT_RECONCILIATION_FAILED", "Document reconciliation could not be completed", { details: String(error) });
-    }
+      res.attachment(row.fileName);res.setHeader("Content-Type",row.mimeType??"application/octet-stream");res.setHeader("Cache-Control","private, no-store");res.setHeader("X-Content-Type-Options","nosniff");
+      await pipeline(stream,res);
+    }catch(error){stream?.destroy();await client?.query("ROLLBACK").catch(()=>undefined);if(res.headersSent){res.destroy();return;}return failure(res,error);}finally{client?.release();}
   });
-
-  app.get("/api/documents", ...masterRead, async (req: Request, res: Response) => {
-    try {
-      const orgId = getActiveOrganizationId();
-      const entityType = typeof req.query.entityType === "string" ? req.query.entityType : undefined;
-      const entityId = typeof req.query.entityId === "string" ? Number(req.query.entityId) : undefined;
-      const archived =
-        req.query.archived === "include" || req.query.archived === "only"
-          ? req.query.archived
-          : "exclude";
-      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-      const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : NaN;
-      const offsetRaw = typeof req.query.offset === "string" ? Number(req.query.offset) : NaN;
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 100;
-      const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.trunc(offsetRaw)) : 0;
-
-      const filters = [eq(documents.organizationId, orgId)];
-      if (entityType) {
-        filters.push(eq(documents.entityType, entityType));
-      }
-      if (entityId != null && !Number.isNaN(entityId)) {
-        filters.push(eq(documents.entityId, entityId));
-      }
-      if (archived === "exclude") {
-        filters.push(isNull(documents.archivedAt));
-      } else if (archived === "only") {
-        filters.push(isNotNull(documents.archivedAt));
-      }
-      if (q) {
-        const pattern = `%${q}%`;
-        filters.push(
-          or(
-            ilike(documents.fileName, pattern),
-            ilike(documents.entityType, pattern),
-            ilike(documents.fileUrl, pattern),
-          )!,
-        );
-      }
-
-      const rows = await db
-        .select()
-        .from(documents)
-        .where(and(...filters))
-        .orderBy(desc(documents.uploadedAt), desc(documents.id))
-        .limit(limit)
-        .offset(offset);
-      res.json(rows.map((row) => {
-        const storedPath = storedDocumentPath(row.fileUrl);
-        return { ...row, fileAvailable: Boolean(storedPath && fs.existsSync(storedPath)) };
-      }));
-    } catch (error) {
-      console.error("Error fetching documents:", error);
-      res.status(500).json({ message: "Failed to fetch documents" });
-    }
-  });
-
-  app.post("/api/documents", ...masterWrite, async (req: Request, res: Response) => {
-    try {
-      const payload = req.body as {
-        entityType: string;
-        entityId: number;
-        fileUrl: string;
-        fileName: string;
-        mimeType?: string;
-        fileSize?: number;
-        checksum?: string;
-      };
-      if (!payload?.entityType || !payload?.entityId || !payload?.fileUrl || !payload?.fileName) {
-        return res.status(400).json({ message: "entityType, entityId, fileUrl and fileName are required" });
-      }
-      const orgId = getActiveOrganizationId();
-      if (!(await documentEntityExists(orgId, payload.entityType, Number(payload.entityId)))) {
-        return res.status(400).json({ message: "The selected business record does not exist in this organization." });
-      }
-      const orgScope = eq(documents.organizationId, orgId);
-      const existing = await db
-        .select()
-        .from(documents)
-        .where(
-          and(orgScope, eq(documents.entityType, payload.entityType), eq(documents.entityId, payload.entityId)),
-        );
-      const version = existing.length > 0 ? Math.max(...existing.map((d) => Number(d.version ?? 1))) + 1 : 1;
-      const createdRows = (await db
-        .insert(documents)
-        .values({
-          ...payload,
-          organizationId: orgId,
-          version,
-          uploadedBy: (req as Request & { user?: { id: number } }).user?.id,
-        } as any)
-        .returning()) as any[];
-      const created = createdRows[0];
-      res.status(201).json(created);
-    } catch (error) {
-      console.error("Error creating document record:", error);
-      res.status(500).json({ message: "Failed to create document record" });
-    }
-  });
-
-  app.post("/api/documents/upload", ...masterWrite, documentUpload.single("file"), async (req: Request, res: Response) => {
-    try {
-      if (!req.file) return res.status(400).json({ message: "File is required" });
-      const entityType = typeof req.body?.entityType === "string" ? req.body.entityType : "";
-      const entityId = Number(req.body?.entityId);
-      if (!entityType || !Number.isInteger(entityId) || entityId <= 0) {
-        if (req.file?.path) fs.rmSync(req.file.path, { force: true });
-        return res.status(400).json({ message: "entityType and entityId are required" });
-      }
-
-      const orgId = getActiveOrganizationId();
-      if (!(await documentEntityExists(orgId, entityType, entityId))) {
-        fs.rmSync(req.file.path, { force: true });
-        return res.status(400).json({ message: "The selected business record does not exist in this organization." });
-      }
-      const fileUrl = `/uploads/documents/${req.file.filename}`;
-      const orgScope = eq(documents.organizationId, orgId);
-      const existing = await db
-        .select()
-        .from(documents)
-        .where(and(orgScope, eq(documents.entityType, entityType), eq(documents.entityId, entityId)));
-      const version = existing.length > 0 ? Math.max(...existing.map((d) => Number(d.version ?? 1))) + 1 : 1;
-      const createdRows = (await db
-        .insert(documents)
-        .values({
-          organizationId: orgId,
-          entityType,
-          entityId,
-          fileUrl,
-          fileName: req.file.originalname,
-          mimeType: req.file.mimetype,
-          fileSize: req.file.size,
-          version,
-          uploadedBy: (req as Request & { user?: { id: number } }).user?.id ?? null,
-        } as any)
-        .returning()) as any[];
-      res.status(201).json(createdRows[0]);
-    } catch (error) {
-      console.error("Error uploading document:", error);
-      res.status(500).json({ message: "Failed to upload document" });
-    }
-  });
-
-  app.get("/api/documents/:id/download", ...masterRead, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid document ID" });
-      const [document] = await db
-        .select()
-        .from(documents)
-        .where(and(eq(documents.id, id), eq(documents.organizationId, getActiveOrganizationId())))
-        .limit(1);
-      if (!document) return res.status(404).json({ message: "Document not found" });
-      const storedPath = storedDocumentPath(document.fileUrl);
-      if (!storedPath || !fs.existsSync(storedPath)) {
-        return res.status(410).json({ message: "The stored file is unavailable. Its metadata remains for audit history." });
-      }
-      return res.download(storedPath, document.fileName);
-    } catch (error) {
-      console.error("Error downloading document:", error);
-      return res.status(500).json({ message: "Failed to download document" });
-    }
-  });
-
-  app.delete("/api/documents/:id", ...masterWrite, async (req: Request, res: Response) => {
-    try {
-      const id = Number(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid document ID" });
-      const orgId = getActiveOrganizationId();
-      const updatedRows = (await db
-        .update(documents)
-        .set({ archivedAt: new Date() } as any)
-        .where(and(eq(documents.id, id), eq(documents.organizationId, orgId)))
-        .returning()) as any[];
-      const updated = updatedRows[0];
-      if (!updated) return res.status(404).json({ message: "Document not found" });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error archiving document:", error);
-      res.status(500).json({ message: "Failed to archive document" });
-    }
+  app.delete("/api/documents/:id",...write,auth.ensurePermission("documents","delete"),async(req,res)=>{
+    let client;
+    try{const id=validId(req.params.id),actor=getTenantContext();client=await pool.connect();await client.query("BEGIN");await client.query("SET LOCAL statement_timeout='5s'");
+      const access=await documentAccess(client,actor,true,true);
+      if(!await access.can("documents","delete"))throw new DocumentAccessError(403,"DOCUMENT_ARCHIVE_DENIED","You need document archive permission.");
+      const rows=await client.query("SELECT * FROM documents WHERE organization_id=$1 AND id=$2 FOR UPDATE",[actor.organizationId,id]);const row=rows.rows[0];
+      if(!row||!access.types.includes(row.entity_type as DocumentEntity))throw new DocumentAccessError(404,"DOCUMENT_NOT_FOUND","Document not available in your authorized scope.");
+      const source=documentSources[row.entity_type as DocumentEntity];const owned=await client.query(`SELECT id FROM ${source.table} WHERE organization_id=$1 AND id=$2 FOR SHARE`,[actor.organizationId,row.entity_id]);
+      if(!owned.rowCount)throw new DocumentAccessError(404,"DOCUMENT_SOURCE_NOT_FOUND","Source record unavailable in your organization.");
+      if(!row.archived_at){await client.query("UPDATE documents SET archived_at=clock_timestamp() WHERE organization_id=$1 AND id=$2",[actor.organizationId,id]);
+        await appendAuditEventWithClient(client,{organizationId:actor.organizationId,actor:{userId:actor.userId},action:"DOCUMENT_ARCHIVED",resourceType:"document",resourceId:id,requestId:resolveRequestId(res)});}
+      await client.query("COMMIT");return res.json({id,archived:true,historyPreserved:true});
+    }catch(error){await client?.query("ROLLBACK").catch(()=>undefined);return failure(res,error);}finally{client?.release();}
   });
 }

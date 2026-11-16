@@ -619,16 +619,8 @@ export function SupplierFormSheet({
                   <FormField control={form.control} name="complianceStatus" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Compliance status</FormLabel>
-                      <Select value={field.value || "unknown"} onValueChange={field.onChange}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="compliant">Compliant</SelectItem>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="expired">Expired</SelectItem>
-                          <SelectItem value="blocked">Blocked</SelectItem>
-                          <SelectItem value="unknown">Unknown</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormControl><Input readOnly value={field.value || "unknown"} /></FormControl>
+                      <p className="text-sm text-muted-foreground">Managed through supplier onboarding and compliance review.</p>
                     </FormItem>
                   )} />
                   <FormField

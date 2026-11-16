@@ -67,6 +67,7 @@ import { EntityDocumentsCard } from "@/components/documents/entity-documents-car
 import { createReportingMoneyFormatter } from "@/lib/format/reporting-money";
 import { ModuleTrainingPanel } from "@/components/training/module-training-panel";
 import { invalidateContractDomain } from "@/lib/domain-invalidation";
+import { ContractObligations } from "./contract-obligations";
 
 const CONTRACT_TYPES = ["master", "framework", "one-off", "renewal"] as const;
 const STATUSES = ["draft", "active", "expired", "terminated"] as const;
@@ -407,7 +408,7 @@ export default function ContractsPage() {
 
       {/* View contract detail */}
       <Dialog open={!!viewContract} onOpenChange={(open) => !open && setViewContract(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90dvh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{viewContract?.title}</DialogTitle>
             <DialogDescription>Contract details and copies</DialogDescription>
@@ -485,6 +486,7 @@ export default function ContractsPage() {
                   </ul>
                 </div>
               )}
+              <ContractObligations key={viewContract.id} contractId={viewContract.id} />
               <EntityDocumentsCard
                 entityType="contract"
                 entityId={viewContract.id}

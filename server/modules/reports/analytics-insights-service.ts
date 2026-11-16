@@ -1,6 +1,6 @@
 import type { QueryResultRow } from "pg";
 import { pool } from "../../db";
-import { shipmentOrderLinkSql } from "../operations/shipment-order-link";
+import { shipmentOrderCandidateJoinSql } from "../operations/shipment-order-link";
 import type {
   AnalyticsFilters,
   AnalyticsPartialFailure,
@@ -15,8 +15,20 @@ import {excludeLegacyMixedCurrencyTotals} from '../../../shared/analytics-financ
 import {canReadAnalyticsSource,restrictAnalyticsOutputs,markUnavailableAnalyticsSources,unsupportedAnalyticsSourceFilters,type AnalyticsReadAccess} from '../../../shared/analytics-source-access';
 import {recordServerDiagnosticEvent} from '../../diagnostics/server-diagnostics-store';
 import {getOptionalTenantContext} from '../../organization-context';
+import {logger} from '../../lib/logger';
 
 type AnalyticsArea = "overview" | "procurement" | "inventory" | "logistics" | "suppliers" | "finance" | "exceptions" | "diagnostics" | "reports";
+
+/** Internal observation only: no SQL, parameters or source records leave the reader. */
+export type AnalyticsSourceTiming = {
+  source: string;
+  state: "passed" | "failed" | "denied" | "unsupported" | "retired";
+  poolWaitMs: number;
+  executionMs: number;
+  transactionMs: number;
+  totalMs: number;
+  rows: number;
+};
 
 const OPEN_PO_STATUSES = ["DRAFT", "OPEN", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIALLY_RECEIVED"];
 const CLOSED_SHIPMENT_STATUSES = ["delivered", "cancelled"];
@@ -41,9 +53,11 @@ export async function buildAnalyticsInsights(
   area: AnalyticsArea,
   filters: AnalyticsFilters,
   access:AnalyticsReadAccess,
+  onSourceTiming?: (timing: AnalyticsSourceTiming) => void,
 ): Promise<AnalyticsResponse> {
   const started = Date.now();
   const partialFailures: AnalyticsPartialFailure[] = [];
+  const sourceTimings:AnalyticsSourceTiming[]=[];
   const deniedSources=new Set<string>();
   const params = [
     organizationId,
@@ -59,16 +73,20 @@ export async function buildAnalyticsInsights(
     OPEN_PO_STATUSES,
     CLOSED_SHIPMENT_STATUSES,
   ];
+  const shipmentLink=shipmentOrderCandidateJoinSql("shipment","po");
 
   async function query<T extends QueryResultRow>(source: string, sql: string): Promise<T[]> {
-    if(!canReadAnalyticsSource(source,access)){deniedSources.add(source);return [];}
-    if(source==="supplier_spend"||source==="category_spend")return []; // Deprecated until backed by dated financial evidence.
+    const start=performance.now();let poolWaitMs=0,executionMs=0,rows=0;
+    let state:AnalyticsSourceTiming["state"]="failed";
+    const finish=()=>{const totalMs=performance.now()-start;const timing={source,state,poolWaitMs,executionMs,transactionMs:Math.max(0,totalMs-poolWaitMs-executionMs),totalMs,rows};sourceTimings.push(timing);onSourceTiming?.(timing);};
+    if(!canReadAnalyticsSource(source,access)){deniedSources.add(source);state="denied";finish();return [];}
+    if(source==="supplier_spend"||source==="category_spend"){state="retired";finish();return [];} // Deprecated until backed by dated financial evidence.
     const unsupported=unsupportedAnalyticsSourceFilters(source,filters);
-    if(unsupported.length){partialFailures.push({area:source,code:"UNSUPPORTED_SOURCE_SCOPE",message:`This source cannot apply ${unsupported.join(", ")} through verified relationships. Clear these filters or use the source workspace. Inventory is a current operational snapshot, not dated activity.`,fallbackUsed:false});return [];}
+    if(unsupported.length){partialFailures.push({area:source,code:"UNSUPPORTED_SOURCE_SCOPE",message:`This source cannot apply ${unsupported.join(", ")} through verified relationships. Clear these filters or use the source workspace. Inventory is a current operational snapshot, not dated activity.`,fallbackUsed:false});state="unsupported";finish();return [];}
     if(source==="operations_trend") {
       const end=filters.dateTo?Date.parse(filters.dateTo):Date.now();
       const start=filters.dateFrom?Date.parse(filters.dateFrom):end-29*86400000;
-      if(end-start>366*86400000){partialFailures.push({area:source,code:"TREND_RANGE_UNSUPPORTED",message:"Activity charts support up to 366 days. Other measures retain the requested date scope.",fallbackUsed:false});return [];}
+      if(end-start>366*86400000){partialFailures.push({area:source,code:"TREND_RANGE_UNSUPPORTED",message:"Activity charts support up to 366 days. Other measures retain the requested date scope.",fallbackUsed:false});state="unsupported";finish();return [];}
     }
     try {
       // Analytics queries intentionally use one shared semantic parameter map,
@@ -80,12 +98,15 @@ export async function buildAnalyticsInsights(
       const compactIndexes = new Map(referenced.map((original, index) => [original, index + 1]));
       const compactSql = sql.replace(/\$(\d+)/g, (_placeholder, rawIndex: string) => `$${compactIndexes.get(Number(rawIndex))}`);
       const compactParams = referenced.map((index) => params[index - 1]);
-      const client=await pool.connect();
+      const waiting=performance.now();
+      const client=await pool.connect();poolWaitMs=performance.now()-waiting;
       try {
         await client.query("BEGIN READ ONLY");
         await client.query("SET LOCAL statement_timeout='10s'");
-        const result=await client.query<T>(compactSql,compactParams);
+        const executing=performance.now();
+        const result=await client.query<T>(compactSql,compactParams).finally(()=>{executionMs=performance.now()-executing;});
         await client.query("COMMIT");
+        rows=result.rows.length;state="passed";
         return result.rows;
       }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
     } catch (error) {
@@ -98,7 +119,7 @@ export async function buildAnalyticsInsights(
         fallbackUsed: false,
       });
       return [];
-    }
+    } finally {finish();}
   }
 
   const [supplierOptions, warehouseOptions, categoryOptions, departmentOptions, ownerOptions] = await Promise.all([
@@ -174,8 +195,8 @@ export async function buildAnalyticsInsights(
                 WHEN shipment.eta <= now()+interval '7 days' AND lower(shipment.status) <> ALL($12::text[]) THEN 'due_soon'
                 ELSE 'on_time' END AS risk,
            GREATEST(0, EXTRACT(EPOCH FROM (now()-shipment.eta))/86400)::float8 AS days_late
-    FROM shipments shipment LEFT JOIN purchase_orders po ON po.organization_id=$1
-      AND ${shipmentOrderLinkSql('shipment','po')}
+    FROM ${shipmentLink.relation} LEFT JOIN purchase_orders po ON po.organization_id=$1
+      AND ${shipmentLink.predicate}
     LEFT JOIN suppliers supplier ON supplier.id=po.supplier_id AND supplier.organization_id=$1
     WHERE shipment.organization_id=$1
       AND ($2::timestamptz IS NULL OR shipment.created_at >= $2) AND ($3::timestamptz IS NULL OR shipment.created_at <= $3)
@@ -209,6 +230,7 @@ export async function buildAnalyticsInsights(
              created_at ASC, id ASC`);
 
   const supplierRiskRows = await query<Record<string, unknown>>("supplier_risk", `
+    WITH supplier_evidence AS (
     SELECT supplier.id, COALESCE(supplier.legal_name,supplier.name) AS supplier,
            COALESCE(supplier.risk_rating,supplier.risk_status,'unrated') AS risk,
            COUNT(DISTINCT po.id) FILTER (WHERE upper(po.status)=ANY($11::text[]))::int AS open_pos,
@@ -216,14 +238,20 @@ export async function buildAnalyticsInsights(
            COUNT(DISTINCT shipment.id) FILTER (WHERE shipment.eta < now() AND lower(shipment.status)<>ALL($12::text[]))::int AS late_shipments
     FROM suppliers supplier
     LEFT JOIN purchase_orders po ON po.supplier_id=supplier.id AND po.organization_id=$1
-    LEFT JOIN shipments shipment ON shipment.organization_id=$1 AND ${shipmentOrderLinkSql('shipment','po')}
+    LEFT JOIN ${shipmentLink.relation} ON ${shipmentLink.predicate}
     WHERE supplier.organization_id=$1 AND supplier.status='active' AND ($4::int IS NULL OR supplier.id=$4)
     GROUP BY supplier.id, supplier.legal_name, supplier.name, supplier.risk_rating, supplier.risk_status
-    ORDER BY late_shipments DESC, open_pos DESC, supplier.id LIMIT 100`);
+    ), scored AS (
+      SELECT *,lower(risk) IN ('high','critical','blocked') OR late_shipments>0 AS is_high_risk FROM supplier_evidence
+    )
+    SELECT *,count(*) FILTER(WHERE is_high_risk) OVER ()::int AS high_risk_total,
+      COALESCE(sum(late_shipments) FILTER(WHERE is_high_risk) OVER (),0)::int AS high_risk_late_shipments,
+      count(*) FILTER(WHERE lower(trim(risk)) IN ('','unrated','unknown')) OVER ()::int AS unrated_total
+    FROM scored ORDER BY is_high_risk DESC,late_shipments DESC,open_pos DESC,id LIMIT 100`);
 
   const trendRows = await query<Record<string, unknown>>("operations_trend", `
     WITH days AS (SELECT generate_series(COALESCE($2::date, COALESCE($3::date,current_date)-interval '29 days'), COALESCE($3::date,current_date), interval '1 day')::date AS day)
-    SELECT day,
+    SELECT to_char(day,'YYYY-MM-DD') AS day,
       (SELECT count(*) FROM purchase_requisitions r WHERE r.organization_id=$1 AND r.created_at::date=day)::int AS requisitions,
       (SELECT count(*) FROM purchase_orders p WHERE p.organization_id=$1 AND p.created_at::date=day)::int AS purchase_orders,
       (SELECT count(*) FROM stock_movements m WHERE m.organization_id=$1 AND m.timestamp::date=day AND m.type='RECEIPT')::int AS receipts,
@@ -354,7 +382,7 @@ if (lateShipments.length) recommendations.push({ id: "late-shipments", severity:
     lateShipments: { label: "Late shipments", value: lateShipments.length, status: lateShipments.length ? "danger" as const : "good" as const, href: "/operations/logistics?risk=late", helperText: "Active shipments whose ETA has passed.", details: { averageDaysLate: lateShipments.length ? Number((lateShipments.reduce((sum, row) => sum + finite(row.days_late), 0) / lateShipments.length).toFixed(1)) : 0, worstDelayDays: lateShipments.length ? Math.floor(lateShipments.reduce((max,row)=>Math.max(max,finite(row.days_late)),0)) : 0 } },
     openExceptions: { label: "Open exceptions", value: activeExceptions.length, status: activeExceptions.some((row) => String(row.severity).toLowerCase() === "critical") ? "danger" as const : activeExceptions.length ? "warning" as const : "good" as const, href: "/operations/exceptions?status=open", helperText: "Current open or in-progress operational exceptions.", details: { critical: activeExceptions.filter((row) => String(row.severity).toLowerCase() === "critical").length, overSla: activeExceptions.filter((row) => finite(row.age_hours) > finite(row.sla_hours)).length, oldestHours: activeExceptions.length ? Math.floor(activeExceptions.reduce((max,row)=>Math.max(max,finite(row.age_hours)),0)) : 0 } },
     apExposure: { label: "AP exposure", value: openInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0), status: overdueInvoices.length ? "danger" as const : "neutral" as const, href: "/finance/accounts-payable", helperText: "Unpaid supplier invoice exposure in document currencies.", details: { overdueValue: overdueInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0), dueThisWeek: openInvoices.filter((row) => row.aging === "due_7").reduce((sum, row) => sum + finite(row.due_amount), 0), pendingApprovalValue: pendingInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0) } },
-    supplierRisk: { label: "Supplier risk", value: highRiskSuppliers.length, status: highRiskSuppliers.length ? "warning" as const : "good" as const, href: "/procurement/suppliers?risk=high", helperText: "Active suppliers with high/critical ratings or current late shipments.", details: { worstSupplier: String(highRiskSuppliers[0]?.supplier ?? "None"), lateShipments: highRiskSuppliers.reduce((sum, row) => sum + finite(row.late_shipments), 0) } },
+    supplierRisk: { label: "Supplier risk", value: finite(supplierRiskRows[0]?.high_risk_total), status: finite(supplierRiskRows[0]?.high_risk_total) ? "warning" as const : "neutral" as const, href: filters.supplierId ? `/procurement/suppliers/${filters.supplierId}` : "/analytics/suppliers", helperText: "Active suppliers with high, critical or blocked ratings, or current late shipments. Supplier Analytics shows a bounded attention list. Unrated suppliers are not cleared by this count.", details: { worstSupplier: String(highRiskSuppliers[0]?.supplier ?? "None"), lateShipments: finite(supplierRiskRows[0]?.high_risk_late_shipments), unratedSuppliers: finite(supplierRiskRows[0]?.unrated_total) } },
     systemHealth: { label: "System health", value: sourceFailureCount ? "Degraded" : limitedScope ? "Limited scope" : "Ready", status: sourceFailureCount ? "warning" as const : limitedScope ? "neutral" as const : "good" as const, href: "/admin/system-diagnostics", helperText: "Readiness of the analytics data sources used for this view.", details: { failedAnalyticsFeeds: sourceFailureCount, failedApiCalls: "Open diagnostics", slowEndpoints: "Open diagnostics", routeWarnings: "Open diagnostics" } },
   };
 
@@ -414,6 +442,10 @@ if (lateShipments.length) recommendations.push({ id: "late-shipments", severity:
   restrictAnalyticsOutputs(response,deniedSources);
   if(inventoryRows.some(row=>row.incomplete_reservation_evidence===true))markUnavailableAnalyticsSources(response,new Set(["inventory"]),"Warehouse availability is incomplete because reservations lack location evidence. Reconcile allocation locations before relying on this quantity.");
   for(const failure of partialFailures)markUnavailableAnalyticsSources(response,new Set([failure.area]),failure.message);
+  if(response.meta.queryMs>=1000)logger.info("Analytics observation timing",{
+    requestId:getOptionalTenantContext()?.correlationId,route:`/api/analytics/${area}`,durationMs:response.meta.queryMs,
+    sourceTimings:sourceTimings.map(t=>({...t,poolWaitMs:Math.round(t.poolWaitMs),executionMs:Math.round(t.executionMs),transactionMs:Math.round(t.transactionMs),totalMs:Math.round(t.totalMs)})),
+  });
   return excludeLegacyMixedCurrencyTotals(response);
 }
 

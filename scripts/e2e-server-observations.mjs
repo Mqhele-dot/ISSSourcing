@@ -7,7 +7,7 @@ export function sanitizeServerObservation(line){
   if(!["info","warn","error"].includes(event.level))return null;
   const meta=event.meta??{},safe={level:event.level};
   if(typeof event.timestamp==="string" && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(event.timestamp))safe.timestamp=event.timestamp;
-  const known=["HTTP request completed","Database pool initialized","Database connection successful","Server listening","E2E owned server spawned"];
+  const known=["HTTP request completed","Database pool initialized","Database connection successful","Server listening","E2E owned server spawned","Analytics observation timing"];
   safe.event=known.includes(event.message)?event.message:"Other structured server event";
   if(event.message==="E2E owned server spawned"){
     if(["source","built"].includes(meta.runtimeMode))safe.runtimeMode=meta.runtimeMode;
@@ -21,6 +21,16 @@ export function sanitizeServerObservation(line){
   if(Number.isInteger(meta.status)&&meta.status>=100&&meta.status<=599)safe.status=meta.status;
   if(Number.isFinite(meta.durationMs)&&meta.durationMs>=0)safe.durationMs=meta.durationMs;
   if(typeof meta.errorCode==="string" && /^[A-Z0-9_]{1,100}$/.test(meta.errorCode))safe.errorCode=meta.errorCode;
+  if(event.message==="Analytics observation timing"&&Array.isArray(meta.sourceTimings)){
+    const sources=new Set(["filter_suppliers","filter_warehouses","filter_categories","filter_departments","filter_owners","procurement","procurement_pipeline","requisition_pipeline","supplier_spend","category_spend","inventory","logistics","finance","exceptions","supplier_risk","operations_trend"]);
+    safe.sourceTimings=meta.sourceTimings.slice(0,16).flatMap(t=>{
+      if(!t||!sources.has(t.source)||!["passed","failed","denied","unsupported","retired"].includes(t.state))return [];
+      const timing={source:t.source,state:t.state};
+      for(const field of ["poolWaitMs","executionMs","transactionMs","totalMs"])if(Number.isFinite(t[field])&&t[field]>=0&&t[field]<=86400000)timing[field]=t[field];
+      if(Number.isSafeInteger(t.rows)&&t.rows>=0)timing.rows=t.rows;
+      return [timing];
+    });
+  }
   return safe;
 }
 

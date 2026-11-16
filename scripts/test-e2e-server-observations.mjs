@@ -15,6 +15,13 @@ assert.equal(sanitizeServerObservation("not JSON"),null);
 assert.deepEqual(sanitizeServerObservation(JSON.stringify({level:"info",message:"E2E owned server spawned",meta:{runtimeMode:"built",entryPoint:"dist/index.js",pid:123,commandLine:"private-command",credentials:"private-secret"}})),{level:"info",event:"E2E owned server spawned",runtimeMode:"built",entryPoint:"dist/index.js",pid:123});
 assert.deepEqual(sanitizeServerObservation(JSON.stringify({level:"info",message:"E2E owned server spawned",meta:{runtimeMode:"untrusted",entryPoint:"private-path",pid:-1}})),{level:"info",event:"E2E owned server spawned"});
 for(const value of ["null","true","42","[]",'"text"'])assert.equal(sanitizeServerObservation(value),null);
+const analytics=sanitizeServerObservation(JSON.stringify({level:"info",message:"Analytics observation timing",meta:{requestId:"request-123",route:"/api/analytics/procurement?private-query",durationMs:1200,
+  sourceTimings:[{source:"logistics",state:"passed",poolWaitMs:1,executionMs:42,transactionMs:3,totalMs:46,rows:5000,sql:"private-sql",params:["private-parameters"]},
+    {source:"private-source",state:"passed"},{source:"finance",state:"failed",executionMs:-1,totalMs:Infinity,rows:-1,secret:"private-secret"}]}}));
+assert.deepEqual(analytics,{level:"info",event:"Analytics observation timing",requestId:"request-123",route:"/api/analytics/procurement",durationMs:1200,
+  sourceTimings:[{source:"logistics",state:"passed",poolWaitMs:1,executionMs:42,transactionMs:3,totalMs:46,rows:5000},{source:"finance",state:"failed"}]});
+assert.ok(!JSON.stringify(analytics).includes("private-"));
+assert.equal(sanitizeServerObservation(JSON.stringify({level:"info",message:"Analytics observation timing",meta:{sourceTimings:Array.from({length:100},()=>({source:"inventory",state:"passed"}))}})).sourceTimings.length,16);
 assert.throws(()=>createServerObservationLog(path.resolve("unrelated","server-observations.jsonl")));
 mkdirSync(path.resolve("artifacts","release-runs"),{recursive:true});
 const dir=mkdtempSync(path.resolve("artifacts","release-runs","server-observation-test-"));

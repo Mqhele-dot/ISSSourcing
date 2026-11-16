@@ -4,6 +4,7 @@
  */
 import type { QueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
+import { SUPPLIER_DELIVERY_QUERY_ROOT } from "@shared/supplier-delivery-scorecard";
 import {
   PO_ENVELOPE_QUERY_ROOT,
   PO_OPERATIONAL_DETAIL_QUERY_ROOT,
@@ -66,6 +67,8 @@ async function invalidateMany(queryClient: QueryClient, prefixes: readonly (read
 }
 
 const dashboardsAndAnalyticsPrefixes: readonly (readonly string[])[] = [
+  ["maverick-spend-evidence"],
+  [SUPPLIER_DELIVERY_QUERY_ROOT],
   ["/api/v2/analytics/financial-measures"],
   qk.controlTower as unknown as readonly string[],
   qk.analytics as unknown as readonly string[],
@@ -351,8 +354,11 @@ export async function invalidateSourcingDomain(
     invalidateKeyPrefix(queryClient, qk.supplierSourcing),
     invalidateMany(queryClient, [
       ["/api/sourcing/events"],
+      ["/api/sourcing/requisition-context"],
       ["/api/sourcing/supplier/events"],
       ...eventKeys,
+      LEGACY_QUERY_PREFIXES.requisitions,
+      ["/api/v2/procurement/requisitions"],
       qk.requisitions,
       qk.purchaseOrders,
       qk.contracts,

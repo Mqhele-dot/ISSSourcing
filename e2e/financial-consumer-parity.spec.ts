@@ -1,10 +1,10 @@
 import { expect,test,type Page } from "@playwright/test";
-import { gotoAuthed } from "./test-helpers";
+import { gotoAuthed, readBrowserApi } from "./test-helpers";
 import { requireDisposableE2eDatabase } from "./wave7-helpers";
 import { pool } from "../server/db";
 
 async function orderedSummary(page:Page,supplierId?:number) {
-  const response=await page.request.get(`/api/v2/analytics/financial-measures?measure=ordered${supplierId?`&supplierId=${supplierId}`:""}`);
+  const response=await readBrowserApi(page, `/api/v2/analytics/financial-measures?measure=ordered${supplierId?`&supplierId=${supplierId}`:""}`);
   expect(response.status()).toBe(200);
   const body=await response.json();
   return body.data??body;
@@ -34,7 +34,17 @@ test("financial consumers preserve shared amounts and explicitly separate unsupp
   expect(supplier.rowCount).toBe(1);
   const supplierId=Number(supplier.rows[0].id);
   const scoped=await orderedSummary(page,supplierId);
+  const agingResponse=page.waitForResponse(response=>{
+    const url=new URL(response.url());
+    return url.pathname==="/api/v2/ap/aging"&&url.searchParams.get("supplierId")===String(supplierId)
+      &&response.request().method()==="GET";
+  },{timeout:25_000});
   await page.goto(`/procurement/suppliers/${supplierId}`,{waitUntil:"load"});
+  const aging=await agingResponse;
+  const agingBody=await aging.json();
+  expect(aging.status(),`Supplier AP Aging request ${aging.headers()["x-request-id"]??"unknown"}`).toBe(200);
+  expect(agingBody.data.measures.map((measure:{measure:string})=>measure.measure).sort()).toEqual(["ap_disputed","ap_outstanding","ap_unapproved"]);
+  expect(agingBody.data.measures.every((measure:{normalizedFilters:{supplierId:number}})=>measure.normalizedFilters.supplierId===supplierId)).toBe(true);
   await expect(page.getByTestId("financial-measure-ordered").getByText(scoped.amount===null?"Unavailable":`${scoped.currencyCode} ${scoped.amount}`,{exact:true}).first()).toBeVisible({timeout:25_000});
   expect(scoped.normalizedFilters).toEqual({supplierId});
   expect(errors).toEqual([]);
@@ -42,7 +52,7 @@ test("financial consumers preserve shared amounts and explicitly separate unsupp
 
 test('legacy Analytics responses do not expose ten unsupported financial output paths',async({page})=>{
   test.setTimeout(90000);requireDisposableE2eDatabase();await gotoAuthed(page,'/analytics/procurement');
-  const response=await page.request.get('/api/analytics/procurement');expect(response.status()).toBe(200);
+  const response=await readBrowserApi(page, '/api/analytics/procurement');expect(response.status()).toBe(200);
   const wrapped=await response.json(),data=wrapped.data??wrapped;
   expect(data.kpis.procurementSpend.value).toBe('Unavailable');
   expect(data.kpis.apExposure.value).toBe('Unavailable');

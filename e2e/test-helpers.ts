@@ -1,5 +1,11 @@
 import { expect, type Page } from "@playwright/test";
 
+// Browser transport probes use the same authenticated cookie jar. Tolerate one
+// Node/Playwright socket reset on a read only; never retry HTTP failures or writes.
+export function readBrowserApi(page: Page, url: string) {
+  return page.request.get(url, { maxRetries: 1 });
+}
+
 export async function loginAsAdmin(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("invtrack:first-run-coach:v2:1", "done");

@@ -1,13 +1,15 @@
 import type { Express, Request, Response } from "express";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { db, pool } from "../../db";
-import { getActiveOrganizationId } from "../../organization-context";
+import { getActiveOrganizationId, getTenantContext } from "../../organization-context";
 import { sendError, sendOk } from "../../api-response";
 import { sendEmail } from "../../services/email-service";
 import { notifications, notificationPreferences, organizationMembers, users } from "@shared/schema";
 import type { AuthBundle } from "../procurement/types";
 import { z } from "zod";
 import { storage } from "../../storage";
+import type { PoolClient } from "pg";
+import { DocumentAccessError, documentAccess } from "../documents/document-access";
 
 const notificationPreferencesPatch = z.object({
   emailEnabled: z.boolean().optional(),
@@ -46,17 +48,28 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
     const page = Number(req.query.page ?? 1);
     const pageSize = Number(req.query.pageSize ?? 25);
     const state = String(req.query.state ?? "active");
-    if (!Number.isSafeInteger(page) || page < 1 || ![25, 50, 100].includes(pageSize) || !["active", "history", "all"].includes(state))
+    if (!Number.isSafeInteger(page) || page < 1 || page > 10000 || ![25, 50, 100].includes(pageSize) || !["active", "history", "all"].includes(state))
       return sendError(res, 400, "ACTION_INBOX_QUERY_INVALID", "Choose a valid page, size, and view.");
     const org = getActiveOrganizationId();
     const userId = Number(req.user?.id);
+    let client: PoolClient | undefined;
     try {
       const entityTypes = await allowedEntityTypes(org, userId);
       const canReadInventory = entityTypes === null || entityTypes.includes("inventory");
-      const diagnosticStorage=(await pool.query("SELECT to_regclass('public.diagnostic_persistent_findings') IS NOT NULL AS ready")).rows[0]?.ready===true;
+      client=await pool.connect();
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      await client.query("SET LOCAL statement_timeout='5s'");
+      const {rows:[schema]}=await client.query(`SELECT to_regclass('public.diagnostic_persistent_findings') IS NOT NULL AS diagnostics,
+        to_regclass('public.contract_obligation_versions') IS NOT NULL AS obligations`);
+      const diagnosticStorage=schema.diagnostics===true;
+      let canReadObligations=false;
+      if(schema.obligations && (entityTypes===null || entityTypes.includes("contract"))) {
+        try { canReadObligations=await (await documentAccess(client,getTenantContext(),false)).can("purchases"); }
+        catch(error){ if(!(error instanceof DocumentAccessError)) throw error; }
+      }
       const base = `WITH inbox AS (SELECT ('notification:'||n.id) AS id,n.title,n.body,n.type,n.entity_type AS "entityType",n.entity_id AS "entityId",
         n.target_path AS "targetPath",n.priority,n.due_at AS "dueAt",n.read_at AS "readAt",n.archived_at AS "archivedAt",
-        n.last_occurred_at AS "lastOccurredAt",n.occurrence_count AS "occurrenceCount",
+        n.last_occurred_at AS "lastOccurredAt",n.occurrence_count AS "occurrenceCount",NULL::text AS "dueDate",
         CASE WHEN n.type IN ('diagnostic_daily_summary','diagnostic_recovery') THEN 'information'
           WHEN n.type='diagnostic_transition' AND n.title LIKE 'Recovered:%' THEN 'information'
           ${diagnosticStorage?"WHEN n.entity_type='diagnostic_finding' AND diagnostic_finding.lifecycle='resolved' THEN 'completed'":""}
@@ -84,22 +97,36 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
         SELECT ('putaway:'||t.id),('Put-away '||t.task_number),
           ('Place '||t.quantity::text||' '||i.name||' in '||w.name),'assigned_putaway',
           'inventory',t.item_id,('/inventory/put-away?q='||replace(t.task_number,' ','%20')),lower(t.priority),t.due_at,
-          NULL::timestamp,NULL::timestamp,t.updated_at,1,
+          NULL::timestamp,NULL::timestamp,t.updated_at,1,NULL::text,
           CASE WHEN t.status IN ('COMPLETED','CANCELLED') THEN 'completed' ELSE 'open' END
         FROM inventory_putaway_tasks t
         JOIN inventory_items i ON i.id=t.item_id AND i.organization_id=t.organization_id
         JOIN warehouses w ON w.id=t.warehouse_id AND w.organization_id=t.organization_id
-        WHERE t.organization_id=$1 AND t.assigned_user_id=$2 AND $4::boolean)`;
+        WHERE t.organization_id=$1 AND t.assigned_user_id=$2 AND $4::boolean
+        ${canReadObligations?`UNION ALL
+        SELECT ('obligation:'||v.contract_id||':'||v.obligation_id),v.title,('Agreement: '||c.title),'assigned_contract_obligation',
+          'contract',c.id,('/procurement/contracts?agreementId='||c.id||'&obligationId='||v.obligation_id),'normal',
+          v.due_date::timestamp,NULL::timestamp,NULL::timestamp,v.recorded_at,1,to_char(v.due_date,'YYYY-MM-DD'),v.state
+        FROM contract_obligation_versions v
+        JOIN supplier_contracts c ON c.organization_id=v.organization_id AND c.id=v.contract_id
+        JOIN suppliers s ON s.organization_id=c.organization_id AND s.id=c.supplier_id
+        WHERE v.organization_id=$1 AND v.owner_user_id=$2 AND NOT EXISTS (
+          SELECT 1 FROM contract_obligation_versions newer WHERE newer.organization_id=v.organization_id
+          AND newer.contract_id=v.contract_id AND newer.obligation_id=v.obligation_id AND newer.revision>v.revision
+        )`:""})`;
       const filter = state === "all" ? "" : ` WHERE state ${state === "active" ? "=" : "<>"} 'open'`;
       const params = [org, userId, entityTypes, canReadInventory];
-      const count = await pool.query(`${base} SELECT count(*)::int AS total FROM inbox${filter}`, params);
-      const items = await pool.query(`${base} SELECT * FROM inbox${filter} ORDER BY "dueAt" ASC NULLS LAST,"lastOccurredAt" DESC,id DESC LIMIT $5 OFFSET $6`, [...params, pageSize, (page - 1) * pageSize]);
+      const count = await client.query(`${base} SELECT count(*)::int AS total FROM inbox${filter}`, params);
+      const items = await client.query(`${base} SELECT * FROM inbox${filter} ORDER BY "dueAt" ASC NULLS LAST,"lastOccurredAt" DESC,id DESC LIMIT $5 OFFSET $6`, [...params, pageSize, (page - 1) * pageSize]);
       const total = Number(count.rows[0]?.total ?? 0);
+      await client.query("COMMIT");
+      res.setHeader("Cache-Control","private, no-store");
       return sendOk(res, { items: items.rows, total, page, pageSize, hasNext: page * pageSize < total });
     } catch (error) {
+      await client?.query("ROLLBACK").catch(()=>undefined);
       console.error("Action inbox failed:", error);
       return sendError(res, 500, "ACTION_INBOX_FAILED", "Could not load your action inbox. Please retry.");
-    }
+    } finally { client?.release(); }
   });
 
   app.get("/api/notifications", ...masterRead, async (req: Request, res: Response) => {

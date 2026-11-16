@@ -30,6 +30,8 @@ type ExportHistoryRow = {
   createdAt: string;
   downloadUrl: string | null;
   canRetry: boolean;
+  downloadBlocked?: boolean;
+  downloadGuidance?: string | null;
   profile?: "standard" | "compact_excel";
   lastError?: string | null;
   retryOfJobId?: number | null;
@@ -400,6 +402,7 @@ export default function ExportCenterPage() {
                     </div>
                     {row.retryOfJobId ? <div className="text-xs text-muted-foreground">Retry of job #{row.retryOfJobId}</div> : null}
                     {row.profile==='compact_excel' ? <p className="text-xs text-muted-foreground">Compact Excel is awaiting release verification. Downloads and retries are disabled.</p> : null}
+                    {row.downloadBlocked ? <p role="status" className="max-w-prose text-sm text-amber-700 dark:text-amber-300">{row.downloadGuidance}<Link className="mt-2 block underline" href="/procurement/suppliers">Open suppliers to generate a new export</Link></p> : null}
                     {row.error ? (
                       <div className="space-y-1 text-xs text-destructive">
                         <div>{row.profile==='compact_excel'?'This Compact Excel attempt could not be completed. Ask your administrator to review its saved evidence; retries remain disabled.':'This export could not be completed. Retry it, or contact your administrator if it fails again.'}</div>
@@ -412,11 +415,11 @@ export default function ExportCenterPage() {
                   </div>
                   {row.artifacts?.length===2? <p className="text-xs text-muted-foreground">The summary workbook is below 100 MB. The full-detail archive may be larger. Both files use the saved export snapshot.</p>:null}
                   <div className="flex flex-wrap gap-2">
-                    {row.profile!=='compact_excel'&&row.status === "succeeded"&&row.artifacts?.length===2 ? row.artifacts.map(file=>(
+                    {!row.downloadBlocked&&row.profile!=='compact_excel'&&row.status === "succeeded"&&row.artifacts?.length===2 ? row.artifacts.map(file=>(
                       <Button key={file.kind} size="sm" variant="outline" onClick={()=>downloadMutation.mutate({...row,artifact:file.kind})} disabled={downloadMutation.isPending}>
                         <Download className="mr-2 h-4 w-4" />{file.kind==="summary"?"Summary workbook":"Full-detail archive"}
                       </Button>
-                    )):row.profile!=='compact_excel'&&row.status === "succeeded" ? (
+                    )):!row.downloadBlocked&&row.profile!=='compact_excel'&&row.status === "succeeded" ? (
                       <Button size="sm" variant="outline" onClick={() => downloadMutation.mutate(row)} disabled={downloadMutation.isPending}>
                         <Download className="mr-2 h-4 w-4" />
                         Download
