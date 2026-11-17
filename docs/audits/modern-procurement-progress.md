@@ -2,6 +2,12 @@
 
 Baseline: `609196f`. Updated 11 October 2026. No release is signed off by this document.
 
+## Build 3 — Smart Procurement Intake, 17 November 2026
+
+Complete on disposable acceptance: deterministic evaluation and controlled conversion reuse canonical requisition, commercial-default, Master Data, sourcing, approval and audit authorities. Current-source revalidation, actor/tenant scope, idempotent retries and atomic audit rollback are exercised, not inferred from UI presence. Recent/repeat starting points never copy approval or old commercial authority; favorites are explicitly browser-local. RFQ and blanket paths remain separate approved workflows after a requisition draft.
+
+Final combined runtime/browser gate passed 19/19 desktop and 19/19 at 390px, then same-candidate production smoke passed in 20,298 ms. Earlier failed attempts remain retained. See STATUS for fingerprint, commands, journals, screenshots, database identities and cleanup. Production enablement and clean-committed-candidate verification remain separate. Build 4 is next; this record does not sign off the entire programme.
+
 ## Build 2 — evidence coverage, obligation calendar and owner discovery, 14 November 2026
 
 Maverick Spend now filters by PO date, supplier and missing evidence family, while retaining exactly one canonical original-currency contribution per order. The 5,002-order pagination and organization-local obligation-date cases passed in the 21/21 desktop and 390px gates, and the same package passed production smoke. PostgreSQL confirmed the exact disposable database names absent. Action Inbox owner discovery and exact agreement/obligation links are implemented and in guarded verification. See STATUS for all candidate identities and retained failures. No business migration or activation.

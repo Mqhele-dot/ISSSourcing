@@ -27,6 +27,7 @@ import { registerCapabilityRoutes } from "./capabilities/register-capability-rou
 import { registerFinanceRoutes } from "./finance/register-finance-routes";
 import { registerArRoutes } from "./finance/register-ar-routes";
 import { registerProcurementCompletionRoutes } from "./procurement-completion/register-procurement-completion-routes";
+import { registerProcurementIntakeRoutes } from "./procurement/register-procurement-intake-routes";
 import { registerInventoryFlowRoutes } from "./inventory-flow/register-inventory-flow-routes";
 import { registerCycleCountRoutes } from "./cycle-counts/register-cycle-count-routes";
 import { registerPositionRoutes } from "./inventory-positions/register-position-routes";
@@ -71,6 +72,7 @@ export function registerDomainModules(app: Express, auth: AuthBundle): void {
   registerSupplierRoutes(app, auth);
   registerProcurementRoutes(app, auth);
   registerProcurementCompletionRoutes(app, auth);
+  registerProcurementIntakeRoutes(app, auth);
   registerSourcingRoutes(app, auth);
   registerCommercialQuotationRoutes(app, auth);
   registerApRoutes(app, auth);

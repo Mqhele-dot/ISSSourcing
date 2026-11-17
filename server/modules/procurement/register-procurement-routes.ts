@@ -48,7 +48,7 @@ import { transferRequisitionBudget } from "./requisition-budget-transfer";
 import { bindPurchaseOrderBudgetProvenance } from "./purchase-order-budget-provenance";
 import { validateMdmTransaction } from "../master-data/mdm-control-centre";
 import type { AuthBundle } from "./types";
-import { getReportingCurrencyCode } from "../../lib/org-reporting-money";
+import { getCanonicalReportingCurrencyCode, getReportingCurrencyCode } from "../../lib/org-reporting-money";
 import { appendAuditEvent } from "../../services/audit-chain-service";
 import { appendAuditEventWithClient } from "../../services/audit-chain-client";
 import { authorizeApprovalStep } from "../../services/approval-workflow-service";
@@ -98,24 +98,29 @@ async function recordWorkflowResult(input: {
     .onConflictDoNothing();
 }
 
-async function assertRequisitionSourcingEvidence(input: {
-  organizationId: number;
-  requisitionId: number;
-  reportingValue: number;
-}, database: Pick<typeof db, "select"> = db) {
+export async function readRequisitionSourcingPolicy(organizationId: number, database: Pick<typeof db, "select"> = db) {
   const policies = await database
     .select({ id: mdmProcurementPolicies.id, code: mdmProcurementPolicies.code,
       updatedAt: mdmProcurementPolicies.updatedAt, config: mdmProcurementPolicies.config })
     .from(mdmProcurementPolicies)
     .where(
       and(
-        eq(mdmProcurementPolicies.organizationId, input.organizationId),
+        eq(mdmProcurementPolicies.organizationId, organizationId),
         eq(mdmProcurementPolicies.policyType, "sourcing"),
         eq(mdmProcurementPolicies.active, true),
       ),
     ).orderBy(asc(mdmProcurementPolicies.id)).for("share");
   const policy = policies.find(({ config }) => config?.competitionRequired === true || config?.competitionRequired === "true");
   const threshold = Number(policy?.config?.competitionThreshold ?? Number.POSITIVE_INFINITY);
+  return {policy,threshold};
+}
+
+async function assertRequisitionSourcingEvidence(input: {
+  organizationId: number;
+  requisitionId: number;
+  reportingValue: number;
+}, database: Pick<typeof db, "select"> = db) {
+  const {policy,threshold}=await readRequisitionSourcingPolicy(input.organizationId,database);
   const decision = { requisitionId: input.requisitionId, reportingValue: input.reportingValue,
     threshold: Number.isFinite(threshold) ? threshold : null,
     policy: policy ? { id: policy.id, code: policy.code, updatedAt: policy.updatedAt.toISOString() } : null };
@@ -276,12 +281,14 @@ async function assertPurchaseOrderCurrencyCodeAllowed(
   return { ok: true };
 }
 
-async function resolveActiveCurrencyForRequisition(
+export async function resolveActiveCurrencyForRequisition(
   currencyCode: unknown,
+  client?: PoolClient,
 ): Promise<{ ok: true; currencyCode: string; exchangeRateToZar: number } | { ok: false; code: string; message: string }> {
-  const reportingCurrency = await getReportingCurrencyCode(storage);
+  const database=client?drizzle(client):db;
+  const reportingCurrency=client?await getCanonicalReportingCurrencyCode(getActiveOrganizationId(),database):await getReportingCurrencyCode(storage);
   const requested = String(currencyCode ?? reportingCurrency).trim().toUpperCase() || reportingCurrency;
-  const rows = await db
+  const rows = await database
     .select({ code: currencies.code, exchangeRateToZar: currencies.exchangeRateToZar })
     .from(currencies)
     .where(and(eq(currencies.organizationId, getActiveOrganizationId()), eq(currencies.code, requested), eq(currencies.active, true)))
@@ -296,7 +303,7 @@ async function resolveActiveCurrencyForRequisition(
   }
   let rate = requested === reportingCurrency ? 1 : 0;
   if (requested !== reportingCurrency) {
-    const rateRows = await pool.query<{ rate: number }>(
+    const rateRows = await (client??pool).query<{ rate: number }>(
       `SELECT rate FROM mdm_exchange_rates
        WHERE organization_id = $1
          AND upper(from_currency_code) = $2
@@ -338,7 +345,7 @@ const purchaseOrderCommercialPatchSchema = z
   })
   .strict();
 
-function normalizeRequisitionLineInput(item: unknown, index: number) {
+export function normalizeRequisitionLineInput(item: unknown, index: number) {
   const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
   const lineType = String(row.lineType ?? "CATALOG").trim().toUpperCase();
   if (!(["CATALOG", "NON_STOCK", "SERVICE"] as const).includes(lineType as "CATALOG" | "NON_STOCK" | "SERVICE")) {
@@ -389,10 +396,12 @@ function normalizeRequisitionLineInput(item: unknown, index: number) {
   };
 }
 
-async function validateRequisitionLineMasterDataPolicy(
+export async function validateRequisitionLineMasterDataPolicy(
   items: Array<Pick<InsertPurchaseRequisitionItem, "unitOfMeasureId" | "taxCodeId" | "costCentreId" | "glAccountCode">>,
+  client?: PoolClient,
 ): Promise<{ ok: true } | { ok: false; errors: Array<{ code: string; message: string; line: number }> }> {
-  const policies = await pool.query<{ config: Record<string, unknown> | null }>(
+  const database=client?drizzle(client):db;
+  const policies = await (client??pool).query<{ config: Record<string, unknown> | null }>(
     `
       SELECT config
       FROM mdm_procurement_policies
@@ -424,13 +433,13 @@ async function validateRequisitionLineMasterDataPolicy(
   const costCentreIds = [...new Set(items.map((item) => Number(item.costCentreId)).filter((id) => id > 0))];
   const [validUoms, validTaxes, validCostCentres] = await Promise.all([
     uomIds.length
-      ? db.select({ id: unitsOfMeasure.id }).from(unitsOfMeasure).where(and(eq(unitsOfMeasure.organizationId, organizationId), eq(unitsOfMeasure.active, true)))
+      ? database.select({ id: unitsOfMeasure.id }).from(unitsOfMeasure).where(and(eq(unitsOfMeasure.organizationId, organizationId), eq(unitsOfMeasure.active, true)))
       : Promise.resolve([]),
     taxIds.length
-      ? db.select({ id: taxCodes.id }).from(taxCodes).where(and(eq(taxCodes.organizationId, organizationId), eq(taxCodes.active, true)))
+      ? database.select({ id: taxCodes.id }).from(taxCodes).where(and(eq(taxCodes.organizationId, organizationId), eq(taxCodes.active, true)))
       : Promise.resolve([]),
     costCentreIds.length
-      ? db.select({ id: mdmCostCentres.id }).from(mdmCostCentres).where(and(eq(mdmCostCentres.organizationId, organizationId), eq(mdmCostCentres.active, true)))
+      ? database.select({ id: mdmCostCentres.id }).from(mdmCostCentres).where(and(eq(mdmCostCentres.organizationId, organizationId), eq(mdmCostCentres.active, true)))
       : Promise.resolve([]),
   ]);
   const validUomIds = new Set(validUoms.map((row) => row.id));

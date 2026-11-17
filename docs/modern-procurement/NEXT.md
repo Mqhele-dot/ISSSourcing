@@ -1,8 +1,12 @@
 # Next executable work
 
-## Current queue — Build 3 of 7: Smart Procurement Intake
+## Current queue — Build 4 of 7: Segregation of Duties and Payment Risk
 
-Start with the existing requisition form and draft writer, Master Data context, agreement pricing/eligibility routes and sourcing-threshold checks. Derive the recommendation server-side; retain its reasons, blockers and permissible alternatives; revalidate on explicit conversion into a canonical draft. No automatic submission or spend. Use the guarded runner on desktop and 390px for the complete Intake flow, including policy drift, retry and cross-tenant denial. Do not repeat or extend completed Build 2 work. Business activation and intentional clean-checkout sign-off remain separate.
+Audit existing controls first: `server/modules/accounts-payable/ap-segregation-controls.ts`, `ap-approval-policy.ts`, `ap-state-machine.ts`, `register-ap-routes.ts`, `server/services/approval-workflow-service.ts`, `permission-query-service.ts`, `client/src/pages/user-roles.tsx` and `client/src/components/user/role-manager.tsx`. Trace current membership/role grants, sensitive supplier/payment changes and payment release writers before adding anything. Reuse their approvals, audit, Action Inbox and payment registers. Implement role-level conflict analysis and versioned payment risk, block new critical conflicts without silently altering existing assignments, and invalidate stale approval after material input changes. Unknown history is not low risk. No real payments or external delivery.
+
+## Completed — Build 3 of 7: Smart Procurement Intake
+
+Do not repeat or enhance the finished build. The final combined command was `node scripts/run-disposable-small-business-e2e.mjs --full --built e2e/smart-procurement-intake.spec.ts e2e/manual-procurement-lines.spec.ts e2e/small-business-release.spec.ts`, run serially on desktop and 390px with separate guarded databases, port 5094, fresh test-owned TEMP/TMP, `PLAYWRIGHT_VIDEO=off` and `PLAYWRIGHT_BROWSERS_PATH=C:/Users/USER-PC/AppData/Local/ms-playwright`. Both passed 19/19, followed by exact-package `--production-smoke`. Before reusing a package, compare its saved candidate fingerprint with `captureReleaseCandidate()`; never rebuild shared assets during a browser run. STATUS contains exact package/database identities and retained final/failed evidence. No active test database or workspace lock remains. Business activation and intentional committed-candidate verification are separate; no automatic commit.
 
 ## Historical queue — Build 2 of 7 (completed on disposable data)
 

@@ -80,6 +80,7 @@ const DevTestPage = lazy(() => import("@/pages/dev-test-page"));
 const GetEducatedPage = lazy(() => import("@/pages/get-educated"));
 const GetEducatedModulePage = lazy(() => import("@/pages/get-educated-module"));
 const ProcurementOverviewPage = lazy(() => import("@/pages/procurement-overview"));
+const ProcurementIntakePage = lazy(() => import("@/pages/procurement-intake"));
 const ProcurementReceivingPage = lazy(() => import("@/pages/procurement-receiving"));
 const ProcurementSettingsPage = lazy(() => import("@/pages/procurement-settings"));
 const InventoryPutAwayPage = lazy(() => import("@/pages/inventory-put-away"));
@@ -191,6 +192,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.inventory.root} component={ProductionInventoryPage} />
 
         <ProtectedRoute path={APP_ROUTES.procurement.overview} component={ProcurementOverviewPage} />
+        <ProtectedRoute path={APP_ROUTES.procurement.intake} component={ProcurementIntakePage} />
         <Route path={`${APP_ROUTES.procurement.rfqs}/:id`}>{(params) => <LegacyRedirect to={APP_ROUTES.procurement.sourcingEvent((params as { id: string }).id)} />}</Route>
         <Route path={APP_ROUTES.procurement.rfqs}><LegacyRedirect to={APP_ROUTES.procurement.sourcing} /></Route>
         <Route path={APP_ROUTES.procurement.analytics}><LegacyRedirect to={APP_ROUTES.analytics.procurement} /></Route>

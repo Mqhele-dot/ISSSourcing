@@ -136,6 +136,7 @@ export const APP_ROUTES = {
     order: (po: string | number) =>
       `/procurement/orders/${encodeURIComponent(String(po))}`,
     requisitions: "/procurement/requisitions",
+    intake: "/procurement/intake",
     requisitionNew: "/procurement/requisitions/new",
     requisition: (id: string | number) => `/procurement/requisitions/${id}`,
     suppliers: "/procurement/suppliers",

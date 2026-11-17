@@ -68,6 +68,7 @@ import type { IStorage } from "./storage";
 import { MemStorage } from "./storage";
 import { inventoryLineValue } from "./forecast-service";
 import { assertSupplierTransactionAllowed } from "./modules/procurement/supplier-defaults";
+import { writeRequisitionDraft } from "./modules/procurement/requisition-draft-writer";
 import { lockConversionRequisition, writeRequisitionPurchaseOrder } from "./modules/procurement/requisition-po-conversion";
 import {
   repoCreateInventoryItem,
@@ -2261,36 +2262,7 @@ export class DatabaseStorage implements IStorage {
         "new requisitions",
       );
     }
-    const [created] = await db
-      .insert(purchaseRequisitions)
-      .values({
-        ...requisition,
-        organizationId: requisition.organizationId ?? orgId,
-        updatedAt: new Date(),
-      })
-      .returning();
-    let totalAmount = 0;
-    for (const item of items) {
-      const totalPrice = (Number(item.unitPrice) || 0) * (item.quantity || 0);
-      totalAmount += totalPrice;
-      await db.insert(purchaseRequisitionItems).values({ ...item, requisitionId: created.id, totalPrice });
-    }
-    if (totalAmount > 0) {
-      await db
-        .update(purchaseRequisitions)
-        .set({ totalAmount, updatedAt: new Date() })
-        .where(
-          and(eq(purchaseRequisitions.id, created.id), eq(purchaseRequisitions.organizationId, orgId)),
-        );
-      const [refetched] = await db
-        .select()
-        .from(purchaseRequisitions)
-        .where(
-          and(eq(purchaseRequisitions.id, created.id), eq(purchaseRequisitions.organizationId, orgId)),
-        );
-      return refetched ?? created;
-    }
-    return created;
+    return db.transaction(tx=>writeRequisitionDraft(tx,orgId,requisition,items));
   }
   
   async updatePurchaseRequisition(id: number, requisition: Partial<InsertPurchaseRequisition>): Promise<PurchaseRequisition | undefined> {

@@ -1,5 +1,8 @@
 # Decisions
 
+- Build 3: Intake is deterministic, advisory and read-only until explicit conversion. The existing RFQ and blanket-release authorities require an approved requisition; Intake therefore recommends those paths but creates only a canonical requisition draft. It neither reserves agreement capacity nor submits, approves, awards or communicates. Current source/policy fingerprints, actor-scoped retries and conversion audit commit with that draft.
+- Build 3: Reuse canonical supplier commercial defaults, currency override controls, Master Data validation and approval/sourcing policies in the same database transaction. Unsupported classification or incomplete setup blocks conversion. Supplier response requirements are set by the governed RFQ workflow, never invented by Intake. Favorites persist only non-authoritative starting choices in this browser, scoped to organization/user; recent/repeat sources must be actor-owned and revalidated.
+
 - Build 2 closeout: the existing v2 and compatibility approval URLs use the same locked command. The current actor and effective permission determine authority; approval levels and policy versions belong to one submission cycle. Budget reservation and outcome inbox work happen only with the governed transition. Unbound compatibility history is not credited toward a new approval.
 - Build 2 closeout: the immutable PO budget reference is prospective. Bind the exact tenant, requisition, approval time and captured exception revision only in governed conversion transactions. The Maverick report never borrows evidence from a current requisition or reconstructs a missing reference. The migration requires separate business approval.
 

@@ -77,43 +77,43 @@ export function assertSupplierTransactionAllowed(
 
 type DefaultsDatabase = Pick<typeof db, "select">;
 
-async function activeCurrencyCode(value: unknown, database: DefaultsDatabase = db): Promise<string | null> {
+async function activeCurrencyCode(value: unknown, database: DefaultsDatabase = db, organizationId=getActiveOrganizationId()): Promise<string | null> {
   const code = normalizeCurrency(value);
   if (!code) return null;
   const [row] = await database
     .select({ code: currencies.code })
     .from(currencies)
-    .where(and(eq(currencies.code, code), eq(currencies.active, true)))
+    .where(and(eq(currencies.organizationId,organizationId),eq(currencies.code, code), eq(currencies.active, true)))
     .limit(1);
   return row?.code ?? null;
 }
 
-async function activePaymentTermsId(id: number | null, database: DefaultsDatabase = db): Promise<number | null> {
+async function activePaymentTermsId(id: number | null, database: DefaultsDatabase = db, organizationId=getActiveOrganizationId()): Promise<number | null> {
   if (id == null) return null;
   const [row] = await database
     .select({ id: paymentTerms.id })
     .from(paymentTerms)
-    .where(and(eq(paymentTerms.id, id), eq(paymentTerms.active, true)))
+    .where(and(eq(paymentTerms.organizationId,organizationId),eq(paymentTerms.id, id), eq(paymentTerms.active, true)))
     .limit(1);
   return row?.id ?? null;
 }
 
-async function activeTaxCodeId(id: number | null, database: DefaultsDatabase = db): Promise<number | null> {
+async function activeTaxCodeId(id: number | null, database: DefaultsDatabase = db, organizationId=getActiveOrganizationId()): Promise<number | null> {
   if (id == null) return null;
   const [row] = await database
     .select({ id: taxCodes.id })
     .from(taxCodes)
-    .where(and(eq(taxCodes.id, id), eq(taxCodes.active, true)))
+    .where(and(eq(taxCodes.organizationId,organizationId),eq(taxCodes.id, id), eq(taxCodes.active, true)))
     .limit(1);
   return row?.id ?? null;
 }
 
-async function activeIncotermId(id: number | null, database: DefaultsDatabase = db): Promise<number | null> {
+async function activeIncotermId(id: number | null, database: DefaultsDatabase = db, organizationId=getActiveOrganizationId()): Promise<number | null> {
   if (id == null) return null;
   const [row] = await database
     .select({ id: incoterms.id })
     .from(incoterms)
-    .where(and(eq(incoterms.id, id), eq(incoterms.active, true)))
+    .where(and(eq(incoterms.organizationId,organizationId),eq(incoterms.id, id), eq(incoterms.active, true)))
     .limit(1);
   return row?.id ?? null;
 }
@@ -225,13 +225,13 @@ async function resolveSupplierCommercialDefaultsForOrg(
     supplierComplianceStatus: supplier.complianceStatus,
     supplierBlockedReason: supplier.blockedReason ?? null,
     departmentId: numberOrNull(supplier.defaultDepartmentId),
-    supplierCurrencyCode: await activeCurrencyCode(supplier.defaultCurrencyCode, database),
-    contractCurrencyCode: await activeCurrencyCode(contract?.currency, database),
+    supplierCurrencyCode: await activeCurrencyCode(supplier.defaultCurrencyCode, database,orgId),
+    contractCurrencyCode: await activeCurrencyCode(contract?.currency, database,orgId),
     allowCurrencyOverride: supplier.allowCurrencyOverride === true,
     requireApprovalForOverride: supplier.requireApprovalForOverride !== false,
-    paymentTermsId: await activePaymentTermsId(contract?.paymentTermsId ?? supplier.paymentTermsId ?? null, database),
-    taxCodeId: await activeTaxCodeId(contract?.defaultTaxCodeId ?? supplier.taxCodeId ?? null, database),
-    incotermId: await activeIncotermId(contract?.incotermId ?? supplier.incotermId ?? null, database),
+    paymentTermsId: await activePaymentTermsId(contract?.paymentTermsId ?? supplier.paymentTermsId ?? null, database,orgId),
+    taxCodeId: await activeTaxCodeId(contract?.defaultTaxCodeId ?? supplier.taxCodeId ?? null, database,orgId),
+    incotermId: await activeIncotermId(contract?.incotermId ?? supplier.incotermId ?? null, database,orgId),
     contractId: contract?.id ?? null,
     carrierId: numberOrNull(supplier.defaultCarrierId),
     transportMode:

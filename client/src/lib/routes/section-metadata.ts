@@ -169,6 +169,13 @@ export const APP_NAV_SECTIONS: AppNavSection[] = [
         keywords: "purchase orders po",
       },
       {
+        label: "Smart Intake",
+        path: APP_ROUTES.procurement.intake,
+        icon: "clipboard-list",
+        description: "Describe a need and find the right governed purchasing path.",
+        keywords: "purchase guided requisition intake request",
+      },
+      {
         label: "Requisitions",
         path: APP_ROUTES.procurement.requisitions,
         icon: "clipboard-list",
