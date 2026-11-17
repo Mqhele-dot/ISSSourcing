@@ -1,0 +1,223 @@
+# Production Approval Evidence
+
+Generated for Wave 3D and extended by Waves 4A-4B on `cursor/project-codespace-compatibility-b14c`.
+
+## Decision
+
+**Final decision:** ISSSourcing is a production approval candidate for the procurement-only commercial boundary documented in `docs/COMMERCIAL-PROCUREMENT-BOUNDARY.md`. Receiving, inventory operations, logistics, AP, payment control, and mobile warehouse workflows remain later-release modules even where earlier runtime proof exists. They are not promoted by this release.
+
+## Production Base
+
+| Field | Value |
+|---|---|
+| Production base branch | `cursor/project-codespace-compatibility-b14c` |
+| Current evidence commit | Commercial procurement implementation head; record the pushed SHA in release notes |
+| Production approval status | Candidate, pending required release gates and branch-protection checks |
+
+## Current Blockers
+
+| Category | Count | Evidence |
+|---|---:|---|
+| Core blocking risks | 0 | `docs/production-readiness-audit.md` |
+| Marker-level blockers | 0 | `docs/production-readiness-audit.md` and `docs/core-blocking-risk-register.md` |
+| Non-production release exclusions | Operations, inventory operations, mobile warehouse, logistics, AP, and payment execution | `docs/COMMERCIAL-PROCUREMENT-BOUNDARY.md` |
+
+## Commercial Procurement Proof
+
+The current increment adds tenant-safe supplier sourcing from RFQ through award-to-PO conversion:
+
+- `npm run test:commercial-procurement-foundation` protects tenant, audit, country-pack, production-boundary, and sourcing contracts.
+- `npm run test:local:sourcing` runs the full RFQ, mapped supplier quote, evaluation, self-approval denial, independent approval, conversion, MDM propagation, and audit-chain workflow against PostgreSQL and HTTP APIs.
+- `npm run test:e2e:sourcing` proves supplier quote submission and buyer evaluation, award, independent approval, and conversion through Playwright.
+- `.github/workflows/playwright-release-gate.yml` includes the sourcing browser proof through `verify:release:e2e`.
+
+## Non-Production Release Exclusions
+
+The production procurement boundary excludes these route groups until each later wave has route-specific real-data, permission, audit, runtime, and browser proof:
+
+| Route group | Status |
+|---|---|
+| `/operations/*` including logistics, exceptions, and control tower | Later-release operational module |
+| `/inventory/*` including warehouses, movements, counts, reorder, and stock operations | Later-release inventory module |
+| `/m/receive`, `/m/counts/*`, `/m/pick`, and other mobile warehouse routes | Later-release mobile operations module |
+| `/finance/invoices` and `/finance/accounts-payable/*` | Later-release AP module |
+| Payment execution and direct banking | Excluded; direct bank initiation is outside program scope |
+
+Production navigation hides these modules and bookmarked routes show a controlled release-boundary message. Development keeps them visible with a preview warning for continued testing.
+
+## Required Release Gates
+
+| Gate | Command or workflow | Required before production approval |
+|---|---|---|
+| Non-browser release gate | `npm run verify:release` | Yes |
+| Browser E2E release gate | `npm run verify:release:e2e` | Yes |
+| Secure release gate | `npm run verify:release:secure` | Yes |
+| GitHub Playwright release gate | `.github/workflows/playwright-release-gate.yml` | Yes when local Chromium launch is blocked |
+| Final audit pass | `npm run audit:production` | Yes |
+| Subscription foundation tests | `npm run test:subscription-plans && npm run test:subscription-entitlements && npm run test:subscription-ui-contracts` | Yes after Wave 4A |
+| Subscription runtime proof | `npm run test:subscription-runtime-flow` | Yes after Wave 4B |
+| Stripe readiness proof | `npm run test:stripe-billing-readiness` | Yes after Wave 4B |
+| Subscription browser proof | `npm run test:e2e:subscription` | Yes in browser E2E gate |
+| Button/action source proof | `npm run test:button-action-contracts` | Yes after Wave 4D |
+| Button/action browser proof | `npm run test:e2e:button-actions` | Yes in browser E2E gate |
+
+## Workflow Proof Summary
+
+The branch has runtime/API proof for:
+
+- Master Data to requisition to approval to purchase order metadata propagation.
+- Purchase order receiving to GRN evidence, stock movement, warehouse inventory quantity, and PO line received quantity.
+- AP invoice matching against PO and receipt evidence.
+- Above-tolerance and exception invoice payment blocking.
+- MDM dependency blocking for used UOM conversions and GL mappings.
+- Payment-control and AP segregation negative paths.
+
+Primary evidence commands:
+
+- `npm run test:requisition-line-mdm-flow`
+- `npm run test:mdm-dependency-runtime`
+- `npm run test:po-receiving-inventory-flow`
+- `npm run test:ap-po-grn-matching-flow`
+- `npm run test:core-screen-workflow-contracts`
+
+## Control-Plane Proof Summary
+
+The branch has runtime, source-contract, and browser-test evidence for the production control plane:
+
+- `/admin/settings`
+- `/admin/settings/:section`
+- `/admin/user-roles`
+- `/finance/approval-policies`
+- `/admin/master-data`
+- `/admin/master-data/:section`
+
+Primary evidence commands:
+
+- `npm run test:control-plane-runtime`
+- `npm run test:control-plane-screen-contracts`
+- `npm run test:e2e:control-plane`
+
+## Security And Supply-Chain Proof Summary
+
+The secure release gate verifies:
+
+- package manifests remain clean after install;
+- lifecycle scripts are enumerated and enforced;
+- SBOM generation completes;
+- npm registry signatures and attestations are checked;
+- high-severity npm audit is clean.
+
+Primary evidence command:
+
+- `npm run verify:release:secure`
+
+## Subscription And SaaS Billing Proof Summary
+
+Waves 4A-4B add a production-safe SaaS subscription foundation and runtime proof without changing the AP/customer billing workspace.
+
+Implemented evidence:
+
+- Plan catalog source of truth in `server/subscription-plan-catalog.ts`.
+- Organization subscription lifecycle fields persisted in `organization_settings`.
+- `/api/subscription/plans`, `/current`, `/usage`, `/change-plan`, `/start-trial`, `/cancel`, `/resume`, and `/billing-portal`.
+- Dedicated SaaS page at `/admin/subscription`.
+- Permission-aware management controls requiring `settings:configure`.
+- Backend plan-limit and feature-entitlement errors: `PLAN_LIMIT_REACHED`, `FEATURE_NOT_INCLUDED`, `TRIAL_EXPIRED`, and `SUBSCRIPTION_INACTIVE`.
+- Production guard that prevents local lifecycle endpoints from faking successful hosted billing actions.
+- Stripe readiness guard for missing provider config, missing price IDs, production local-adapter boundaries, invalid webhook signatures, and missing webhook event IDs.
+
+Primary evidence commands:
+
+- `npm run test:subscription-enforcement`
+- `npm run test:subscription-plans`
+- `npm run test:subscription-entitlements`
+- `npm run test:subscription-ui-contracts`
+- `npm run test:subscription-runtime-flow`
+- `npm run test:stripe-billing-readiness`
+- `npm run test:e2e:subscription`
+
+Remaining provider setup:
+
+- Stripe price IDs, portal/customer records, and webhook secrets must be configured in the deployment environment before hosted checkout/portal actions become live.
+- Pricing labels remain configurable placeholders until commercial pricing is approved.
+
+Required hosted billing environment:
+
+- `STRIPE_SECRET_KEY`
+- `VITE_STRIPE_PUBLIC_KEY` or `STRIPE_PUBLIC_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_STARTER`
+- `STRIPE_PRICE_STANDARD`
+- `STRIPE_PRICE_GROWTH`
+- `STRIPE_PRICE_ENTERPRISE`
+
+## Button And Action Reliability Proof Summary
+
+Waves 4D-4E add a core visible-action inventory, diagnostics closure guard, and browser-smoke expansion for high-risk buttons that were likely to fail silently during manual testing.
+
+Implemented evidence:
+
+- `docs/button-action-inventory.md` inventories 43 core actions across procurement, AP, subscriptions, diagnostics, reports, Master Data, settings, RBAC, and route recovery.
+- Browser smoke coverage increased to 13 action surfaces, with remaining gaps documented in priority order.
+- `npm run test:button-action-contracts` blocks inert links, console-only click handlers, action TODOs, missing structured errors, missing invalidation, missing recovery actions, and missing controlled-business-rule diagnostics on the critical button paths.
+- `npm run test:e2e:button-actions` is included in the formal browser release gate for contracts, gas timeout retry, subscription actions, custom-role permission removal, PO commercial validation actions, AP payment validation, diagnostics actions, settings save, Master Data validation, and approval-policy validation.
+- PO commercial supplier/contract currency override errors now show actionable field-level recovery controls: use contract currency or clear the contract.
+- Expected validation/business-rule codes are classified as controlled info diagnostics instead of unresolved app failures.
+
+## Wave 5A MDM Control Centre Proof Summary
+
+- Master Data now has a server-side domain registry covering suppliers, supplier banks, contracts, items, UOM, warehouses, departments, cost centres, GL accounts, tax, currencies, FX, payment terms, incoterms, carriers, approval rules, document sequences, and legal entities.
+- `/api/mdm/defaults/requisition-context` uses a safe item-category join so integer/text category mismatches cannot crash requisition setup.
+- High-risk MDM changes have maker-checker change-request scaffolding and self-approval blocking.
+- MDM write APIs now enforce domain registry permissions through `requireMdmPermission(domain, action)` and return `MDM_PERMISSION_DENIED` with required permissions and repair hints.
+- The Control Centre UI now exposes registry health, high-risk domains, pending change-request detail, approve/reject/apply actions, comments, step timeline, before/after diff, failed-apply state, standard lifecycle fields, data-quality issues, and where-used checks.
+- Added MDM release tests: `test:mdm-requisition-context`, `test:mdm-domain-registry`, `test:mdm-change-requests`, `test:mdm-data-quality`, `test:mdm-where-used`, `test:mdm-security`, `test:mdm-runtime-security`, `test:mdm-api-authorization`, `test:mdm-ui-contracts`, and `test:ap-po-link-validation`.
+- AP no-PO validation now has browser smoke coverage through `test:e2e:button-actions`; the UI click surfaces the `AP_INVOICE_PO_LINK_REQUIRED` repair hint instead of hiding the backend validation behind a disabled button.
+
+Primary evidence commands:
+
+- `npm run test:mdm-requisition-context`
+- `npm run test:mdm-domain-registry`
+- `npm run test:mdm-change-requests`
+- `npm run test:mdm-data-quality`
+- `npm run test:mdm-where-used`
+- `npm run test:mdm-security`
+- `npm run test:mdm-runtime-security`
+- `npm run test:mdm-api-authorization`
+- `npm run test:mdm-ui-contracts`
+- `npm run test:ap-po-link-validation`
+
+## Browser E2E Evidence
+
+Playwright workflow name: **Playwright Release Gate**
+
+Workflow file: `.github/workflows/playwright-release-gate.yml`
+
+The workflow runs:
+
+- `npm ci`
+- `npm run verify:package-manifests`
+- `npm run verify:production-base`
+- `npm run build`
+- `npx playwright install --with-deps chromium`
+- `npm run verify:release:e2e`
+
+`verify:release:e2e` includes `npm run test:e2e:subscription` from Wave 4B onward, `npm run test:e2e:button-actions` from Wave 4D onward, and `npm run test:e2e:sourcing` for the commercial procurement boundary.
+
+If local Windows or Codespaces Chromium launch fails with sandbox/permission errors, attach the GitHub Actions Playwright Release Gate run as the production browser evidence.
+
+## Latest Local Gate Results
+
+| Command | Result | Notes |
+|---|---|---|
+| `npm run verify:release` | Passed locally | `verify:production-base`, TypeScript, lint, build, production audit, and live delta suite completed. |
+| `npm run verify:release:e2e` | Blocked locally in Playwright phase | The command completed the full `verify:release` pre-gate, then failed in the browser phase with the same local Chromium launch restriction tracked by test id `cc280d92bc59b2ee6bff-99ef022bf30a937aa8ca`. Use the GitHub Playwright Release Gate workflow as the required browser evidence for this environment. |
+| `npm run verify:release:secure` | Passed locally | `verify:release` plus package-manifest cleanliness, lifecycle enforcement, SBOM generation, registry signature audit, and high-severity npm audit completed; `npm audit --audit-level=high` reported 0 vulnerabilities. |
+| `npm run audit:production` | Passed locally | The commercial procurement audit reports `Core blocking risks: 0`, `Marker-level blockers: 0`, and `Procurement-release exclusions: 33 routes`. The historic Wave 3D boundary contained four exclusions; the current commercial boundary is intentionally narrower. |
+| `npm run test:button-action-contracts` | Passed locally | Wave 4E source contract passed 12 contracts and 39 assertions across 43 inventoried core actions. |
+| `npm run test:live-diagnostics-regressions` | Passed locally | Confirms the live diagnostics/action fixes remain in place. |
+| `npm run test:e2e:button-actions` | Blocked locally in Playwright page launch | The wrapper started the local app and the API-backed custom-role permission delete idempotency case passed; page-level Chromium launches failed with `browserType.launch: spawn EPERM`. Use the GitHub Playwright Release Gate workflow for browser evidence in this environment. |
+| `npm run test:subscription-tenant-isolation` | Passed locally | Wave 4E confirmed tenant-scoped subscription user limits still hold. |
+| `npm run test:subscription-runtime-flow` | Passed locally with temporary server on port 5017 | Wave 4E live API proof for subscription lifecycle and entitlement controls. |
+| `npm run verify:release` | Passed locally in Wave 4E | Full non-browser release gate completed after diagnostics, branding, and button/action expansion. |
+| `npm run verify:release:secure` | Passed locally in Wave 4E | Full release gate plus package-manifest, lifecycle, SBOM, registry-signature, and high-vulnerability supply-chain checks completed. |

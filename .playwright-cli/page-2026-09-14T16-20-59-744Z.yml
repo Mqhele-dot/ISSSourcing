@@ -1,0 +1,4 @@
+- generic [ref=e2]:
+  - generic "Loading session" [ref=e4]: Verifying session…
+  - region "Notifications (F8)":
+    - list

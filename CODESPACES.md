@@ -1,0 +1,343 @@
+# GitHub Codespaces Setup
+
+> **Running on your own Windows PC instead?** Use **[`docs/WINDOWS-LOCAL-SETUP.md`](docs/WINDOWS-LOCAL-SETUP.md)** and the root **[`README.md`](README.md)** — no devcontainer required.
+
+> **GitHub Codespaces:** the repo includes **`.devcontainer/`** (Docker Compose: app + Postgres on host **`db`**). Create or **rebuild** the Codespace so that configuration is applied; otherwise the workspace has no `db` DNS name and database commands fail with `ENOTFOUND db` or `ECONNREFUSED` to localhost.
+>
+> **Windows desktop without Docker:** use **`docs/WINDOWS-LOCAL-SETUP.md`**. If the editor prompts **Reopen in Container**, choose **Reopen locally**. See **`.devcontainer.disabled/README.md`** for context.
+
+This repository includes a devcontainer configuration under **`.devcontainer/`** so it can boot in GitHub Codespaces with the required services:
+
+- Node.js 24
+- PostgreSQL 16
+- Native build dependencies for packages like `canvas`, `sharp`, and `sqlite3`
+
+## Quick start
+
+1. Open the repository in GitHub Codespaces **with the devcontainer** (`.devcontainer/`). If you opened a “plain” Codespace earlier, use **Command Palette → Codespaces: Rebuild Container** so Docker Compose starts the **`db`** Postgres service.
+2. Wait for the container to finish building.
+3. The post-create script will:
+   - install dependencies with `npm ci`
+   - wait for PostgreSQL
+   - run `npm run db:push` to initialize the schema
+4. Start the app with one command:
+
+```bash
+npm run codespaces:up
+```
+
+5. **If the browser shows HTTP 502, 401, or “Failed to fetch dynamically imported module”:** The forwarded port is almost certainly **Private**. Open **PORTS** → port **5000** → set visibility to **Public** → hard-reload. HTTP **401** on `https://<codespace>-5000.app.github.dev/health` is GitHub’s proxy, not the Express `/health` handler (which always returns JSON 200). Private ports also break **Vite** lazy-loaded routes because `.tsx` chunk requests are blocked the same way.
+6. **Rebuild the devcontainer** after pulling the latest `.devcontainer/devcontainer.json` so **5000** defaults to **Public** (`portsAttributes.visibility`).
+
+The command will:
+- verify you are in the repository root
+- install dependencies
+- wait for PostgreSQL readiness
+- apply schema (`npm run db:push`)
+- start the development server
+- warm both `/health` and `/` before reporting ready
+- check forwarded URL reachability in Codespaces
+
+On first boot, the server auto-seeds demo data when the database is empty.
+You can also seed manually with:
+
+```bash
+npm run db:seed
+```
+
+For a full QA-ready seeded environment (core + operational datasets), use:
+
+```bash
+npm run demo:reset
+```
+
+## Full Validation Workflow
+
+## Rebuild Public Port Access
+
+If another app cannot open the Codespaces link, rebuild the forwarded port and public URL:
+
+```bash
+npm run codespaces:port:reset
+cat .codespace-app-url
+```
+
+The reset command verifies the app locally, forwards port 5000, sets it to Public, writes the exact app URL, and checks the public `/health` endpoint. If it reports HTTP 401, the port is still private. If it reports HTTP 502, GitHub's proxy cannot reach the running app yet.
+
+Run this exact sequence in Codespaces to verify the latest branch and ensure exports + procurement flow are healthy:
+
+```bash
+git fetch origin
+git checkout cursor/project-codespace-compatibility-b14c
+git pull --ff-only origin cursor/project-codespace-compatibility-b14c
+npm ci
+npm run db:push
+npm run demo:reset
+```
+
+If `npm ci` fails with lockfile sync errors (for example `Missing: bufferutil@... from lock file`), run:
+
+```bash
+npm install
+npm ci
+```
+
+If `npm run dev` fails with `Cannot find package 'docx'`, run:
+
+```bash
+npm install
+```
+
+Then re-run:
+
+```bash
+npm run dev
+```
+
+Start the app in terminal A:
+
+```bash
+npm run dev
+```
+
+In terminal B, run verification checks:
+
+```bash
+npm run check
+npm run test:diagnostics
+npm run lint
+npm run test:api
+```
+
+**Windows PowerShell:** prefix env vars instead of `BASE_URL=...`:
+
+```powershell
+$env:BASE_URL="http://127.0.0.1:5000"; npm run test:api
+$env:BASE_URL="http://127.0.0.1:5000"; npm run test:procurement-flow
+```
+
+**Error UX smoke (toasts + diagnostics):** after logging in, trigger a failed save or a blocked action. You should see a **visible toast** (Radix) and, when a request fails through the shared client, the **Action Failed** diagnostics affordance when applicable. The top **readiness banner** appears when the database, schema, session store, or upload path is not ready (does not use the global error center so it stays quiet on health polling).
+
+**Power-user navigation:** press **Ctrl+K** (Windows/Linux) or **⌘K** (macOS), or use **Jump to…** in the header, to open the **command palette** and jump to any module without using the sidebar. This mirrors patterns used in modern SCM and collaboration tools.
+
+**Performance:** route modules are **lazy-loaded** so initial load stays smaller; list data uses tuned React Query defaults (`staleTime`, `gcTime`, refetch on reconnect).
+
+**Slow or stuck page load (lazy chunks):** If a route never leaves “Loading workspace…”, wait ~12s — you should see a **“taking longer than expected”** message with **Reload**. Chunk or render errors show **Try again** / **Reload app** (no infinite spinner). Prefer **Ports → 5000 → Public** if the tab shows 502.
+
+**Procurement suppliers:** In-app links use **`/procurement/suppliers`** and **`/procurement/suppliers/:id`** (legacy `/suppliers/:id` may still redirect, but bookmarks should use the canonical paths).
+
+Reliability contract checks (request IDs + readiness):
+
+```bash
+curl -i http://127.0.0.1:5000/api/health
+curl -i http://127.0.0.1:5000/api/ready
+curl -i http://127.0.0.1:5000/health/deep
+```
+
+Expected:
+- `X-Request-Id` header is present on API responses.
+- `/api/ready` payload includes `dbReady`, `schemaReady`, `sessionStoreReady`, and `websocketReady`.
+
+`test:api` includes:
+- RBAC authorization checks
+- purchase requisition API flow tests
+- end-to-end procurement flow smoke test
+- export smoke tests for `pdf`, `csv`, `excel`, and `docx`
+
+### Playwright (browser E2E)
+
+This repo is **already** set up for Playwright: **`npm run test:e2e`** runs [`scripts/run-playwright-e2e.mjs`](scripts/run-playwright-e2e.mjs). That wrapper **probes both** **`http://127.0.0.1:5000/api/ready`** and **`http://127.0.0.1:5000/auth`** with Node `fetch` before starting Playwright; **`PLAYWRIGHT_EXTERNAL_DEV_SERVER=1`** is set **only** for the Playwright child after both succeed (so the config does not spawn a second server). If either URL stays connection-refused, the wrapper prints the last probe results and exits — Playwright is not started. Use **`npm run test:e2e:preflight`** (with **`npm run dev`** already running) to debug reachability. Root [`playwright.config.ts`](playwright.config.ts) uses **`testDir: ./e2e`**, [`e2e/global-setup.ts`](e2e/global-setup.ts), optional **`webServer`** only when you invoke **`npx playwright test`** directly, and **`use.baseURL`** default **`http://127.0.0.1:5000`**. **Do not run `npm init playwright@latest`** unless you plan to merge its output by hand — it overwrites `playwright.config.ts` and adds a second `tests/` layout.
+
+**Playwright / Linux libraries:** do not hand-pick individual `lib*` packages. The devcontainer Dockerfile runs **`npx playwright@… install-deps`** (Chromium, Firefox, WebKit) at image build, and **post-create** runs **`sudo npx playwright install-deps`** then **`npx playwright install`** so OS deps and browser builds match your **`@playwright/test`** version. **Rebuild the container** after pulling. If anything still fails to launch, run manually from `/workspace`: **`sudo npx playwright install-deps`** and **`npx playwright install`**.
+
+**Wrong tests (6 failures, `tests/example.spec.ts`, chromium + firefox + webkit):** that layout comes from **`npm init playwright@latest`**, which overwrites root **`playwright.config.ts`**. Restore the repo config and remove the scaffold, for example: `git checkout -- playwright.config.ts` and delete the generated **`tests/example.spec.ts`** (and extra projects) so **`npm run test:e2e`** uses **`e2e/`** and **Chromium only** again.
+
+**Run tests (headless, recommended in Codespaces):**
+
+```bash
+# One terminal (PostgreSQL must be reachable; global setup runs e2e:prep first):
+npm run test:e2e
+```
+
+**Manual two-terminal workflow:**
+
+```bash
+# Terminal 1
+npm run dev
+
+# Terminal 2
+curl -i http://127.0.0.1:5000/api/ready
+curl -i http://127.0.0.1:5000/auth
+npm run test:e2e:preflight   # optional sanity check
+npm run test:e2e
+```
+
+The forwarded Codespaces URL (**`https://<codespace>-5000.app.github.dev`**) can work in your browser while **Playwright still uses `http://127.0.0.1:5000`** — a working public URL does **not** prove the app is bound on loopback inside the container. Use the `curl` lines above **from the same environment** where you run tests.
+
+### System Diagnostics command center
+
+Open **`/admin/system-diagnostics`** as an admin to inspect live browser diagnostics, failed or slow API requests, route warnings, readiness, server snapshot data, internal calculation/filter self-checks, and the existing diagnostics scan. Use **Export JSON** or **Export Markdown** to create a redacted report for Cursor or developers. It captures practical runtime signals; it does not replace automated tests or server log access.
+
+**`net::ERR_CONNECTION_REFUSED` at `http://127.0.0.1:5000/auth`:** the browser can start, but **nothing accepts TCP on 127.0.0.1:5000** when the test navigates. Fix Postgres / **`DATABASE_URL`**, ensure **`npm run dev`** stays running, free port **5000**, and check wrapper stderr (last `/api/ready` and `/auth` probes). If **`sudo npx playwright install …`** was used, run dev and tests as the same user (**`node`**) so caches and env match.
+
+Optional: `PLAYWRIGHT_BASE_URL=https://<your-codespace>-5000.app.github.dev npm run test:e2e` only if you intentionally test via the forwarded URL (port **5000** must be **Public**); the default **`http://127.0.0.1:5000`** matches `webServer` and typical in-container runs.
+
+**Missing shared libraries** (e.g. `libXfixes`, `libXcursor`, GTK/GDK, WebKit GStreamer): use Playwright’s installer, not one-off apt lines:
+
+```bash
+sudo npx playwright install-deps
+npx playwright install
+# or: npm run playwright:install-deps   (often needs sudo on Linux for apt)
+```
+
+**`npx playwright test --ui` / trace viewer** can crash with `Protocol error` when Chromium cannot start — use headless `npm run test:e2e` first; install OS deps above if launch still fails.
+
+### External browser-agent testing (live Codespaces URL)
+
+Use these **development-only** endpoints so remote testers and automated browser agents can confirm reachability and enter the SPA without guessing routes. They are **404 in production** and **off in packaged builds** (same rules as other dev-only HTTP helpers). They are registered **immediately before** the Vite / static middleware so `curl` and agents get real **302/JSON** responses (restart **`npm run dev`** after pulling so the server loads them).
+
+1. **Reachability + session snapshot (JSON):** `https://<codespace-url>/dev-test-status`  
+   - If this works but the agent still stalls, suspect **browser automation / tunnel / session cookies**, not the Node process.
+2. **Tester landing page (HTML):** `https://<codespace-url>/dev-test`  
+   - Shows auth state and links into major modules; build must be dev (`import.meta.env.DEV`).
+3. **Normal entry (no auth bypass):** `https://<codespace-url>/dev-test-entry`  
+   - If already signed in → redirect to `/operations/control-tower` (or `?redirect=`). If not → `/auth?next=…` for safe internal paths only.
+4. **Optional one-shot dev login:** `https://<codespace-url>/dev-test-login`  
+   - **404** unless the server has **`DEV_TEST_LOGIN_ENABLED=true`** (and non-production, non-packaged). Signs in as the existing seeded **`admin`** user only ( **`409`** if that user is missing). Does not create users or expose passwords.
+5. **Deep links via entry helper:**
+
+```text
+https://<codespace-url>/dev-test-entry?redirect=/operations/control-tower
+https://<codespace-url>/dev-test-entry?redirect=/inventory
+https://<codespace-url>/dev-test-entry?redirect=/procurement/purchase-orders
+https://<codespace-url>/dev-test-entry?redirect=/finance/accounts-payable
+https://<codespace-url>/dev-test-entry?redirect=/analytics/overview
+https://<codespace-url>/dev-test-entry?redirect=/admin/settings
+```
+
+**Interpreting failures**
+
+- **`/dev-test-status` OK in the browser but the agent times out:** Often **tunnel, DNS, or the automation browser profile** — not the app HTTP stack.
+- **`/dev-test-status` fails (502 / connection refused):** The Codespace port is not reachable or the dev server is down — fix **Ports → 5000 → Public** and keep **`npm run dev`** running.
+- **`/dev-test-entry` sends you to `/auth`:** You need to sign in, or enable **`DEV_TEST_LOGIN_ENABLED=true`** and use **`/dev-test-login`** for a seeded-dev session only.
+
+**Note:** The public `*.app.github.dev` URL working in your own browser does **not** guarantee an external agent shares the same cookie jar or network path; **`/dev-test-status`** is the fastest way to see what the app believes about **your** session on that origin.
+
+## Ports and URLs
+
+| Service | Port | Notes |
+|---|---:|---|
+| Server | 5000 | Express + Vite middleware |
+| Client | 5000 | Same URL as server in development |
+| PostgreSQL | 5432 | `db` service in devcontainer |
+
+### Ports tab (next to Terminal)
+
+1. In the Codespace, open the **bottom panel** (same area as **Terminal**).
+2. Click the **PORTS** tab (if you do not see it: **View → Open View… → Ports**, or use the Command Palette and run **“Ports: Focus on Ports View”**).
+3. Confirm **5000** appears while `npm run dev` (or `npm run codespaces:up`) is running. If it is missing, click **Forward a Port**, enter `5000`, and press Enter.
+4. For the **5000** row, open the **visibility** (lock/globe) menu and choose **Public** if you open the app in a normal browser tab (required to avoid **502** on `*.app.github.dev`).
+5. Use **Open in Browser** on that row to launch the forwarded URL, or copy the **Local Address** / forwarded link.
+
+If you open the forwarded URL in an external browser session, set port **5000** visibility to **Public** in the Codespaces **Ports** tab.
+`codespaces:up` will also attempt to make port 5000 public automatically (best-effort). Disable this with `CODESPACES_AUTO_PUBLIC_PORT=false`.
+
+### CSRF / “Invalid or expired form submission” on setup
+
+The app uses **sessions** and **CSRF** on mutating API calls. Behind GitHub’s HTTPS proxy, the server must trust **`X-Forwarded-Proto`** so `express-session` can set cookies consistently with your browser URL.
+
+- Ensure the devcontainer passes **`CODESPACES`**, **`CODESPACE_NAME`**, **`GITHUB_CODESPACES`**, and **`GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`** into the app container (see `.devcontainer/docker-compose.yml`).
+- Or set **`TRUST_PROXY=1`** in `.env` when running the server behind a reverse proxy.
+- After pulling fixes, **restart the dev server** and do a **hard refresh** (or log out and back in). The client also **retries once** after refreshing the CSRF token on `CSRF_TOKEN_INVALID`.
+
+## Troubleshooting (502 / app not reachable)
+
+**HTTP 502 on `https://<codespace>-5000.app.github.dev`:** Often the app **is** healthy (`curl http://127.0.0.1:5000/health` → **200** inside the Codespace) but GitHub’s **port proxy** is wrong (visibility **Private**, stale forward, or `gh` never set Public).
+
+1. **`npm run codespaces:doctor`** — if localhost `/health` is **200** but the browser is **502**, the problem is **forwarding**, not Node.
+2. **Ports** (bottom panel) → row **5000** → **Visibility → Public** → click **Open in Browser** on that same row (don’t type the URL manually in a random Chrome window first).
+3. **`npm run codespaces:ports-public`** — runs `gh codespace ports forward` + `visibility …:public`. Requires **`gh`** in the container (**Rebuild Container** after pulling `.devcontainer/Dockerfile` changes) and usually **`gh auth login`** once. If `gh` is missing, use the **Ports** tab only until you rebuild.
+4. **Rebuild Container** after pulling `.devcontainer` changes so **5000** defaults to Public.
+5. Keep **`npm run codespaces:up`** (or **`npm run dev`**) **running** — stopping it causes **502** everywhere.
+
+**Tailwind CSS IntelliSense / Output: `Can't resolve 'tailwindcss-animate'`:** The config uses ESM plugin imports and `.vscode/settings.json` sets `tailwindCSS.experimental.configFile` so the extension resolves from the repo root. After `npm ci`, run **Developer: Reload Window**. Open the **single-folder** workspace **`…/ISSSourcing`** (not a parent directory-only root) so `node_modules` is found. Verify with `test -d node_modules/tailwindcss-animate && echo ok`.
+
+**`codespaces:up` prints “Port 5000 not reachable from proxy”:** The dev server **stays running**; only the public URL probe failed. Open **Ports** → forward **5000** if missing → set visibility to **Public** → reload `https://<codespace>-5000.*.app.github.dev`. The repo sets **`remote.autoForwardPorts`: true** in `.vscode/settings.json` so forwarding is not suppressed by editor settings.
+
+**`npm ci` fails with `ENOTEMPTY` / `rmdir ... node_modules/...`:** Usually a **partial or inconsistent `node_modules`** (interrupted install, overlay FS). From the repo root run:
+
+```bash
+rm -rf node_modules
+npm ci
+```
+
+The repo’s **`scripts/npm-ci-robust.sh`** (used by **`npm run codespaces:up`** and **`.devcontainer/post-create.sh`**) retries **`npm ci`** once after removing **`node_modules`**. To only clean manually, set **`SKIP_NPM_CI_RETRY=1`** before `codespaces:up`. Avoid editing **`package-lock.json`** on the side while running **`npm ci`**—discard lockfile changes or commit them before install.
+
+**Git LFS hook warnings:** Install in the container if you use LFS assets: `sudo apt-get update && sudo apt-get install -y git-lfs && git lfs install`.
+
+**`.env: line N: EOF: command not found` when running `npm run codespaces:up`:** Older versions of `codespaces-up.sh` used `source .env`, so any non–`KEY=value` line (for example a stray `EOF` from a bad paste or a heredoc) was executed as a shell command. The script now only loads lines that look like `KEY=value`. You should still remove junk lines from `.env` or recreate it from `.env.example`.
+
+**Most common fix:** If you see **HTTP 502** when opening the `*.app.github.dev` URL in your browser, the port is likely not Public. In VS Code, open the **PORTS** tab (beside the Terminal), find **5000**, set visibility to **Public**, then reload the page.
+
+1. Keep the dev server terminal running (do not close it).
+2. If 502 persists: verify the server is listening and the health endpoint responds:
+   - `lsof -i :5000` (or your `PORT`) to confirm the process is bound.
+   - `curl http://127.0.0.1:5000/health` — should return 200 JSON.
+3. Set port visibility to **Public** in the Codespaces **Ports** tab (required for `*.app.github.dev`).
+4. Restart the dev server with explicit binding: `HOST=0.0.0.0 PORT=5000 npm run dev`.
+5. In the **Ports** tab, confirm port `5000` exists and open it from that row (avoid stale browser tabs).
+
+**401 Unauthorized on APIs after login (walkthrough, notifications, warehouses):** The app must trust the Codespaces HTTPS proxy so session cookies are marked `Secure` correctly. Ensure the dev container passes `CODESPACES` / `CODESPACE_NAME` / `GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN` into the app service (see `.devcontainer/docker-compose.yml`). Restart the dev server after updating. If you run the server **outside** Docker in a Codespace terminal, set `TRUST_PROXY=1` or rely on those same env vars being present in the shell.
+
+**Database / “Loading…” forever:** If the Control Tower, Purchase Orders, Shipments, or Exceptions pages never load:
+
+- Ensure the Postgres service is running (`db` in the devcontainer).
+- Run `npm run codespaces:up` so that schema and seed run; the app expects `DATABASE_URL=postgresql://postgres:postgres@db:5432/inventory_dev` (or equivalent) so it does not fall back to `localhost:5432`, which does not exist in Codespaces.
+- Operational API calls time out after 8 seconds and return empty data so the UI can show “No results” instead of spinning indefinitely.
+
+Health endpoint for smoke tests:
+
+```text
+GET /health
+GET /health/deep
+```
+
+**Test core API endpoints** (each should return JSON quickly; 200 with body, not 502):
+
+```bash
+curl -i http://localhost:5000/api/inventory
+curl -i http://localhost:5000/api/purchase/orders
+curl -i http://localhost:5000/api/logistics/shipments
+curl -i http://localhost:5000/api/exceptions
+curl -i http://localhost:5000/api/integrations/runs
+curl -i http://localhost:5000/api/suppliers
+curl -i http://localhost:5000/api/warehouses
+```
+
+If any hang or return 502, check server logs; list endpoints are stubbed to return `200` with `[]` when the backend fails so the UI can show "No results" instead of spinning.
+
+Development-only demo reset endpoint:
+
+```text
+POST /admin/demo/reset
+```
+
+## Default environment
+
+Inside Codespaces, these DB values are preconfigured for the app container:
+
+- `DATABASE_URL=postgresql://postgres:postgres@db:5432/inventory_dev`
+- `PGHOST=db`
+- `PGPORT=5432`
+- `PGDATABASE=inventory_dev`
+- `PGUSER=postgres`
+- `PGPASSWORD=postgres`
+
+**Important:** The app must use the `db` host (the Postgres service in the devcontainer). If `DATABASE_URL` is unset, the server falls back to `db:5432` when running in Codespaces so that operational routes (inventory, purchase orders, shipments, exceptions, connectors) can connect. Without a working database, those pages will show empty lists or time out after ~8 seconds and then show empty state.
+
+For local non-Codespaces development, copy `.env.example` to `.env` and adjust values as needed.
+
+## Build and static assets
+
+- **Vite** (client) builds to **`dist/public`** (see `vite.config.ts`: `build.outDir`).
+- **Express** in production serves static files from **`server/public`** when the server runs from the repo root, or from **`dist/public`** when the server runs from `dist/` (e.g. `node dist/index.js`). The `serveStatic` function in `server/vite.ts` uses `path.resolve(__dirname, "public")`, so the executable’s directory must contain a `public` folder with the built client (e.g. run from project root after copying client build into `server/public`, or run from `dist/` so `dist/public` is used). Do not change Vite’s `outDir` without updating the server’s static path so both stay in sync.

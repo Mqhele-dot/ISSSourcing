@@ -1,0 +1,351 @@
+- generic [active]:
+  - generic [aria-hidden]:
+    - main:
+      - paragraph: Disposable integration fixture — not your live database
+      - button: Request New Item
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - heading [level=1]: Stock positions
+                - paragraph: Verify existing warehouse balances against normalized sites, zones and bins.
+        - note:
+          - paragraph: This release verifies location evidence only. It does not split balances, change quantities, or perform inspection. Item-wide safety holds are available separately after applying the safety migration.
+          - paragraph: Per-bin/lot quality eligibility and projected supply are not enabled. Item-wide safety holds override available stock to zero. Existing reservations are shown at warehouse/item level, not as bin reservations. Any stock change invalidates the reconciliation snapshot.
+          - link:
+            - /url: /admin/master-data/sites
+            - text: Manage canonical sites in Master Data
+        - group:
+          - generic: Location setup — warehouse permissions required
+        - generic:
+          - generic:
+            - heading [level=3]: Warehouse balance reconciliation
+          - generic:
+            - generic:
+              - textbox:
+                - /placeholder: Search SKU, item or warehouse
+              - generic: Location state
+              - combobox
+              - generic: Rows
+              - combobox
+            - paragraph: 0 reconciled · 5003 unresolved in the filtered results
+            - region:
+              - table:
+                - rowgroup:
+                  - row:
+                    - columnheader: Item
+                    - columnheader: Warehouse
+                    - columnheader: On hand
+                    - columnheader: Location evidence
+                    - columnheader: Quality
+                    - columnheader: Actions
+                - rowgroup:
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "98"
+                    - cell: "Unresolved — legacy label: NEW"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+                  - row:
+                    - cell: COUNT-A Counting item
+                    - cell: Warehouse 1
+                    - cell: "1"
+                    - cell: "Unresolved — legacy label: none"
+                    - cell: Not assessed
+                    - cell:
+                      - generic:
+                        - button: Verify COUNT-A
+                        - button: Safety holds for COUNT-A
+                        - button: History for COUNT-A
+            - generic:
+              - generic: 1–25 of 5003
+              - button [disabled]: First
+              - button [disabled]: Previous
+              - button: Next
+              - button: Last
+  - dialog [ref=e43]:
+    - generic [ref=e44]:
+      - heading "Request a new inventory item" [level=2] [ref=e45]
+      - paragraph [ref=e46]: A request creates no item or stock. Master Data reviewers approve it independently. An authorized maintainer supplies the unit and commercial details, creates the item with zero stock, then applies the approved request to link it.
+    - generic [ref=e47]:
+      - text: Proposed SKU (required)
+      - textbox "Proposed SKU (required)" [ref=e48]
+    - generic [ref=e49]:
+      - text: Item name (required)
+      - textbox "Item name (required)" [ref=e50]
+    - generic [ref=e51]:
+      - text: Business reason (at least 10 characters)
+      - textbox "Business reason (at least 10 characters)" [ref=e52]
+    - button "Submit item request" [disabled]
+    - status [ref=e65]: "Request #2 sent to the Master Data approval queue."
+    - heading "Your requests" [level=2] [ref=e53]
+    - article [ref=e66]:
+      - paragraph [ref=e67]: "#2 · BROWSER-REQUEST-01 — Browser requested item"
+      - paragraph [ref=e68]: pending approval
+    - article [ref=e54]:
+      - paragraph [ref=e55]: "#1 · REQUEST-TEST — Requested item"
+      - paragraph [ref=e56]: "applied · linked item #91000"
+    - generic [ref=e57]:
+      - button "Previous" [disabled]
+      - generic [ref=e58]: Page 1 · 2 requests
+      - button "Next" [disabled]
+    - button "Close" [ref=e59] [cursor=pointer]

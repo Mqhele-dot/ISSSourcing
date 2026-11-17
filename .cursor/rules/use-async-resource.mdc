@@ -1,0 +1,30 @@
+---
+description: Contract for useAsyncResource to prevent loading/refetch loops
+globs: client/src/**/*.tsx
+---
+
+# useAsyncResource fetcher contract
+
+When using `useAsyncResource` from `@/hooks/use-async-resource`:
+
+1. **Always pass a memoized fetcher** with `useCallback`. Example:
+   ```ts
+   const fetcher = useCallback((): Promise<MyType[]> => fetchMyData(), []);
+   // or with deps when query params change:
+   const fetcher = useCallback(
+     (): Promise<MyType[]> => fetchMyData(status, supplier),
+     [status, supplier],
+   );
+   const { loading, error, data, refetch } = useAsyncResource(fetcher);
+   ```
+   Do **not** pass an inline function (e.g. `() => fetchX()`). An inline fetcher gets a new identity every render, so the effect that depends on `fetcher` re-runs every time and can cause an infinite refetch loop.
+
+2. **DataState list rendering**: When the hook's `data` is an array and you pass it to `DataState`'s children render prop, guard against non-array `data` (e.g. API envelope or error shape):
+   ```ts
+   {(list) => {
+     const safeList = Array.isArray(list) ? list : [];
+     return safeList.map(...);
+   }}
+   ```
+
+Pages that use `useAsyncResource`: home (Control Tower), orders, logistics, exceptions, integrations. Ensure every one uses a `useCallback`-wrapped fetcher and safe array handling where applicable.

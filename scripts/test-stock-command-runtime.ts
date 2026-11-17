@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import type { Pool } from "pg";
+export async function testStockCommands(pool:Pool) {
+  const inspection=await readFile("migrations/20260917190000_receipt_inspection_rules.sql","utf8");
+  await pool.query(inspection.split("CREATE TABLE IF NOT EXISTS receipt_inspection_evidence")[0]);
+  const guard=await readFile("migrations/20260917200000_inspection_entry_guards.sql","utf8");
+  await pool.query(guard);await pool.query(guard);
+  await pool.query(`DROP TRIGGER reject_safety_audit ON audit_logs;
+    ALTER TABLE stock_movements ADD COLUMN source_warehouse_id integer, ADD COLUMN destination_warehouse_id integer;
+    CREATE TABLE workflow_idempotency(organization_id integer,idempotency_key text,action text,resource_type text,resource_id integer,response jsonb,UNIQUE(organization_id,idempotency_key));
+    INSERT INTO warehouses(id,organization_id,name) VALUES(90001,1,'Transfer destination');
+  `);
+  const {executeStockCommand:run}=await import("../server/modules/inventory/stock-command-service");
+  const itemId=90001,receipt={itemId,warehouseId:1,quantity:2};
+  const key=randomUUID();
+  const result=await Promise.all([run(1,1,key,"RECEIPT",receipt),run(1,1,key,"RECEIPT",receipt)]);
+  assert.equal(result[0].id,result[1].id);
+  assert.equal(Number((await pool.query("SELECT quantity FROM inventory_items WHERE id=90001")).rows[0].quantity),12);
+  await assert.rejects(run(1,1,key,"RECEIPT",{...receipt,quantity:3}),/IDEMPOTENCY/);
+  await assert.rejects(run(2,3,randomUUID(),"ISSUE",receipt),/NOT_FOUND/);
+  await assert.rejects(run(1,1,randomUUID(),"ISSUE",{...receipt,quantity:-2}));
+  await run(1,1,randomUUID(),"TRANSFER",{itemId,sourceWarehouseId:1,destinationWarehouseId:90001,quantity:3});
+  const positions=await pool.query("SELECT warehouse_id,quantity FROM warehouse_inventory WHERE item_id=90001 ORDER BY warehouse_id");
+  assert.deepEqual(positions.rows.map(r=>Number(r.quantity)),[9,3]);
+  assert.equal(Number((await pool.query("SELECT quantity FROM inventory_items WHERE id=90001")).rows[0].quantity),12);
+  await pool.query("INSERT INTO inventory_allocations(organization_id,item_id,warehouse_id,quantity,status) VALUES(1,90001,1,8,'reserved')");
+  await assert.rejects(run(1,1,randomUUID(),"ISSUE",receipt),/INSUFFICIENT_ELIGIBLE/);
+  await pool.query("DELETE FROM inventory_allocations WHERE item_id=90001");
+  await pool.query(`CREATE FUNCTION fail_stock_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='STOCK_TRANSFER' THEN RAISE EXCEPTION 'forced failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_stock_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_stock_audit();`);
+  await assert.rejects(run(1,1,randomUUID(),"TRANSFER",{itemId,sourceWarehouseId:1,destinationWarehouseId:90001,quantity:1}),/forced failure/);
+  assert.deepEqual((await pool.query("SELECT quantity FROM warehouse_inventory WHERE item_id=90001 ORDER BY warehouse_id")).rows.map(r=>Number(r.quantity)),[9,3]);
+  console.log("Atomic stock commands passed: receipts, transfers, totals, reservations, concurrent idempotency, isolation and audit rollback.");
+}

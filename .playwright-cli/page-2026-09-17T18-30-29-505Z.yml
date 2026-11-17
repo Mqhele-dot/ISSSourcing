@@ -1,0 +1,106 @@
+- main [ref=f2e3]:
+  - paragraph [ref=f2e4]: Disposable integration fixture — not your live database
+  - generic [ref=f2e5]:
+    - generic [ref=f2e9]:
+      - heading "Stock positions" [level=1] [ref=f2e10]
+      - paragraph [ref=f2e11]: Verify existing warehouse balances against normalized sites, zones and bins.
+    - note [ref=f2e12]:
+      - paragraph [ref=f2e13]: This release verifies location evidence only. It does not split balances, change quantities, or perform inspection. Item-wide safety holds are available separately after applying the safety migration.
+      - paragraph [ref=f2e14]: Per-bin/lot quality eligibility and projected supply are not enabled. Item-wide safety holds override available stock to zero. Existing reservations are shown at warehouse/item level, not as bin reservations. Any stock change invalidates the reconciliation snapshot.
+      - link "Manage canonical sites in Master Data" [ref=f2e15] [cursor=pointer]:
+        - /url: /admin/master-data/sites
+    - group [ref=f2e16]:
+      - generic "Location setup — warehouse permissions required" [ref=f2e17] [cursor=pointer]
+      - option "Select setup warehouse" [selected]
+      - option "Warehouse 1 (#1)"
+      - option "(#90001)"
+      - option "Select master data site" [selected]
+      - option "JHB — Johannesburg (#1)"
+    - generic [ref=f2e18]:
+      - heading "Warehouse balance reconciliation" [level=3] [ref=f2e20]
+      - generic [ref=f2e21]:
+        - generic [ref=f2e22]:
+          - textbox "Search stock positions" [ref=f2e23]:
+            - /placeholder: Search SKU, item or warehouse
+            - text: HOLD-TEST
+          - generic [ref=f2e24]: Location state
+          - combobox "Location state" [ref=f2e25]:
+            - option "All" [selected]
+            - option "Unresolved"
+            - option "Reconciled"
+          - generic [ref=f2e26]: Rows
+          - combobox "Rows" [ref=f2e27]:
+            - option "25" [selected]
+            - option "50"
+            - option "100"
+        - paragraph [ref=f2e41]: 0 reconciled · 2 unresolved in the filtered results
+        - table [ref=f2e30]:
+          - rowgroup [ref=f2e31]:
+            - row [ref=f2e32]:
+              - columnheader "Item" [ref=f2e33]
+              - columnheader "Warehouse" [ref=f2e34]
+              - columnheader "On hand" [ref=f2e35]
+              - columnheader "Location evidence" [ref=f2e36]
+              - columnheader "Quality" [ref=f2e37]
+              - columnheader "Actions" [ref=f2e38]
+          - rowgroup [ref=f2e42]:
+            - row [ref=f2e43]:
+              - cell "HOLD-TEST Safety test" [ref=f2e44]: HOLD-TESTSafety test
+              - cell "Warehouse 1" [ref=f2e45]
+              - cell "14" [ref=f2e46]
+              - 'cell "Unresolved — legacy label: none" [ref=f2e47]'
+              - cell "Not assessed" [ref=f2e48]
+              - cell [ref=f2e49]:
+                - generic [ref=f2e50]:
+                  - button "Verify HOLD-TEST" [ref=f2e51] [cursor=pointer]
+                  - button "Safety holds for HOLD-TEST" [active] [ref=f2e52] [cursor=pointer]
+                  - button "History for HOLD-TEST" [ref=f2e53] [cursor=pointer]
+            - row [ref=f2e54]:
+              - cell "HOLD-TEST Safety test" [ref=f2e55]: HOLD-TESTSafety test
+              - cell [ref=f2e56]
+              - cell "3" [ref=f2e57]
+              - 'cell "Unresolved — legacy label: none" [ref=f2e58]'
+              - cell "Not assessed" [ref=f2e59]
+              - cell [ref=f2e60]:
+                - generic [ref=f2e61]:
+                  - button "Verify HOLD-TEST" [ref=f2e62] [cursor=pointer]
+                  - button "Safety holds for HOLD-TEST" [ref=f2e63] [cursor=pointer]
+                  - button "History for HOLD-TEST" [ref=f2e64] [cursor=pointer]
+        - generic [ref=f2e39]:
+          - generic [ref=f2e40]: 1–2 of 2
+          - button "First" [disabled]
+          - button "Previous" [disabled]
+          - button "Next" [disabled]
+          - button "Last" [disabled]
+    - region "Safety holds for HOLD-TEST" [ref=f2e65]:
+      - heading "Item-wide safety holds — HOLD-TEST" [level=2] [ref=f2e66]
+      - paragraph [ref=f2e67]: A hold blocks stock decreases for this item in every warehouse. Receipts remain held. It does not classify individual bins or lots. Approval permission and all-warehouse access are required; a different approver must release each hold.
+      - text: Hold type
+      - combobox "Hold type" [ref=f2e68]:
+        - option "INSPECTION"
+        - option "QUARANTINE" [selected]
+        - option "DAMAGED"
+        - option "BLOCKED"
+      - text: Reason / inspection evidence (required for apply or release)
+      - textbox "Reason / inspection evidence (required for apply or release)" [ref=f2e69]
+      - button "Hold item in all warehouses" [disabled]
+      - article [ref=f2e70]:
+        - paragraph [ref=f2e71]: QUARANTINE — Released
+        - paragraph [ref=f2e72]: Damaged packaging inspection
+        - paragraph [ref=f2e73]: "Created by #1 · 17/09/2026, 20:28:03"
+        - paragraph [ref=f2e74]: "Released 17/09/2026, 20:28:03: Concurrent test review"
+      - article [ref=f2e75]:
+        - paragraph [ref=f2e76]: QUARANTINE — Released
+        - paragraph [ref=f2e77]: Damaged packaging inspection
+        - paragraph [ref=f2e78]: "Created by #1 · 17/09/2026, 20:28:03"
+        - paragraph [ref=f2e79]: "Released 17/09/2026, 20:28:03: Independent review passed"
+      - article [ref=f2e80]:
+        - paragraph [ref=f2e81]: QUARANTINE — Released
+        - paragraph [ref=f2e82]: Damaged packaging inspection
+        - paragraph [ref=f2e83]: "Created by #1 · 17/09/2026, 20:28:02"
+        - paragraph [ref=f2e84]: "Released 17/09/2026, 20:28:03: Inspected and passed"
+      - generic [ref=f2e85]:
+        - button "Previous" [disabled]
+        - generic [ref=f2e86]: Page 1 · 3 records
+        - button "Next" [disabled]
+        - button "Close safety holds" [ref=f2e87] [cursor=pointer]

@@ -1,0 +1,452 @@
+import type { QueryResultRow } from "pg";
+import { pool } from "../../db";
+import { shipmentOrderCandidateJoinSql } from "../operations/shipment-order-link";
+import type {
+  AnalyticsFilters,
+  AnalyticsPartialFailure,
+  AnalyticsRecommendation,
+  AnalyticsResponse,
+  ChartDatum,
+  TableData,
+  TrendDatum,
+} from "../../../shared/analytics-types";
+import { operationalStockBaseSql } from "../inventory/operational-stock-query";
+import {excludeLegacyMixedCurrencyTotals} from '../../../shared/analytics-financial-safety';
+import {canReadAnalyticsSource,restrictAnalyticsOutputs,markUnavailableAnalyticsSources,unsupportedAnalyticsSourceFilters,type AnalyticsReadAccess} from '../../../shared/analytics-source-access';
+import {recordServerDiagnosticEvent} from '../../diagnostics/server-diagnostics-store';
+import {getOptionalTenantContext} from '../../organization-context';
+import {logger} from '../../lib/logger';
+
+type AnalyticsArea = "overview" | "procurement" | "inventory" | "logistics" | "suppliers" | "finance" | "exceptions" | "diagnostics" | "reports";
+
+/** Internal observation only: no SQL, parameters or source records leave the reader. */
+export type AnalyticsSourceTiming = {
+  source: string;
+  state: "passed" | "failed" | "denied" | "unsupported" | "retired";
+  poolWaitMs: number;
+  executionMs: number;
+  transactionMs: number;
+  totalMs: number;
+  rows: number;
+};
+
+const OPEN_PO_STATUSES = ["DRAFT", "OPEN", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIALLY_RECEIVED"];
+const CLOSED_SHIPMENT_STATUSES = ["delivered", "cancelled"];
+
+function finite(value: unknown): number {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function iso(value: unknown): string | null {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function statusHref(base: string, key: string, value: string | number): string {
+  return `${base}?${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`;
+}
+
+export async function buildAnalyticsInsights(
+  organizationId: number,
+  area: AnalyticsArea,
+  filters: AnalyticsFilters,
+  access:AnalyticsReadAccess,
+  onSourceTiming?: (timing: AnalyticsSourceTiming) => void,
+): Promise<AnalyticsResponse> {
+  const started = Date.now();
+  const partialFailures: AnalyticsPartialFailure[] = [];
+  const sourceTimings:AnalyticsSourceTiming[]=[];
+  const deniedSources=new Set<string>();
+  const params = [
+    organizationId,
+    filters.dateFrom ?? null,
+    filters.dateTo ?? null,
+    filters.supplierId ?? null,
+    filters.warehouseId ?? null,
+    filters.categoryId ?? null,
+    filters.ownerId ?? null,
+    filters.departmentId ?? null,
+    filters.risk ?? null,
+    filters.status ?? null,
+    OPEN_PO_STATUSES,
+    CLOSED_SHIPMENT_STATUSES,
+  ];
+  const shipmentLink=shipmentOrderCandidateJoinSql("shipment","po");
+
+  async function query<T extends QueryResultRow>(source: string, sql: string): Promise<T[]> {
+    const start=performance.now();let poolWaitMs=0,executionMs=0,rows=0;
+    let state:AnalyticsSourceTiming["state"]="failed";
+    const finish=()=>{const totalMs=performance.now()-start;const timing={source,state,poolWaitMs,executionMs,transactionMs:Math.max(0,totalMs-poolWaitMs-executionMs),totalMs,rows};sourceTimings.push(timing);onSourceTiming?.(timing);};
+    if(!canReadAnalyticsSource(source,access)){deniedSources.add(source);state="denied";finish();return [];}
+    if(source==="supplier_spend"||source==="category_spend"){state="retired";finish();return [];} // Deprecated until backed by dated financial evidence.
+    const unsupported=unsupportedAnalyticsSourceFilters(source,filters);
+    if(unsupported.length){partialFailures.push({area:source,code:"UNSUPPORTED_SOURCE_SCOPE",message:`This source cannot apply ${unsupported.join(", ")} through verified relationships. Clear these filters or use the source workspace. Inventory is a current operational snapshot, not dated activity.`,fallbackUsed:false});state="unsupported";finish();return [];}
+    if(source==="operations_trend") {
+      const end=filters.dateTo?Date.parse(filters.dateTo):Date.now();
+      const start=filters.dateFrom?Date.parse(filters.dateFrom):end-29*86400000;
+      if(end-start>366*86400000){partialFailures.push({area:source,code:"TREND_RANGE_UNSUPPORTED",message:"Activity charts support up to 366 days. Other measures retain the requested date scope.",fallbackUsed:false});state="unsupported";finish();return [];}
+    }
+    try {
+      // Analytics queries intentionally use one shared semantic parameter map,
+      // but individual datasets reference different subsets. PostgreSQL requires
+      // every positional parameter up to the highest index to have an inferable
+      // type, so compact sparse placeholders before execution.
+      const referenced = [...new Set([...sql.matchAll(/\$(\d+)/g)].map((match) => Number(match[1])))]
+        .sort((left, right) => left - right);
+      const compactIndexes = new Map(referenced.map((original, index) => [original, index + 1]));
+      const compactSql = sql.replace(/\$(\d+)/g, (_placeholder, rawIndex: string) => `$${compactIndexes.get(Number(rawIndex))}`);
+      const compactParams = referenced.map((index) => params[index - 1]);
+      const waiting=performance.now();
+      const client=await pool.connect();poolWaitMs=performance.now()-waiting;
+      try {
+        await client.query("BEGIN READ ONLY");
+        await client.query("SET LOCAL statement_timeout='10s'");
+        const executing=performance.now();
+        const result=await client.query<T>(compactSql,compactParams).finally(()=>{executionMs=performance.now()-executing;});
+        await client.query("COMMIT");
+        rows=result.rows.length;state="passed";
+        return result.rows;
+      }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
+    } catch (error) {
+      const code=error&&typeof error==="object"&&"code" in error?String(error.code):"UNKNOWN";
+      recordServerDiagnosticEvent({source:"request",severity:"error",title:"Analytics source unavailable",message:"An analytics query failed. Review its request reference and dependencies, then retry.",route:`/api/analytics/${area}`,status:503,details:{organizationId,requestId:getOptionalTenantContext()?.correlationId,sourceRule:source,databaseCode:/^[A-Z0-9]{5}$/.test(code)?code:"UNKNOWN"}});
+      partialFailures.push({
+        area: source,
+        code: `${source.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_ANALYTICS_UNAVAILABLE`,
+        message: `This analytics source is temporarily unavailable. Retry or ask an administrator to review Diagnostics.`,
+        fallbackUsed: false,
+      });
+      return [];
+    } finally {finish();}
+  }
+
+  const [supplierOptions, warehouseOptions, categoryOptions, departmentOptions, ownerOptions] = await Promise.all([
+    query<{ id: number; label: string; code: string | null }>("filter_suppliers", `
+      SELECT id, COALESCE(legal_name, name) AS label, supplier_code AS code
+      FROM suppliers WHERE organization_id=$1 AND status='active' ORDER BY label, id LIMIT 100`),
+    query<{ id: number; label: string; code: string | null }>("filter_warehouses", `
+      SELECT id, name AS label, NULL::text AS code FROM warehouses WHERE organization_id=$1 ORDER BY name, id LIMIT 100`),
+    query<{ id: number; label: string; code: string | null }>("filter_categories", `
+      SELECT id, name AS label, NULL::text AS code FROM categories WHERE organization_id=$1 ORDER BY name, id LIMIT 100`),
+    query<{ id: number; label: string; code: string | null }>("filter_departments", `
+      SELECT id, name AS label, code FROM departments WHERE organization_id=$1 AND COALESCE(active, true)=true ORDER BY name, id LIMIT 100`),
+    query<{ id: number; label: string; code: string | null }>("filter_owners", `
+      SELECT u.id, COALESCE(NULLIF(TRIM(u.full_name), ''), u.username) AS label, u.username AS code
+      FROM organization_members membership JOIN users u ON u.id=membership.user_id
+      WHERE membership.organization_id=$1 AND membership.active=true ORDER BY label, u.id LIMIT 100`),
+  ]);
+
+  const [poSummaryRows, poPipelineRows, requisitionPipelineRows, supplierSpendRows, categorySpendRows] = await Promise.all([
+    query<Record<string, unknown>>("procurement", `
+      SELECT NULL::float8 AS spend,
+             COUNT(*) FILTER (WHERE upper(po.status)=ANY($11::text[]))::int AS open_count,
+             NULL::float8 AS open_value,
+             MIN(po.order_date) FILTER (WHERE upper(po.status)=ANY($11::text[])) AS oldest_open,
+             COUNT(*) FILTER (WHERE po.expected_delivery_date < now() AND upper(po.status)=ANY($11::text[]))::int AS late_count,
+             MAX(po.updated_at) AS freshness
+      FROM purchase_orders po
+      WHERE po.organization_id=$1
+        AND ($2::timestamptz IS NULL OR po.order_date >= $2)
+        AND ($3::timestamptz IS NULL OR po.order_date <= $3)
+        AND ($4::int IS NULL OR po.supplier_id=$4)
+        AND ($7::int IS NULL OR po.created_by_user_id=$7)
+        AND ($8::int IS NULL OR po.department_id=$8)
+        AND ($10::text IS NULL OR lower(po.status)=lower($10))`,
+    ),
+    query<{ status: string; value: number }>("procurement_pipeline", `
+      SELECT lower(status) AS status, COUNT(*)::int AS value
+      FROM purchase_orders po WHERE po.organization_id=$1
+        AND ($2::timestamptz IS NULL OR po.order_date >= $2) AND ($3::timestamptz IS NULL OR po.order_date <= $3)
+        AND ($4::int IS NULL OR po.supplier_id=$4) AND ($7::int IS NULL OR po.created_by_user_id=$7)
+        AND ($8::int IS NULL OR po.department_id=$8)
+      GROUP BY lower(status) ORDER BY lower(status)`),
+    query<{ status: string; value: number }>("requisition_pipeline", `
+      SELECT lower(status) AS status, COUNT(*)::int AS value
+      FROM purchase_requisitions requisition WHERE requisition.organization_id=$1
+        AND ($2::timestamptz IS NULL OR requisition.created_at >= $2) AND ($3::timestamptz IS NULL OR requisition.created_at <= $3)
+        AND ($4::int IS NULL OR requisition.supplier_id=$4) AND ($7::int IS NULL OR requisition.requestor_id=$7)
+        AND ($8::int IS NULL OR requisition.department_id=$8)
+      GROUP BY lower(status) ORDER BY lower(status)`),
+    Promise.resolve<Record<string,unknown>[]>([]),
+    Promise.resolve<Record<string,unknown>[]>([]),
+  ]);
+
+  const inventoryRows = await query<Record<string, unknown>>("inventory", `
+    ${operationalStockBaseSql(5)}
+    SELECT base.id,base.sku,base.name,COALESCE(category.name,'Uncategorised') AS category,
+      base.available::numeric::text AS available,base.low_stock_threshold::numeric::text AS threshold,
+      base.available<=base.low_stock_threshold AS is_low_stock,base.available<0 AS is_negative_stock,
+      base.available=0 AS is_zero_stock,base.available>base.low_stock_threshold AS is_healthy_stock,
+      base.valuation_rate::numeric::text AS unit_cost,base.expiry_date,base.updated_at,supplier.name AS supplier_name,
+      base.incomplete_reservation_evidence
+    FROM base LEFT JOIN categories category ON category.id=base.category_id AND category.organization_id=$1
+    LEFT JOIN suppliers supplier ON supplier.id=base.supplier_id AND supplier.organization_id=$1
+    WHERE ($4::int IS NULL OR base.supplier_id=$4) AND ($6::int IS NULL OR base.category_id=$6)
+    ORDER BY base.available ASC,base.id`);
+
+  const shipmentRows = await query<Record<string, unknown>>("logistics", `
+    SELECT shipment.id, shipment.po_number, shipment.carrier, shipment.tracking_number, shipment.status,
+           shipment.eta, shipment.created_at, shipment.updated_at,
+           COALESCE(supplier.legal_name,supplier.name) AS supplier_name,
+           CASE WHEN shipment.eta IS NULL THEN 'no_eta'
+                WHEN shipment.eta < now() AND lower(shipment.status) <> ALL($12::text[]) THEN 'late'
+                WHEN shipment.eta <= now()+interval '7 days' AND lower(shipment.status) <> ALL($12::text[]) THEN 'due_soon'
+                ELSE 'on_time' END AS risk,
+           GREATEST(0, EXTRACT(EPOCH FROM (now()-shipment.eta))/86400)::float8 AS days_late
+    FROM ${shipmentLink.relation} LEFT JOIN purchase_orders po ON po.organization_id=$1
+      AND ${shipmentLink.predicate}
+    LEFT JOIN suppliers supplier ON supplier.id=po.supplier_id AND supplier.organization_id=$1
+    WHERE shipment.organization_id=$1
+      AND ($2::timestamptz IS NULL OR shipment.created_at >= $2) AND ($3::timestamptz IS NULL OR shipment.created_at <= $3)
+      AND ($4::int IS NULL OR po.supplier_id=$4) AND ($10::text IS NULL OR lower(shipment.status)=lower($10))
+    ORDER BY shipment.eta NULLS FIRST, shipment.id DESC`);
+
+  const invoiceRows = await query<Record<string, unknown>>("finance", `
+    SELECT invoice.id, invoice.invoice_number, invoice.status, invoice.issue_date, invoice.due_date,
+           COALESCE(NULLIF(invoice.due_amount,0), invoice.total-COALESCE(invoice.paid_amount,0),0)::float8 AS due_amount,
+           COALESCE(supplier.legal_name,supplier.name) AS supplier_name, invoice.purchase_order_id, invoice.updated_at,
+           CASE WHEN invoice.due_date < now()-interval '60 days' THEN 'overdue_60_plus'
+                WHEN invoice.due_date < now()-interval '30 days' THEN 'overdue_31_60'
+                WHEN invoice.due_date < now() THEN 'overdue_1_30'
+                WHEN invoice.due_date <= now()+interval '7 days' THEN 'due_7'
+                WHEN invoice.due_date <= now()+interval '30 days' THEN 'due_30'
+                ELSE 'not_due' END AS aging
+    FROM invoices invoice LEFT JOIN suppliers supplier ON supplier.id=invoice.supplier_id AND supplier.organization_id=$1
+    WHERE invoice.organization_id=$1
+      AND ($2::timestamptz IS NULL OR invoice.issue_date >= $2) AND ($3::timestamptz IS NULL OR invoice.issue_date <= $3)
+      AND ($4::int IS NULL OR invoice.supplier_id=$4) AND ($7::int IS NULL OR invoice.created_by=$7)
+      AND ($10::text IS NULL OR lower(invoice.status::text)=lower($10))
+    ORDER BY invoice.due_date, invoice.id DESC`);
+
+  const exceptionRows = await query<Record<string, unknown>>("exceptions", `
+    SELECT id, type, severity, status, title, assignee, sla_hours, related_refs, created_at, updated_at,
+           EXTRACT(EPOCH FROM (now()-created_at))/3600 AS age_hours
+    FROM operational_exceptions exception WHERE exception.organization_id=$1
+      AND ($2::timestamptz IS NULL OR exception.created_at >= $2) AND ($3::timestamptz IS NULL OR exception.created_at <= $3)
+      AND ($9::text IS NULL OR lower(exception.severity)=lower($9)) AND ($10::text IS NULL OR lower(exception.status)=lower($10))
+    ORDER BY CASE lower(severity) WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC,
+             created_at ASC, id ASC`);
+
+  const supplierRiskRows = await query<Record<string, unknown>>("supplier_risk", `
+    WITH supplier_evidence AS (
+    SELECT supplier.id, COALESCE(supplier.legal_name,supplier.name) AS supplier,
+           COALESCE(supplier.risk_rating,supplier.risk_status,'unrated') AS risk,
+           COUNT(DISTINCT po.id) FILTER (WHERE upper(po.status)=ANY($11::text[]))::int AS open_pos,
+           NULL::float8 AS open_value,
+           COUNT(DISTINCT shipment.id) FILTER (WHERE shipment.eta < now() AND lower(shipment.status)<>ALL($12::text[]))::int AS late_shipments
+    FROM suppliers supplier
+    LEFT JOIN purchase_orders po ON po.supplier_id=supplier.id AND po.organization_id=$1
+    LEFT JOIN ${shipmentLink.relation} ON ${shipmentLink.predicate}
+    WHERE supplier.organization_id=$1 AND supplier.status='active' AND ($4::int IS NULL OR supplier.id=$4)
+    GROUP BY supplier.id, supplier.legal_name, supplier.name, supplier.risk_rating, supplier.risk_status
+    ), scored AS (
+      SELECT *,lower(risk) IN ('high','critical','blocked') OR late_shipments>0 AS is_high_risk FROM supplier_evidence
+    )
+    SELECT *,count(*) FILTER(WHERE is_high_risk) OVER ()::int AS high_risk_total,
+      COALESCE(sum(late_shipments) FILTER(WHERE is_high_risk) OVER (),0)::int AS high_risk_late_shipments,
+      count(*) FILTER(WHERE lower(trim(risk)) IN ('','unrated','unknown')) OVER ()::int AS unrated_total
+    FROM scored ORDER BY is_high_risk DESC,late_shipments DESC,open_pos DESC,id LIMIT 100`);
+
+  const trendRows = await query<Record<string, unknown>>("operations_trend", `
+    WITH days AS (SELECT generate_series(COALESCE($2::date, COALESCE($3::date,current_date)-interval '29 days'), COALESCE($3::date,current_date), interval '1 day')::date AS day)
+    SELECT to_char(day,'YYYY-MM-DD') AS day,
+      (SELECT count(*) FROM purchase_requisitions r WHERE r.organization_id=$1 AND r.created_at::date=day)::int AS requisitions,
+      (SELECT count(*) FROM purchase_orders p WHERE p.organization_id=$1 AND p.created_at::date=day)::int AS purchase_orders,
+      (SELECT count(*) FROM stock_movements m WHERE m.organization_id=$1 AND m.timestamp::date=day AND m.type='RECEIPT')::int AS receipts,
+      (SELECT count(*) FROM shipments s WHERE s.organization_id=$1 AND s.created_at::date=day)::int AS shipments,
+      (SELECT count(*) FROM invoices i WHERE i.organization_id=$1 AND i.created_at::date=day)::int AS invoices,
+      (SELECT count(*) FROM operational_exceptions e WHERE e.organization_id=$1 AND e.created_at::date=day)::int AS exceptions_opened
+    FROM days ORDER BY day`);
+
+  const openPoStatuses = new Set(OPEN_PO_STATUSES.map((value) => value.toLowerCase()));
+  const closedShipments = new Set(CLOSED_SHIPMENT_STATUSES);
+  const filteredShipments = shipmentRows.filter((row) => !filters.risk || row.risk === filters.risk);
+  const activeExceptions = exceptionRows.filter((row) => ["open", "in_progress"].includes(String(row.status).toLowerCase()));
+  const inventory = inventoryRows.map((row): Record<string, unknown> & { available: number; threshold: number; unit_cost: number } => ({
+    ...row,
+    available_decimal:row.available,threshold_decimal:row.threshold,
+    available: finite(row.available),
+    threshold: finite(row.threshold),
+    unit_cost: finite(row.unit_cost),
+  }));
+  const lowStock = inventory.filter((row) => row.is_low_stock===true);
+  const negativeStock = inventory.filter((row) => row.is_negative_stock===true);
+  const zeroStock = inventory.filter((row) => row.is_zero_stock===true);
+  const expiring = inventory.filter((row) => row.expiry_date && new Date(String(row.expiry_date)).getTime() <= Date.now() + 30 * 86_400_000);
+  const healthy = inventory.filter((row) => row.is_healthy_stock===true);
+  const lateShipments = filteredShipments.filter((row) => row.risk === "late" && !closedShipments.has(String(row.status).toLowerCase()));
+  const noEtaShipments = filteredShipments.filter((row) => row.risk === "no_eta" && !closedShipments.has(String(row.status).toLowerCase()));
+  const openInvoices = invoiceRows.filter((row) => !["PAID", "CANCELLED", "REJECTED"].includes(String(row.status).toUpperCase()) && finite(row.due_amount) > 0);
+  const overdueInvoices = openInvoices.filter((row) => String(row.aging).startsWith("overdue"));
+  const pendingInvoices = openInvoices.filter((row) => String(row.status).toUpperCase() === "PENDING_APPROVAL");
+  const highRiskSuppliers = supplierRiskRows.filter((row) => ["high", "critical", "blocked"].includes(String(row.risk).toLowerCase()) || finite(row.late_shipments) > 0);
+  const poSummary = poSummaryRows[0] ?? {};
+
+  const pipeline: ChartDatum[] = [
+    ...requisitionPipelineRows.map((row) => ({ label: `Requisition: ${row.status.replaceAll("_", " ")}`, value: finite(row.value), href: statusHref("/procurement/requisitions", "status", row.status) })),
+    ...poPipelineRows.map((row) => ({ label: `PO: ${row.status.replaceAll("_", " ")}`, value: finite(row.value), href: statusHref("/procurement/orders", "status", row.status) })),
+  ];
+  const inventoryHealth: ChartDatum[] = [
+    { label: "Healthy", value: healthy.length, href: "/inventory?stockStatus=healthy" },
+    { label: "Low stock", value: lowStock.length, risk: "high", href: "/inventory?low=1" },
+    { label: "Zero stock", value: zeroStock.length, risk: "high", href: "/inventory?stockStatus=zero" },
+    { label: "Negative", value: negativeStock.length, risk: "critical", href: "/inventory?stockStatus=negative" },
+    { label: "Expiring", value: expiring.length, risk: "medium", href: "/inventory?stockStatus=expiring" },
+  ];
+  const logisticsRisk: ChartDatum[] = ["on_time", "due_soon", "late", "no_eta"].map((risk) => ({
+    label: risk.replaceAll("_", " "),
+    value: filteredShipments.filter((row) => row.risk === risk).length,
+    href: statusHref("/operations/logistics", "risk", risk),
+  }));
+  const apAging: ChartDatum[] = ["not_due", "due_7", "due_30", "overdue_1_30", "overdue_31_60", "overdue_60_plus"].map((aging) => ({
+    label: aging.replaceAll("_", " "), value: openInvoices.filter((row) => row.aging === aging).length,
+    amount: openInvoices.filter((row) => row.aging === aging).reduce((sum, row) => sum + finite(row.due_amount), 0),
+    href: statusHref("/finance/accounts-payable/aging", "aging", aging),
+  }));
+  const exceptionSeverity: ChartDatum[] = ["low", "medium", "high", "critical"].map((severity) => ({
+    label: severity, value: activeExceptions.filter((row) => String(row.severity).toLowerCase() === severity).length,
+    risk: severity as ChartDatum["risk"], href: statusHref("/operations/exceptions", "severity", severity),
+  }));
+  const operationsTrend: TrendDatum[] = trendRows.map((row) => ({
+    date: String(row.day).slice(0, 10), requisitions: finite(row.requisitions), purchaseOrders: finite(row.purchase_orders),
+    receipts: finite(row.receipts), shipments: finite(row.shipments), invoices: finite(row.invoices), exceptionsOpened: finite(row.exceptions_opened),
+  }));
+
+  const tables: Record<string, TableData> = {
+    delayedShipments: {
+      columns: [
+        { key: "id", label: "Shipment", type: "link" }, { key: "poNumber", label: "PO" }, { key: "supplier", label: "Supplier" },
+        { key: "carrier", label: "Carrier" }, { key: "eta", label: "ETA", type: "date" }, { key: "daysLate", label: "Days late", type: "number" }, { key: "risk", label: "Risk", type: "risk" },
+      ],
+      rows: lateShipments.slice(0, 25).map((row) => ({ id: row.id, href: `/operations/logistics/${row.id}`, poNumber: row.po_number, supplier: row.supplier_name ?? "—", carrier: row.carrier ?? "—", eta: iso(row.eta), daysLate: Math.floor(finite(row.days_late)), risk: row.risk })),
+      emptyTitle: "No late shipments", emptyDescription: "All shipments with an ETA are currently on time for the selected period.",
+    },
+    oldestOpenExceptions: {
+      columns: [
+        { key: "id", label: "Exception", type: "link" }, { key: "title", label: "Title" }, { key: "area", label: "Area" },
+        { key: "severity", label: "Severity", type: "risk" }, { key: "ageHours", label: "Age (hours)", type: "number" }, { key: "owner", label: "Owner" },
+      ],
+      rows: activeExceptions.slice(0, 25).map((row) => ({ id: row.id, href: `/operations/exceptions?finding=${row.id}`, title: row.title, area: row.type, severity: row.severity, ageHours: Math.floor(finite(row.age_hours)), owner: row.assignee ?? "Unassigned" })),
+      emptyTitle: "No open exceptions", emptyDescription: "No current operational exceptions match the selected filters.",
+    },
+    highRiskSuppliers: {
+      columns: [
+        { key: "supplier", label: "Supplier", type: "link" }, { key: "risk", label: "Risk", type: "risk" }, { key: "openPos", label: "Open POs", type: "number" },
+        { key: "lateShipments", label: "Late shipments", type: "number" }, { key: "exposure", label: "Open exposure", type: "money" },
+      ],
+      rows: highRiskSuppliers.slice(0, 25).map((row) => ({ supplier: row.supplier, href: `/procurement/suppliers/${row.id}`, risk: row.risk, openPos: finite(row.open_pos), lateShipments: finite(row.late_shipments), exposure: finite(row.open_value) })),
+      emptyTitle: "No high-risk suppliers", emptyDescription: "No active supplier currently meets the high-risk or late-delivery criteria.",
+    },
+    lowStockItems: {
+      columns: [
+        { key: "sku", label: "SKU", type: "link" }, { key: "name", label: "Item" }, { key: "category", label: "Category" },
+        { key: "available", label: "Available", type: "number" }, { key: "threshold", label: "Reorder point", type: "number" }, { key: "supplier", label: "Preferred supplier" },
+      ],
+rows: lowStock.slice(0, 25).map((row) => ({ sku: row.sku, href: `/inventory/${encodeURIComponent(String(row.sku))}`, name: row.name, category: row.category, available: String(row.available_decimal), threshold: String(row.threshold_decimal), supplier: row.supplier_name ?? "Not configured" })),
+      emptyTitle: "No low-stock items", emptyDescription: "Every active item is above its configured threshold for this view.",
+    },
+    overdueInvoices: {
+      columns: [
+        { key: "invoice", label: "Invoice", type: "link" }, { key: "supplier", label: "Supplier" }, { key: "dueDate", label: "Due date", type: "date" },
+        { key: "amount", label: "Amount", type: "money" }, { key: "status", label: "Status", type: "status" }, { key: "aging", label: "Aging" },
+      ],
+      rows: overdueInvoices.slice(0, 25).map((row) => ({ invoice: row.invoice_number ?? `Invoice #${row.id}`, href: `/finance/invoices/${row.id}`, supplier: row.supplier_name ?? "—", dueDate: iso(row.due_date), amount: finite(row.due_amount), status: row.status, aging: row.aging })),
+      emptyTitle: "No overdue invoices", emptyDescription: "No unpaid supplier invoices are overdue for the selected period.",
+    },
+  };
+
+  const recommendations: AnalyticsRecommendation[] = [];
+  if (negativeStock.length) recommendations.push({ id: "negative-stock", severity: "critical", area: "Inventory", title: `${negativeStock.length} item${negativeStock.length === 1 ? " has" : "s have"} negative stock`, reason: "Negative availability can allow commitments that cannot be fulfilled.", suggestedAction: "Review stock movements and correct the affected warehouse balances.", href: "/inventory?stockStatus=negative" });
+if (lateShipments.length) recommendations.push({ id: "late-shipments", severity: "high", area: "Logistics", title: `${lateShipments.length} shipment${lateShipments.length === 1 ? " is" : "s are"} past ETA`, reason: `The worst current delay is ${Math.floor(lateShipments.reduce((max,row)=>Math.max(max,finite(row.days_late)),0))} day(s).`, suggestedAction: "Contact the supplier or carrier and update the expected arrival date.", href: "/operations/logistics?risk=late" });
+  if (lowStock.length) recommendations.push({ id: "low-stock", severity: negativeStock.length ? "critical" : "high", area: "Inventory", title: `${lowStock.length} item${lowStock.length === 1 ? " is" : "s are"} at or below reorder threshold`, reason: "Low stock can interrupt receiving, fulfilment, and operational work.", suggestedAction: "Review replenishment and open purchase-order coverage.", href: "/inventory?low=1" });
+  if (overdueInvoices.length) recommendations.push({ id: "overdue-ap", severity: "high", area: "Finance / AP", title: `${overdueInvoices.length} supplier invoice${overdueInvoices.length === 1 ? " is" : "s are"} overdue`, reason: `Overdue exposure is ${overdueInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0).toFixed(2)} in document currencies.`, suggestedAction: "Resolve approval, matching, or payment blockers.", href: "/finance/accounts-payable/aging?aging=overdue" });
+  if (activeExceptions.length) recommendations.push({ id: "open-exceptions", severity: activeExceptions.some((row) => String(row.severity).toLowerCase() === "critical") ? "critical" : "medium", area: "Exceptions", title: `${activeExceptions.length} operational exception${activeExceptions.length === 1 ? " needs" : "s need"} attention`, reason: `${activeExceptions.filter((row) => finite(row.age_hours) > finite(row.sla_hours)).length} are beyond their configured SLA.`, suggestedAction: "Assign owners and resolve the oldest or highest-severity findings first.", href: "/operations/exceptions?status=open" });
+  if (noEtaShipments.length) recommendations.push({ id: "missing-eta", severity: "medium", area: "Logistics", title: `${noEtaShipments.length} active shipment${noEtaShipments.length === 1 ? " has" : "s have"} no ETA`, reason: "Delivery risk cannot be measured without an expected arrival date.", suggestedAction: "Request and record an ETA from the supplier or carrier.", href: "/operations/logistics?risk=no_eta" });
+
+  const dataQualityWarnings = [
+    { code: "PO_MISSING_EXPECTED_DATE", message: "Purchase orders have no expected delivery date.", count: Math.max(0, finite(poSummary.open_count) - filteredShipments.filter((row) => row.eta).length), href: "/procurement/orders" },
+    { code: "ITEM_MISSING_REORDER_POINT", message: "Inventory items have no meaningful reorder threshold.", count: inventory.filter((row) => finite(row.threshold) <= 0).length, href: "/inventory" },
+    { code: "SHIPMENT_MISSING_CARRIER", message: "Shipments have no carrier configured.", count: filteredShipments.filter((row) => !row.carrier).length, href: "/operations/logistics" },
+    { code: "SHIPMENT_MISSING_ETA", message: "Active shipments have no ETA.", count: noEtaShipments.length, href: "/operations/logistics?risk=no_eta" },
+  ].filter((warning) => warning.count > 0);
+
+  const reportingCurrency = "reporting currency";
+  const sourceFailureCount=partialFailures.filter(row=>!["UNSUPPORTED_SOURCE_SCOPE","TREND_RANGE_UNSUPPORTED"].includes(row.code)).length;
+  const limitedScope=partialFailures.length>sourceFailureCount;
+  const kpis = {
+    procurementSpend: { label: "Total procurement spend", value: finite(poSummary.spend), status: "neutral" as const, href: "/procurement/orders", helperText: `Purchase-order value in document currencies for the selected period (${reportingCurrency} conversion is shown in detailed reports).` },
+    openPurchaseOrders: { label: "Open purchase orders", value: finite(poSummary.open_count), status: finite(poSummary.late_count) ? "warning" as const : "good" as const, href: "/procurement/orders?status=open", helperText: "Draft, open, approved, sent, acknowledged, and partially received orders.", details: { value: finite(poSummary.open_value), oldestOpen: iso(poSummary.oldest_open), highRiskCount: finite(poSummary.late_count) } },
+    inventoryHealth: { label: "Inventory health", value: healthy.length, status: negativeStock.length ? "danger" as const : lowStock.length ? "warning" as const : "good" as const, href: "/inventory", helperText: "Healthy active SKUs; low, zero, and negative stock are shown separately.", details: { lowStock: lowStock.length, zeroStock: zeroStock.length, negativeStock: negativeStock.length } },
+    lateShipments: { label: "Late shipments", value: lateShipments.length, status: lateShipments.length ? "danger" as const : "good" as const, href: "/operations/logistics?risk=late", helperText: "Active shipments whose ETA has passed.", details: { averageDaysLate: lateShipments.length ? Number((lateShipments.reduce((sum, row) => sum + finite(row.days_late), 0) / lateShipments.length).toFixed(1)) : 0, worstDelayDays: lateShipments.length ? Math.floor(lateShipments.reduce((max,row)=>Math.max(max,finite(row.days_late)),0)) : 0 } },
+    openExceptions: { label: "Open exceptions", value: activeExceptions.length, status: activeExceptions.some((row) => String(row.severity).toLowerCase() === "critical") ? "danger" as const : activeExceptions.length ? "warning" as const : "good" as const, href: "/operations/exceptions?status=open", helperText: "Current open or in-progress operational exceptions.", details: { critical: activeExceptions.filter((row) => String(row.severity).toLowerCase() === "critical").length, overSla: activeExceptions.filter((row) => finite(row.age_hours) > finite(row.sla_hours)).length, oldestHours: activeExceptions.length ? Math.floor(activeExceptions.reduce((max,row)=>Math.max(max,finite(row.age_hours)),0)) : 0 } },
+    apExposure: { label: "AP exposure", value: openInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0), status: overdueInvoices.length ? "danger" as const : "neutral" as const, href: "/finance/accounts-payable", helperText: "Unpaid supplier invoice exposure in document currencies.", details: { overdueValue: overdueInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0), dueThisWeek: openInvoices.filter((row) => row.aging === "due_7").reduce((sum, row) => sum + finite(row.due_amount), 0), pendingApprovalValue: pendingInvoices.reduce((sum, row) => sum + finite(row.due_amount), 0) } },
+    supplierRisk: { label: "Supplier risk", value: finite(supplierRiskRows[0]?.high_risk_total), status: finite(supplierRiskRows[0]?.high_risk_total) ? "warning" as const : "neutral" as const, href: filters.supplierId ? `/procurement/suppliers/${filters.supplierId}` : "/analytics/suppliers", helperText: "Active suppliers with high, critical or blocked ratings, or current late shipments. Supplier Analytics shows a bounded attention list. Unrated suppliers are not cleared by this count.", details: { worstSupplier: String(highRiskSuppliers[0]?.supplier ?? "None"), lateShipments: finite(supplierRiskRows[0]?.high_risk_late_shipments), unratedSuppliers: finite(supplierRiskRows[0]?.unrated_total) } },
+    systemHealth: { label: "System health", value: sourceFailureCount ? "Degraded" : limitedScope ? "Limited scope" : "Ready", status: sourceFailureCount ? "warning" as const : limitedScope ? "neutral" as const : "good" as const, href: "/admin/system-diagnostics", helperText: "Readiness of the analytics data sources used for this view.", details: { failedAnalyticsFeeds: sourceFailureCount, failedApiCalls: "Open diagnostics", slowEndpoints: "Open diagnostics", routeWarnings: "Open diagnostics" } },
+  };
+
+  const charts: AnalyticsResponse["charts"] = {
+    procurementPipeline: pipeline,
+    inventoryHealth,
+    logisticsRisk,
+    apAging,
+    exceptionsBySeverity: exceptionSeverity,
+    operationsTrend,
+    spendBySupplier: supplierSpendRows.map((row) => ({ label: String(row.label), value: finite(row.amount), amount: finite(row.amount), count: finite(row.count), href: `/procurement/suppliers/${row.id}` })),
+    spendByCategory: categorySpendRows.map((row) => ({ label: String(row.label), value: finite(row.amount), amount: finite(row.amount), count: finite(row.count), href: "/analytics/reports/purchase-orders" })),
+    supplierRisk: supplierRiskRows.slice(0, 15).map((row) => ({ label: String(row.supplier), value: finite(row.late_shipments) + finite(row.open_pos), amount: finite(row.open_value), href: `/procurement/suppliers/${row.id}` })),
+    invoiceStatus: [...new Set(invoiceRows.map((row) => String(row.status)))].map((status) => ({ label: status, value: invoiceRows.filter((row) => String(row.status) === status).length, href: statusHref("/finance/invoices", "status", status) })),
+    stockValueByCategory: Object.values(inventory.reduce<Record<string, { label: string; value: number; count: number }>>((out, row) => { const key=String(row.category); out[key] ??={label:key,value:0,count:0}; out[key].value += finite(row.available)*finite(row.unit_cost); out[key].count += 1; return out; }, {})),
+    exceptionAging: [
+      { label: "0–24 hours", value: activeExceptions.filter((row) => finite(row.age_hours) <= 24).length },
+      { label: "1–3 days", value: activeExceptions.filter((row) => finite(row.age_hours) > 24 && finite(row.age_hours) <= 72).length },
+      { label: "4–7 days", value: activeExceptions.filter((row) => finite(row.age_hours) > 72 && finite(row.age_hours) <= 168).length },
+      { label: "8+ days", value: activeExceptions.filter((row) => finite(row.age_hours) > 168).length },
+    ],
+  };
+
+  const freshnessValues = [poSummary.freshness, ...inventory.slice(0, 1).map((row) => row.updated_at), ...shipmentRows.slice(0, 1).map((row) => row.updated_at), ...invoiceRows.slice(0, 1).map((row) => row.updated_at), ...exceptionRows.slice(0, 1).map((row) => row.updated_at)];
+  const response: AnalyticsResponse = {
+    generatedAt: new Date().toISOString(),
+    meta: {
+      queryMs: Date.now() - started,
+      filtersApplied: { ...filters, area },
+      dataFreshness: {
+        procurement: iso(poSummary.freshness), inventory: iso(inventory[0]?.updated_at), logistics: iso(shipmentRows[0]?.updated_at),
+        finance: iso(invoiceRows[0]?.updated_at), exceptions: iso(exceptionRows[0]?.updated_at), latest: iso(freshnessValues.filter(Boolean).sort().at(-1)),
+      },
+      partialFailures,
+      sourceScopes:{inventory:"Current operational stock snapshot; date filters do not reconstruct historical positions. Not quality-eligible allocation authority.",supplier_risk:"Current supplier risk and open-work snapshot, not a historical scorecard.",businessArea:"Workspace/view selection; source access and supported record filters remain authoritative."},
+    },
+    filterOptions: {
+      suppliers: supplierOptions, warehouses: warehouseOptions, categories: categoryOptions, owners: ownerOptions, departments: departmentOptions,
+    },
+    kpis,
+    charts,
+    tables,
+    recommendations: recommendations.slice(0, 10),
+    dataQualityWarnings,
+    reportTemplates: [
+      ["procurement-spend", "Procurement Spend Report", "/analytics/reports/purchase-orders"],
+      ["open-pos", "Open PO Report", "/analytics/reports/purchase-orders"],
+      ["supplier-performance", "Supplier Performance Report", "/analytics/reports/suppliers"],
+      ["inventory-health", "Inventory Health Report", "/analytics/reports/inventory"],
+      ["low-stock", "Low Stock Report", "/analytics/reports/low-stock"],
+      ["logistics-risk", "Logistics Risk Report", "/analytics/reports/shipments"],
+      ["ap-aging", "AP Aging Report", "/analytics/reports/invoices"],
+      ["open-exceptions", "Open Exceptions Report", "/operations/exceptions"],
+      ["diagnostics", "Diagnostics Report", "/admin/system-diagnostics"],
+    ].map(([id, label, href]) => ({ id, label, href })),
+  };
+  restrictAnalyticsOutputs(response,deniedSources);
+  if(inventoryRows.some(row=>row.incomplete_reservation_evidence===true))markUnavailableAnalyticsSources(response,new Set(["inventory"]),"Warehouse availability is incomplete because reservations lack location evidence. Reconcile allocation locations before relying on this quantity.");
+  for(const failure of partialFailures)markUnavailableAnalyticsSources(response,new Set([failure.area]),failure.message);
+  if(response.meta.queryMs>=1000)logger.info("Analytics observation timing",{
+    requestId:getOptionalTenantContext()?.correlationId,route:`/api/analytics/${area}`,durationMs:response.meta.queryMs,
+    sourceTimings:sourceTimings.map(t=>({...t,poolWaitMs:Math.round(t.poolWaitMs),executionMs:Math.round(t.executionMs),transactionMs:Math.round(t.transactionMs),totalMs:Math.round(t.totalMs)})),
+  });
+  return excludeLegacyMixedCurrencyTotals(response);
+}
+
+export const analyticsAreas: AnalyticsArea[] = ["overview", "procurement", "inventory", "logistics", "suppliers", "finance", "exceptions", "diagnostics", "reports"];

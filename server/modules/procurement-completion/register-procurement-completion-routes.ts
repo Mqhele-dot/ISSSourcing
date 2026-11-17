@@ -1,0 +1,1363 @@
+import { createHash, randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { purchaseRequisitions } from "@shared/schema";
+import { captureReceiptReversalValue } from "../reports/receipt-value-capture";
+import { wholeStockQuantity } from "../inventory-flow/whole-stock-quantity";
+import type { Express, Request, Response } from "express";
+import type { PoolClient } from "pg";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { z } from "zod";
+import { pool } from "../../db";
+import { sendError, sendOk } from "../../api-response";
+import { getActiveOrganizationId, getOptionalTenantContext, getTenantContext } from "../../organization-context";
+import type { AuthBundle } from "../procurement/types";
+import { convertRequisitionToSourcingDraft, SourcingError, type SourcingActor } from "../sourcing/service";
+import { assertSupplierTransactionAllowed } from "../procurement/supplier-defaults";
+import { transferRequisitionBudget } from "../procurement/requisition-budget-transfer";
+import { bindPurchaseOrderBudgetProvenance } from "../procurement/purchase-order-budget-provenance";
+import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
+import { recordRequisitionOutcomeNotification, recordRequisitionSubmittedNotification } from "../../services/notification-emitter";
+import { queryCustomRolePermission, queryRolePermission, queryUserCustomRoleId } from "../../services/permission-query-service";
+import { authorizeApprovalStep } from "../../services/approval-workflow-service";
+import { appendAuditEventWithClient } from "../../services/audit-chain-client";
+import { hasAgreementReleaseEvidence, releaseCommandHash } from "./agreement-release-evidence";
+import { registerMaverickSpendRoutes } from "../reports/register-maverick-spend-routes";
+import {
+  addOperationalExceptionComment,
+  assignOperationalException,
+  getOperationalExceptionDetail,
+  transitionOperationalExceptionStatus,
+} from "../operations/operations-core";
+
+type DbClient = PoolClient;
+
+const confirmationStatuses = ["AWAITING", "CONFIRMED", "REJECTED", "CLARIFICATION_REQUESTED"] as const;
+const requisitionTransitions: Record<string, { from: string[]; to: string; reasonRequired?: boolean }> = {
+  submit: { from: ["DRAFT", "NEEDS_INFO"], to: "PENDING_APPROVAL" },
+  "request-info": { from: ["SUBMITTED", "PENDING_APPROVAL"], to: "NEEDS_INFO", reasonRequired: true },
+  approve: { from: ["SUBMITTED", "PENDING_APPROVAL"], to: "APPROVED" },
+  reject: { from: ["SUBMITTED", "PENDING_APPROVAL"], to: "REJECTED", reasonRequired: true },
+  cancel: { from: ["DRAFT", "SUBMITTED", "PENDING_APPROVAL", "APPROVED", "NEEDS_INFO", "REJECTED"], to: "CANCELLED", reasonRequired: true },
+  close: { from: ["APPROVED", "REJECTED", "CANCELLED", "CONVERTED_TO_RFQ", "CONVERTED_TO_PO"], to: "CLOSED", reasonRequired: true },
+};
+
+function actor(req: Request, res: Response): SourcingActor {
+  return {
+    organizationId: getActiveOrganizationId(),
+    userId: Number((req as Request & { user?: { id?: number } }).user?.id ?? 0),
+    requestId: String(res.locals.requestId ?? "unknown-request-id"),
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent") ?? null,
+  };
+}
+
+function positiveInt(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function pagination(req: Request) {
+  const page = positiveInt(req.query.page, 1);
+  const pageSize = positiveInt(req.query.pageSize, 25);
+  if (![25, 50, 100].includes(pageSize)) throw new Error("INVALID_PAGE_SIZE");
+  return { page, pageSize, offset: (page - 1) * pageSize };
+}
+
+async function withTransaction<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function assertUnreservedStock(client: DbClient, organizationId: number, itemId: number, warehouseId: number, onHand: number, outgoing: number, failureCode: string) {
+  const allocations = await client.query(
+    `SELECT COALESCE(sum(quantity),0)::numeric::text AS quantity FROM inventory_allocations
+     WHERE organization_id=$1 AND item_id=$2 AND (warehouse_id=$3 OR warehouse_id IS NULL) AND status='reserved'`,
+    [organizationId, itemId, warehouseId],
+  );
+  if (onHand - Number(allocations.rows[0].quantity) < outgoing) throw new Error(failureCode);
+}
+
+async function assertPhaseEnabled(organizationId: number, phase: 1 | 2 | 3 | 4, client: Pick<DbClient, "query"> = pool) {
+  const column = `phase${phase}_enabled`;
+  const result = await client.query(`SELECT ${column} AS enabled FROM procurement_feature_settings WHERE organization_id=$1`, [organizationId]);
+  if (!result.rows[0]?.enabled) throw new Error(`FEATURE_PROCUREMENT_PHASE_${phase}_DISABLED`);
+}
+
+async function recordActivity(client: DbClient, organizationId: number, entityType: string, entityId: number, action: string, summary: Record<string, unknown>) {
+  await client.query(
+    `INSERT INTO ops_activity (organization_id, actor, entity_type, entity_id, action, summary_json)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+    [organizationId, String(summary.actorUserId ?? "system"), entityType, String(entityId), action, JSON.stringify(summary)],
+  );
+}
+
+async function createProcurementException(client: DbClient, organizationId: number, input: {
+  type: string; severity?: string; title: string; description: string; refs: Record<string, unknown>;
+}) {
+  const existing = await client.query(
+    `SELECT id FROM operational_exceptions
+      WHERE organization_id=$1 AND type=$2 AND status IN ('open','in_progress')
+        AND related_refs @> $3::jsonb LIMIT 1`,
+    [organizationId, input.type, JSON.stringify(input.refs)],
+  );
+  if (existing.rows[0]) return existing.rows[0].id as number;
+  const created = await client.query(
+    `INSERT INTO operational_exceptions
+      (organization_id,type,severity,status,title,description,related_refs,sla_hours)
+     VALUES ($1,$2,$3,'open',$4,$5,$6::jsonb,24) RETURNING id`,
+    [organizationId, input.type, input.severity ?? "medium", input.title, input.description, JSON.stringify({ area: "procurement", ...input.refs })],
+  );
+  return created.rows[0].id as number;
+}
+
+function handleError(res: Response, error: unknown) {
+  if (error instanceof SourcingError) return sendError(res, error.status, error.code, error.message, { hint: error.hint, details: error.details });
+  if (error instanceof z.ZodError) return sendError(res, 400, "INVALID_REQUEST", "The procurement request is invalid.", { details: error.flatten() });
+  const structured = error as { status?: number; code?: string; message?: string; limit?: number; currencyCode?: string };
+  if (structured.status && structured.code) {
+    return sendError(res, structured.status, structured.code, structured.message ?? "The approval action was not allowed.", {
+      details: { limit: structured.limit, currencyCode: structured.currencyCode },
+    });
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if(message==="IDEMPOTENCY_CONFLICT") return sendError(res,409,message,"This retry reference was already used for a different reversal. Refresh the receipt before trying again.");
+  if(message==="RECEIPT_LINE_ORDER_MISMATCH") return sendError(res,409,message,"A receipt line does not belong to its purchase order. Ask an administrator to review the record. No changes were saved.");
+  if (message === "INVALID_PAGE_SIZE") return sendError(res, 400, "INVALID_PAGE_SIZE", "pageSize must be 25, 50, or 100");
+  if (message === "NOT_FOUND") return sendError(res, 404, "NOT_FOUND", "The requested procurement record was not found.");
+  if (message === "exception_not_found") return sendError(res, 404, "PROCUREMENT_EXCEPTION_NOT_FOUND", "Procurement exception not found.");
+  if (message.startsWith("FORBIDDEN")) return sendError(res, 403, message, message.replaceAll("_", " ").toLowerCase());
+  if (message.startsWith("INVALID_")) return sendError(res, 400, message, message.replaceAll("_", " ").toLowerCase());
+  const known = /^(NOT_FOUND|INVALID_|STATE_|FORBIDDEN|INSUFFICIENT_|ALREADY_|FEATURE_|BUDGET_)/.test(message);
+  return sendError(res, known ? 409 : 500, known ? message : "PROCUREMENT_COMPLETION_FAILED", known ? message.replaceAll("_", " ").toLowerCase() : "The procurement operation failed.", {
+    details: process.env.NODE_ENV === "production" ? undefined : { message },
+  });
+}
+
+async function assertCurrentRequisitionMasterData(client: DbClient, organizationId: number, record: Record<string, any>) {
+  const changed = (message: string) => Object.assign(new Error(message), { status: 409, code: "REQUISITION_MASTER_DATA_CHANGED" });
+  const header = await client.query(
+    `SELECT s.name AS supplier_name,s.status AS supplier_status,s.compliance_status,s.blocked_reason,c.active AS currency_active,c.exchange_rate_to_zar,d.active AS department_active
+     FROM purchase_requisitions r
+     LEFT JOIN suppliers s ON s.id=r.supplier_id AND s.organization_id=r.organization_id
+     LEFT JOIN currencies c ON c.organization_id=r.organization_id AND upper(c.code)=upper(r.currency_code)
+     LEFT JOIN departments d ON d.id=r.department_id AND d.organization_id=r.organization_id
+     WHERE r.organization_id=$1 AND r.id=$2`, [organizationId, record.id],
+  );
+  const current = header.rows[0];
+  if (!current?.supplier_name) throw changed("The supplier is no longer available. Choose a supplier before submitting.");
+  assertSupplierTransactionAllowed({ supplierName: current.supplier_name, status: current.supplier_status,
+    complianceStatus: current.compliance_status, blockedReason: current.blocked_reason }, "submitted requisitions");
+  if (current?.currency_active !== true || !(Number(current.exchange_rate_to_zar) > 0)) {
+    throw changed("The selected currency or exchange rate is unavailable in Master Data. Refresh the draft before submitting.");
+  }
+  if (current?.department_active !== true) throw changed("The department is inactive. Choose an active department before submitting.");
+  const lines = await client.query(
+    `SELECT l.line_number,l.quantity,l.unit_price,l.item_id,l.unit_of_measure_id,l.tax_code_id,l.cost_centre_id,
+       i.status AS item_status,i.organization_id AS item_org,u.active AS uom_active,u.organization_id AS uom_org,
+       t.active AS tax_active,t.organization_id AS tax_org,cc.active AS centre_active,cc.organization_id AS centre_org
+     FROM purchase_requisition_items l
+     LEFT JOIN inventory_items i ON i.id=l.item_id
+     LEFT JOIN units_of_measure u ON u.id=l.unit_of_measure_id
+     LEFT JOIN tax_codes t ON t.id=l.tax_code_id
+     LEFT JOIN mdm_cost_centres cc ON cc.id=l.cost_centre_id
+     WHERE l.requisition_id=$1 ORDER BY l.line_number,l.id`, [record.id],
+  );
+  if (!lines.rows.length) throw changed("This requisition has no lines. Add a valid line before submitting.");
+  for (const line of lines.rows) {
+    const label = `Line ${line.line_number}`;
+    if (!(Number(line.quantity) > 0) || !(Number(line.unit_price) > 0)) throw changed(`${label} needs a positive quantity and unit price before submitting.`);
+    if (line.item_id != null && (Number(line.item_org) !== organizationId || String(line.item_status).toLowerCase() !== "active")) {
+      throw changed(`${label} uses an item that is no longer active. Replace it before submitting.`);
+    }
+    if (line.unit_of_measure_id != null && (Number(line.uom_org) !== organizationId || line.uom_active !== true)) {
+      throw changed(`${label} uses an inactive unit of measure. Select an active unit before submitting.`);
+    }
+    if (line.tax_code_id != null && (Number(line.tax_org) !== organizationId || line.tax_active !== true)) {
+      throw changed(`${label} uses an inactive tax code. Select an active tax code before submitting.`);
+    }
+    if (line.cost_centre_id != null && (Number(line.centre_org) !== organizationId || line.centre_active !== true)) {
+      throw changed(`${label} uses an inactive cost centre. Select an active cost centre before submitting.`);
+    }
+  }
+}
+
+async function reserveRequisitionBudget(client: DbClient, organizationId: number, requisition: Record<string, any>) {
+  const settings = await client.query(
+    `SELECT budget_control_mode,updated_at::text AS revision FROM procurement_feature_settings WHERE organization_id=$1`,
+    [organizationId],
+  );
+  const mode = String(settings.rows[0]?.budget_control_mode ?? "WARN_APPROVAL");
+  const revision = String(settings.rows[0]?.revision ?? "default:budget-control-v1");
+  const costCentre = await client.query(
+    `SELECT cost_centre_id FROM purchase_requisition_items WHERE requisition_id=$1 AND cost_centre_id IS NOT NULL ORDER BY id LIMIT 1`,
+    [requisition.id],
+  );
+  const budget = await client.query(
+    `SELECT b.*
+     FROM finance_budgets b
+     WHERE b.organization_id=$1 AND b.status='ACTIVE' AND b.fiscal_year=EXTRACT(YEAR FROM now())::int
+       AND upper(b.currency_code)=upper($2)
+       AND (b.department_id IS NULL OR b.department_id=$3)
+       AND (b.cost_centre_id IS NULL OR b.cost_centre_id=$4)
+       AND (b.project_id IS NULL OR b.project_id=$5)
+     ORDER BY (b.department_id IS NOT NULL)::int+(b.cost_centre_id IS NOT NULL)::int+(b.project_id IS NOT NULL)::int DESC,b.id
+     LIMIT 1 FOR UPDATE`,
+    [organizationId, requisition.currency_code ?? "ZAR", requisition.department_id ?? null, costCentre.rows[0]?.cost_centre_id ?? null, requisition.project_id ?? null],
+  );
+  const selected = budget.rows[0];
+  if (!selected) {
+    if (mode === "HARD_BLOCK") throw new Error("BUDGET_NOT_CONFIGURED");
+    const exceptionId = await createProcurementException(client, organizationId, {
+      type: "procurement_budget_missing", severity: "medium",
+      title: `No budget configured for ${requisition.requisition_number}`,
+      description: "The requisition was approved with elevated authority, but no matching active budget exists.",
+      refs: { requisitionId: requisition.id },
+    });
+    return { mode, revision, outcome: "no_matching_budget", budgetId: null, exceptionId };
+  }
+  const amount = Number(requisition.total_amount ?? 0);
+  // This statement starts after obtaining the budget row lock, so concurrent
+  // reservations are visible rather than using the earlier selection snapshot.
+  const {rows:[balance]}=await client.query(`SELECT ($3::numeric>($4::numeric-COALESCE(sum(amount),0))) AS over
+    FROM budget_commitments WHERE organization_id=$1 AND budget_id=$2 AND status='ACTIVE'`,
+    [organizationId,selected.id,amount,selected.approved_amount]);
+  let exceptionId: number | null = null;
+  if (balance.over) {
+    if (mode === "HARD_BLOCK") throw new Error("BUDGET_HARD_BLOCK");
+    exceptionId = await createProcurementException(client, organizationId, {
+      type: "procurement_budget_override", severity: "high",
+      title: `Budget override for ${requisition.requisition_number}`,
+      description: `The requisition exceeds the available ${selected.currency_code} budget.`,
+      refs: { requisitionId: requisition.id, budgetId: selected.id },
+    });
+  }
+  await client.query(
+    `INSERT INTO budget_commitments (organization_id,budget_id,source_type,source_id,amount,currency_code,status)
+     VALUES ($1,$2,'REQUISITION',$3,$4,$5,'ACTIVE')
+     ON CONFLICT (organization_id,source_type,source_id) DO NOTHING`,
+    [organizationId, selected.id, requisition.id, amount, requisition.currency_code ?? selected.currency_code],
+  );
+  return { mode, revision, outcome: exceptionId == null ? "within_budget" : "over_budget", budgetId: selected.id, exceptionId };
+}
+
+async function phase2Readiness(organizationId: number) {
+  const result = await pool.query(`SELECT
+    EXISTS(SELECT 1 FROM suppliers WHERE organization_id=$1 AND status='active') AS suppliers,
+    EXISTS(SELECT 1 FROM currencies WHERE (organization_id=$1 OR organization_id IS NULL) AND active=true) AS currencies,
+    EXISTS(SELECT 1 FROM tax_codes WHERE (organization_id=$1 OR organization_id IS NULL) AND active=true) AS tax_codes,
+    EXISTS(SELECT 1 FROM warehouses WHERE organization_id=$1) AS warehouses,
+    EXISTS(SELECT 1 FROM approval_policies WHERE organization_id=$1 AND entity_type='contract' AND is_active=true) AS agreement_approval,
+    EXISTS(SELECT 1 FROM approval_policies WHERE organization_id=$1 AND entity_type='contract_release' AND is_active=true) AS contract_release_approval,
+    EXISTS(SELECT 1 FROM approval_policies WHERE organization_id=$1 AND entity_type='purchase_order' AND is_active=true) AS purchase_order_approval`, [organizationId]);
+  const checks = result.rows[0] ?? {};
+  const prerequisites = [
+    { key:"suppliers", label:"At least one active supplier", ready:Boolean(checks.suppliers), path:"/procurement/suppliers" },
+    { key:"currencies", label:"At least one active currency", ready:Boolean(checks.currencies), path:"/admin/master-data/currencies" },
+    { key:"taxCodes", label:"At least one active tax code", ready:Boolean(checks.tax_codes), path:"/admin/master-data/taxCodes" },
+    { key:"warehouses", label:"At least one active warehouse", ready:Boolean(checks.warehouses), path:"/admin/master-data/warehouses" },
+    { key:"agreementApproval", label:"Active supplier-contract approval policy", ready:Boolean(checks.agreement_approval), path:"/finance/approval-policies" },
+    { key:"contractReleaseApproval", label:"Active contract-release approval policy", ready:Boolean(checks.contract_release_approval), path:"/finance/approval-policies" },
+    { key:"purchaseOrderApproval", label:"Active purchase-order approval policy", ready:Boolean(checks.purchase_order_approval), path:"/finance/approval-policies" },
+  ];
+  return { ready: prerequisites.every(item=>item.ready), prerequisites };
+}
+
+export function registerProcurementCompletionRoutes(app: Express, auth: AuthBundle): void {
+  registerMaverickSpendRoutes(app, auth);
+  const read = [auth.ensureAuthenticated, auth.ensurePermission("purchases", "read")];
+  const manage = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("purchases", "manage")];
+  const approve = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensurePermission("purchases", "approve")];
+  const admin = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"])];
+
+  app.get("/api/v2/procurement/settings", ...read, async (_req, res) => {
+    try {
+      const org = getActiveOrganizationId();
+      const result = await pool.query(
+        `INSERT INTO procurement_feature_settings (organization_id) VALUES ($1)
+         ON CONFLICT (organization_id) DO UPDATE SET organization_id=EXCLUDED.organization_id
+         RETURNING phase1_enabled AS "phase1Enabled", phase2_enabled AS "phase2Enabled",
+           phase3_enabled AS "phase3Enabled", phase4_enabled AS "phase4Enabled",
+           confirmation_due_days AS "confirmationDueDays", budget_control_mode AS "budgetControlMode",
+           receipt_over_tolerance_pct::text AS "receiptOverTolerancePct",
+           price_variance_tolerance_pct::text AS "priceVarianceTolerancePct",
+           quantity_variance_tolerance_pct::text AS "quantityVarianceTolerancePct", updated_at AS "updatedAt"`,
+        [org],
+      );
+      return sendOk(res, result.rows[0]);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/settings/phase-2-readiness", ...read, async (_req,res)=>{
+    try{return sendOk(res,await phase2Readiness(getActiveOrganizationId()));}catch(error){return handleError(res,error);}
+  });
+
+  app.patch("/api/v2/procurement/settings", ...admin, async (req, res) => {
+    const schema = z.object({
+      phase1Enabled: z.boolean(), phase2Enabled: z.boolean(), phase3Enabled: z.boolean(), phase4Enabled: z.boolean(),
+      confirmationDueDays: z.coerce.number().int().min(1).max(90),
+      budgetControlMode: z.enum(["WARNING_ONLY", "WARN_APPROVAL", "HARD_BLOCK"]),
+      receiptOverTolerancePct: z.coerce.number().min(0).max(100),
+      priceVarianceTolerancePct: z.coerce.number().min(0).max(100),
+      quantityVarianceTolerancePct: z.coerce.number().min(0).max(100),
+    });
+    try {
+      const body = schema.parse(req.body);
+      const org = getActiveOrganizationId();
+      if(body.phase2Enabled){const readiness=await phase2Readiness(org);if(!readiness.ready)return sendError(res,409,"PROCUREMENT_PHASE_2_PREREQUISITES_MISSING","Blanket purchasing cannot be enabled until its Master Data and approval prerequisites are complete.",{details:readiness});}
+      const userId = Number((req as any).user?.id ?? 0) || null;
+      const result = await pool.query(
+        `INSERT INTO procurement_feature_settings
+          (organization_id,phase1_enabled,phase2_enabled,phase3_enabled,phase4_enabled,confirmation_due_days,budget_control_mode,receipt_over_tolerance_pct,price_variance_tolerance_pct,quantity_variance_tolerance_pct,updated_by,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
+         ON CONFLICT (organization_id) DO UPDATE SET
+          phase1_enabled=EXCLUDED.phase1_enabled,phase2_enabled=EXCLUDED.phase2_enabled,
+          phase3_enabled=EXCLUDED.phase3_enabled,phase4_enabled=EXCLUDED.phase4_enabled,
+          confirmation_due_days=EXCLUDED.confirmation_due_days,budget_control_mode=EXCLUDED.budget_control_mode,
+          receipt_over_tolerance_pct=EXCLUDED.receipt_over_tolerance_pct,
+          price_variance_tolerance_pct=EXCLUDED.price_variance_tolerance_pct,
+          quantity_variance_tolerance_pct=EXCLUDED.quantity_variance_tolerance_pct,
+          updated_by=EXCLUDED.updated_by,updated_at=now()
+         RETURNING *`,
+        [org, body.phase1Enabled, body.phase2Enabled, body.phase3Enabled, body.phase4Enabled, body.confirmationDueDays, body.budgetControlMode, body.receiptOverTolerancePct, body.priceVarianceTolerancePct, body.quantityVarianceTolerancePct, userId],
+      );
+      return sendOk(res, result.rows[0]);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/overview", ...read, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId();
+      const supplierId = req.query.supplierId ? positiveInt(req.query.supplierId, 0) : null;
+      const departmentId = req.query.departmentId ? positiveInt(req.query.departmentId, 0) : null;
+      const from = req.query.from ? String(req.query.from) : null;
+      const to = req.query.to ? String(req.query.to) : null;
+      const result = await pool.query(
+        `WITH
+         req AS (SELECT * FROM purchase_requisitions WHERE organization_id=$1 AND ($2::int IS NULL OR supplier_id=$2) AND ($3::int IS NULL OR department_id=$3)),
+         po AS (SELECT * FROM purchase_orders WHERE organization_id=$1 AND ($2::int IS NULL OR supplier_id=$2) AND ($3::int IS NULL OR department_id=$3)
+           AND ($4::date IS NULL OR order_date::date >= $4::date) AND ($5::date IS NULL OR order_date::date <= $5::date)),
+         latest_confirmation AS (
+           SELECT DISTINCT ON (purchase_order_id) purchase_order_id,status,created_at
+           FROM po_supplier_confirmations WHERE organization_id=$1 ORDER BY purchase_order_id,created_at DESC,id DESC
+         ),
+         kpis AS (SELECT
+           (SELECT count(*) FROM req WHERE upper(trim(status)) IN ('DRAFT','SUBMITTED','PENDING','PENDING_APPROVAL','NEEDS_INFO','APPROVED'))::int AS "openRequisitions",
+           (SELECT count(*) FROM req WHERE upper(status) IN ('SUBMITTED','PENDING_APPROVAL'))::int AS "pendingApprovals",
+           (SELECT count(*) FROM sourcing_events WHERE organization_id=$1 AND status IN ('PUBLISHED','OPEN','EVALUATING'))::int AS "openRfqs",
+           (SELECT count(*) FROM po WHERE upper(status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED'))::int AS "openPurchaseOrders",
+           (SELECT count(*) FROM po LEFT JOIN latest_confirmation c ON c.purchase_order_id=po.id WHERE upper(po.status::text) IN ('SENT','ACKNOWLEDGED') AND COALESCE(c.status,'AWAITING')='AWAITING')::int AS "awaitingConfirmation",
+           (SELECT count(*) FROM po WHERE upper(status::text)='PARTIALLY_RECEIVED')::int AS "partiallyReceived",
+           (SELECT count(*) FROM po WHERE expected_delivery_date < now() AND upper(status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED'))::int AS "lateDeliveries",
+           (SELECT count(*) FROM operational_exceptions WHERE organization_id=$1 AND status IN ('open','in_progress') AND (related_refs->>'area'='procurement' OR type ILIKE ANY(ARRAY['%purchase%','%supplier%','%invoice%','%receipt%','%rfq%'])))::int AS "exceptions",
+           NULL::text AS "spendThisPeriod",
+           (SELECT count(*) FROM invoices i WHERE i.organization_id=$1 AND i.purchase_order_id IS NOT NULL AND upper(i.status::text) IN ('DRAFT','DISPUTED','PENDING_APPROVAL'))::int AS "unmatchedInvoices")
+         SELECT row_to_json(kpis.*) AS kpis,
+           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT id,requisition_number AS number,status,total_amount::numeric::text AS amount,currency_code AS "currencyCode",updated_at AS "updatedAt" FROM req WHERE upper(status) IN ('SUBMITTED','PENDING_APPROVAL','NEEDS_INFO') ORDER BY updated_at DESC,id DESC LIMIT 10) x) AS "needsAttention",
+           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT id,order_number AS number,status,expected_delivery_date AS "expectedDeliveryDate",total_amount::numeric::text AS amount,currency_code AS "currencyCode" FROM po WHERE expected_delivery_date < now() AND upper(status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED') ORDER BY expected_delivery_date,id LIMIT 10) x) AS "lateOrders",
+           (SELECT COALESCE(json_agg(x),'[]'::json) FROM (SELECT lower(trim(status)) AS label,count(*)::int AS value FROM po GROUP BY lower(trim(status)) ORDER BY lower(trim(status))) x) AS "poStatus",
+           '[]'::json AS "spendBySupplier"
+         FROM kpis`,
+        [org, supplierId, departmentId, from, to],
+      );
+      return sendOk(res, { ...result.rows[0], financialMeasures:{state:"unavailable",deprecatedFields:["kpis.spendThisPeriod","spendBySupplier"],summaryEndpoint:"/api/v2/analytics/financial-measures",reason:"Use shared dated reporting-currency measures; operational document amounts are not financial totals."}, generatedAt: new Date().toISOString(), filters: { supplierId, departmentId, from, to } });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/exceptions/reconcile", ...manage, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId();
+      const result = await withTransaction(async (client) => {
+        const settings = await client.query(`SELECT confirmation_due_days FROM procurement_feature_settings WHERE organization_id=$1`, [org]);
+        const dueDays = Number(settings.rows[0]?.confirmation_due_days ?? 3);
+        const missing = await client.query(
+          `SELECT po.id,po.order_number,po.supplier_id FROM purchase_orders po
+           LEFT JOIN LATERAL (SELECT status FROM po_supplier_confirmations c WHERE c.organization_id=$1 AND c.purchase_order_id=po.id ORDER BY c.created_at DESC,c.id DESC LIMIT 1) c ON true
+           WHERE po.organization_id=$1 AND upper(po.status::text) IN ('SENT','ACKNOWLEDGED')
+             AND po.updated_at < now()-($2::text||' days')::interval AND COALESCE(c.status,'AWAITING')='AWAITING'`,
+          [org, String(dueDays)],
+        );
+        for (const row of missing.rows) await createProcurementException(client, org, { type: "supplier_confirmation_overdue", severity: "high", title: `Supplier confirmation overdue for ${row.order_number}`, description: `No supplier confirmation was recorded within ${dueDays} day(s).`, refs: { purchaseOrderId: row.id, supplierId: row.supplier_id } });
+        const late = await client.query(`SELECT id,order_number,supplier_id FROM purchase_orders WHERE organization_id=$1 AND expected_delivery_date<now() AND upper(status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED')`, [org]);
+        for (const row of late.rows) await createProcurementException(client, org, { type: "purchase_order_late", severity: "high", title: `Late delivery for ${row.order_number}`, description: "The expected delivery date has passed and the order is not complete.", refs: { purchaseOrderId: row.id, supplierId: row.supplier_id } });
+        const noQuotes = await client.query(`SELECT e.id,e.event_number FROM sourcing_events e WHERE e.organization_id=$1 AND e.status IN ('PUBLISHED','OPEN') AND e.deadline<now() AND NOT EXISTS (SELECT 1 FROM supplier_quotes q WHERE q.organization_id=$1 AND q.event_id=e.id AND q.status='SUBMITTED')`, [org]);
+        for (const row of noQuotes.rows) await createProcurementException(client, org, { type: "rfq_no_quotes", severity: "medium", title: `No quotes received for ${row.event_number}`, description: "The RFQ deadline passed without a submitted supplier quote.", refs: { sourcingEventId: row.id } });
+        const resolved = await client.query(
+          `UPDATE operational_exceptions e SET status='resolved',resolved_at=now(),updated_at=now()
+           WHERE e.organization_id=$1 AND e.status IN ('open','in_progress') AND e.related_refs->>'area'='procurement'
+             AND ((e.type='supplier_confirmation_overdue' AND NOT EXISTS (SELECT 1 FROM purchase_orders po LEFT JOIN LATERAL (SELECT status FROM po_supplier_confirmations c WHERE c.organization_id=$1 AND c.purchase_order_id=po.id ORDER BY c.created_at DESC,c.id DESC LIMIT 1) c ON true WHERE po.id=(e.related_refs->>'purchaseOrderId')::int AND po.organization_id=$1 AND upper(po.status::text) IN ('SENT','ACKNOWLEDGED') AND COALESCE(c.status,'AWAITING')='AWAITING'))
+               OR (e.type='purchase_order_late' AND NOT EXISTS (SELECT 1 FROM purchase_orders po WHERE po.id=(e.related_refs->>'purchaseOrderId')::int AND po.organization_id=$1 AND po.expected_delivery_date<now() AND upper(po.status::text) NOT IN ('RECEIVED','COMPLETED','CLOSED','CANCELLED'))
+               OR (e.type='rfq_no_quotes' AND EXISTS (SELECT 1 FROM supplier_quotes q WHERE q.organization_id=$1 AND q.event_id=(e.related_refs->>'sourcingEventId')::int AND q.status='SUBMITTED')))` ,
+          [org],
+        );
+        const overdueConfirmation = missing.rowCount ?? 0;
+        const latePurchaseOrder = late.rowCount ?? 0;
+        const rfqNoQuotes = noQuotes.rowCount ?? 0;
+        return { createdOrRetained: overdueConfirmation + latePurchaseOrder + rfqNoQuotes, resolved: resolved.rowCount ?? 0, rules: { overdueConfirmation, latePurchaseOrder, rfqNoQuotes } };
+      });
+      return sendOk(res, result);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/exceptions/:id", ...read, async (req, res) => {
+    try {
+      const item = await getOperationalExceptionDetail(req.params.id);
+      if (item.area !== "procurement") return sendError(res, 404, "PROCUREMENT_EXCEPTION_NOT_FOUND", "Procurement exception not found.");
+      return sendOk(res, item);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/exceptions/:id/status", ...manage, async (req, res) => {
+    try {
+      const current = await getOperationalExceptionDetail(req.params.id);
+      if (current.area !== "procurement") return sendError(res, 404, "PROCUREMENT_EXCEPTION_NOT_FOUND", "Procurement exception not found.");
+      const body = z.object({ toStatus: z.string().trim().min(1), note: z.string().trim().optional() }).parse(req.body);
+      return sendOk(res, await transitionOperationalExceptionStatus(req.params.id, body.toStatus, body.note, String((req as any).user?.username ?? (req as any).user?.id ?? "system")));
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/exceptions/:id/assign", ...manage, async (req, res) => {
+    try {
+      const current = await getOperationalExceptionDetail(req.params.id);
+      if (current.area !== "procurement") return sendError(res, 404, "PROCUREMENT_EXCEPTION_NOT_FOUND", "Procurement exception not found.");
+      const body = z.object({ assignee: z.string().trim().max(200) }).parse(req.body);
+      return sendOk(res, await assignOperationalException(req.params.id, body.assignee, String((req as any).user?.username ?? (req as any).user?.id ?? "system")));
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/exceptions/:id/comments", ...manage, async (req, res) => {
+    try {
+      const current = await getOperationalExceptionDetail(req.params.id);
+      if (current.area !== "procurement") return sendError(res, 404, "PROCUREMENT_EXCEPTION_NOT_FOUND", "Procurement exception not found.");
+      const body = z.object({ comment: z.string().trim().min(1).max(4000) }).parse(req.body);
+      await addOperationalExceptionComment({ idOrRef: req.params.id, author: String((req as any).user?.username ?? (req as any).user?.id ?? "system"), comment: body.comment });
+      return sendOk(res, await getOperationalExceptionDetail(req.params.id));
+    } catch (error) { return handleError(res, error); }
+  });
+
+  for (const action of Object.keys(requisitionTransitions)) {
+    const isDecision = action === "approve" || action === "reject";
+    const handler = (legacy: boolean) => async (req: Request, res: Response) => {
+      try {
+        const transition = requisitionTransitions[action];
+        const context = getTenantContext();
+        const org = context.organizationId;
+        const id = positiveInt(req.params.id, 0);
+        const userId = context.userId;
+        const reason = z.string().trim().max(4000).parse(req.body?.reason ?? req.body?.comment ?? "");
+        const key = isDecision ? z.string().trim().min(1).max(256).optional().parse(req.get("Idempotency-Key")) : undefined;
+        if (!id) return sendError(res, 400, "INVALID_REQUISITION_ID", "A valid requisition ID is required.");
+        if (isDecision && req.body?.approverId != null && Number(req.body.approverId) !== userId)
+          return sendError(res, 403, "REQUISITION_APPROVER_SPOOFED", "The approver is the person signed in.");
+        if (transition.reasonRequired && reason.length < 5) return sendError(res, 400, "REASON_REQUIRED", "Provide a reason of at least 5 characters.");
+        const updated = await withTransaction(async (client) => {
+          const tx = drizzle(client);
+          const commandHash = createHash("sha256").update(JSON.stringify([id,action,userId,reason])).digest("hex");
+          if (key) await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`workflow:${org}:${key}`]);
+          const locked = await client.query(`SELECT * FROM purchase_requisitions WHERE id=$1 AND organization_id=$2 FOR UPDATE`, [id, org]);
+          const record = locked.rows[0];
+          if (!record) throw new Error("NOT_FOUND");
+          const respond = async (row: Record<string, unknown>, progress?: unknown) => {
+            const [camel] = legacy ? await tx.select().from(purchaseRequisitions).where(and(eq(purchaseRequisitions.organizationId,org),eq(purchaseRequisitions.id,id))) : [];
+            return {...(legacy ? camel : row), ...(progress ? {approvalProgress:progress} : {})};
+          };
+          if (key) {
+            const {rows:[replay]} = await client.query(`SELECT response FROM workflow_idempotency
+              WHERE organization_id=$1 AND idempotency_key=$2`,[org,key]);
+            if (replay) {
+              if (replay.response?.commandHash !== commandHash) throw new Error("IDEMPOTENCY_CONFLICT");
+              return {...(legacy ? replay.response.legacy : replay.response.current),duplicate:true};
+            }
+          }
+          const current = String(record.status).toUpperCase() === "PENDING" ? "PENDING_APPROVAL" : String(record.status).toUpperCase();
+          if (!transition.from.includes(current)) throw new Error("STATE_TRANSITION_NOT_ALLOWED");
+          if (action === "submit") await assertCurrentRequisitionMasterData(client, org, record);
+          let step: Awaited<ReturnType<typeof authorizeApprovalStep>> | undefined;
+          if (isDecision) {
+            if (!record.requestor_id || Number(record.requestor_id) === userId) throw new Error("FORBIDDEN_SELF_APPROVAL");
+            const {rows:[authority]} = await client.query(`SELECT m.application_role::text AS role,u.approver_amount_limit
+              FROM organization_members m JOIN users u ON u.id=m.user_id AND u.active JOIN organizations o ON o.id=m.organization_id AND o.active
+              WHERE m.organization_id=$1 AND m.user_id=$2 AND m.id=$3 AND m.active AND m.status='active' FOR SHARE OF m,u,o`,[org,userId,context.membershipId]);
+            if (!authority) throw new Error("FORBIDDEN_APPROVER_MEMBERSHIP");
+            const customRoleId=authority.role==="custom" ? await queryUserCustomRoleId(client,org,userId,true) : null;
+            if (!await queryRolePermission(client,authority.role,"purchases","approve",true) &&
+                !(customRoleId && await queryCustomRolePermission(client,org,customRoleId,"purchases","approve",true)))
+              throw new Error("FORBIDDEN_APPROVER_PERMISSION");
+            const amount=Number(record.total_amount),legacyCap=Number(authority.approver_amount_limit);
+            if (!Number.isFinite(amount) || amount<0) throw new Error("STATE_REQUISITION_AMOUNT_UNVERIFIED");
+            if (legacyCap>0 && amount>legacyCap) throw Object.assign(new Error("This requisition exceeds your approval limit."),{status:403,code:"APPROVAL_LIMIT_EXCEEDED"});
+            const {rows:[cycle]}=await client.query(`SELECT max(id) FILTER (WHERE level=0) AS boundary,max(id) AS last
+              FROM approval_history WHERE organization_id=$1 AND entity_type='requisition' AND entity_id=$2`,[org,id]);
+            let floor=Number(cycle.boundary ?? 0);
+            if (!floor) {
+              // Do not credit unbound approvals on pre-existing pending requests.
+              const marker=await client.query(`INSERT INTO approval_history(organization_id,entity_type,entity_id,level,action,performed_by,previous_status,new_status)
+                VALUES($1,'requisition',$2,0,'review_started',$3,$4,$4) RETURNING id`,[org,id,userId,current]);
+              floor=Number(marker.rows[0].id);
+            }
+            step=await authorizeApprovalStep({organizationId:org,entityType:"requisition",entityId:id,amount,
+              amountCurrency:record.currency_code,actorUserId:userId,actorRole:authority.role,actorPreferences:{customRoleId}},tx,{afterHistoryId:floor,independent:true});
+            if (step.progress.completedLevels.length) {
+              const {rows:[prior]}=await client.query(`SELECT details->'policyVersions' AS versions FROM audit_logs
+                WHERE organization_id=$1 AND resource_type='purchase_requisition' AND resource_id=$2
+                  AND action='REQUISITION_WORKFLOW_APPROVE' AND event_hash IS NOT NULL
+                  AND (details#>>'{after,historyId}')::bigint>$3 ORDER BY id DESC LIMIT 1`,[org,id,floor]);
+              const versions=step.progress.applicablePolicyVersions;
+              const versionKey=(entries:typeof versions)=>entries?.map(x=>[x.id,x.level,x.version]);
+              if (JSON.stringify(versionKey(prior?.versions))!==JSON.stringify(versionKey(versions)))
+                throw Object.assign(new Error("The approval policy changed. Return the requisition for information and submit it again."),{status:409,code:"REQUISITION_APPROVAL_POLICY_CHANGED"});
+            }
+          }
+          const nextStatus=action==="approve" && !step?.isFinal ? current : transition.to;
+          const decision = nextStatus==="APPROVED" && action==="approve" ? await reserveRequisitionBudget(client, org, record) : null;
+          const result = await client.query(
+            `UPDATE purchase_requisitions SET status=$1,
+              approver_id=CASE WHEN $2='APPROVED' THEN $3 WHEN $5='submit' THEN NULL ELSE approver_id END,
+              approval_date=CASE WHEN $2='APPROVED' THEN now() WHEN $5='submit' THEN NULL ELSE approval_date END,
+              rejection_reason=CASE WHEN $2 IN ('REJECTED','NEEDS_INFO','CANCELLED','CLOSED') THEN $4 ELSE rejection_reason END,
+              updated_at=now() WHERE id=$6 AND organization_id=$7 RETURNING *`,
+            [nextStatus,nextStatus,userId,reason||null,action,id,org],
+          );
+          if (decision && userId && record.requestor_id && (await client.query("SELECT to_regclass('public.purchase_budget_policy_evidence') AS installed")).rows[0].installed) {
+            await client.query(`INSERT INTO purchase_budget_policy_evidence
+              (organization_id,requisition_id,approved_at,approver_user_id,policy_revision,policy_mode,outcome,budget_id,exception_id)
+              SELECT organization_id,id,approval_date,approver_id,$3,$4,$5,$6,$7 FROM purchase_requisitions
+              WHERE organization_id=$1 AND id=$2`, [org, id, decision.revision, decision.mode, decision.outcome, decision.budgetId, decision.exceptionId]);
+            await appendAuditEventWithClient(client, { organizationId: org, actor: { userId }, action: "REQUISITION_BUDGET_POLICY_OBSERVED",
+              resourceType: "purchase_requisition", resourceId: id, after: decision, reason: reason || null });
+          }
+          const progress=step ? {requiredLevels:step.progress.requiredLevels,
+            completedLevels:action==="approve" ? [...step.progress.completedLevels,step.level] : step.progress.completedLevels,
+            state:action==="reject" ? "rejected" : step.isFinal ? "approved" : "pending"} : undefined;
+          if (isDecision || action==="submit" || action==="request-info") {
+            const event=await client.query(`INSERT INTO approval_history(organization_id,entity_type,entity_id,level,action,performed_by,comment,previous_status,new_status)
+              VALUES($1,'requisition',$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[org,id,step?.level??0,
+              action==="approve"?"approved":action==="reject"?"rejected":action==="submit"?"submitted":"returned",userId,reason||null,current,nextStatus]);
+            await appendAuditEventWithClient(client,{organizationId:org,actor:{userId},action:`REQUISITION_WORKFLOW_${action.toUpperCase().replace("-","_")}`,
+              resourceType:"purchase_requisition",resourceId:id,before:{status:current},after:{status:nextStatus,historyId:event.rows[0].id},
+              details:{progress,policyId:step?.progress.nextPolicy?.id,policyVersion:step?.progress.nextPolicy?.version,
+                policyVersions:step?.progress.applicablePolicyVersions},reason:reason||null});
+          }
+          if (isDecision && ["APPROVED","REJECTED"].includes(nextStatus)) await recordRequisitionOutcomeNotification(client,org,{
+            userId:Number(record.requestor_id),type:`requisition_${nextStatus.toLowerCase()}`,title:`Requisition ${record.requisition_number} ${nextStatus.toLowerCase()}`,
+            body:`Your requisition was ${nextStatus.toLowerCase()}.`,entityId:id,targetPath:`/procurement/requisitions/${id}`});
+          if (action==="submit") await recordRequisitionSubmittedNotification(client,org,id,Number(record.requestor_id)||userId,record.requisition_number);
+          await recordActivity(client, org, "purchase_requisition", id, `REQUISITION_${nextStatus}`, { actorUserId: userId, reason, beforeStatus: current, afterStatus: nextStatus });
+          const currentPayload={...result.rows[0],...(progress ? {approvalProgress:progress} : {})};
+          if (key) {
+            const [camel]=await tx.select().from(purchaseRequisitions).where(and(eq(purchaseRequisitions.organizationId,org),eq(purchaseRequisitions.id,id)));
+            await client.query(`INSERT INTO workflow_idempotency(organization_id,idempotency_key,action,resource_type,resource_id,response)
+              VALUES($1,$2,$3,'purchase_requisition',$4,$5::jsonb)`,[org,key,`REQUISITION_${action.toUpperCase()}`,id,
+              JSON.stringify({commandHash,current:currentPayload,legacy:{...camel,...(progress ? {approvalProgress:progress} : {})}})]);
+          }
+          return legacy ? respond(result.rows[0],progress) : currentPayload;
+        });
+        return sendOk(res, updated);
+      } catch (error) { return handleError(res, error); }
+    };
+    app.post(`/api/v2/procurement/requisitions/:id/${action}`, ...(isDecision ? approve : manage), handler(false));
+    if (isDecision) app.post(`/api/purchase-requisitions/:id/${action}`, ...approve, handler(true));
+  }
+
+  app.post("/api/v2/procurement/requisitions/:id/convert-to-po", ...manage, (req, res) => {
+    res.redirect(307, `/api/purchase-requisitions/${encodeURIComponent(req.params.id)}/convert`);
+  });
+
+  app.post("/api/v2/procurement/requisitions/:id/convert-to-rfq", ...manage, async (req, res) => {
+    try {
+      const id = z.coerce.number().int().positive().max(2147483647).parse(req.params.id);
+      const body = z.object({
+        title:z.string().trim().min(3).max(180).optional(),deadline:z.coerce.date(),
+        supplierIds:z.array(z.coerce.number().int().positive().max(2147483647)).min(1).max(100),
+        minimumResponses:z.coerce.number().int().min(1).max(100).optional(),competitionRequired:z.boolean().default(true),
+        terms:z.string().max(10000).nullable().optional(),
+        criteria:z.array(z.object({name:z.string().trim().min(2).max(200),
+          criterionType:z.enum(["commercial","technical","compliance","delivery","risk"]),weight:z.number().positive().max(100),
+          knockout:z.boolean().optional(),guidance:z.string().max(1000).nullable().optional()})).min(1).max(100).default([
+          {name:"Landed cost",criterionType:"commercial",weight:50},{name:"Delivery",criterionType:"delivery",weight:25},
+          {name:"Compliance and risk",criterionType:"risk",weight:25},
+        ]),
+      }).strict().parse(req.body);
+      const created=await convertRequisitionToSourcingDraft(actor(req,res),id,body,req.get("Idempotency-Key"));
+      return sendOk(res, created, 201);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/sourcing-events/:id/close", ...manage, (req, res) => res.redirect(307, `/api/sourcing/events/${encodeURIComponent(req.params.id)}/close`));
+  app.post("/api/v2/procurement/sourcing-awards/:id/approve", ...approve, (req, res) => res.redirect(307, `/api/sourcing/awards/${encodeURIComponent(req.params.id)}/approve`));
+  app.post("/api/v2/procurement/sourcing-awards/:id/convert-to-po", ...approve, (req, res) => res.redirect(307, `/api/sourcing/awards/${encodeURIComponent(req.params.id)}/convert-to-po`));
+
+  app.get("/api/v2/procurement/purchase-orders/:id/supplier-confirmations", ...read, async (req, res) => {
+    try {
+      const rows = await pool.query(
+        `SELECT id,purchase_order_id AS "purchaseOrderId",supplier_id AS "supplierId",status,reason,
+          promised_delivery_date AS "promisedDeliveryDate",source,actor_user_id AS "actorUserId",created_at AS "createdAt"
+         FROM po_supplier_confirmations WHERE organization_id=$1 AND purchase_order_id=$2 ORDER BY created_at DESC,id DESC`,
+        [getActiveOrganizationId(), positiveInt(req.params.id, 0)],
+      );
+      return sendOk(res, rows.rows);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  const confirmationAction = z.object({ reason: z.string().trim().max(2000).optional().nullable(), promisedDeliveryDate: z.coerce.date().optional().nullable() });
+  for (const [path, status] of [["supplier-confirm", "CONFIRMED"], ["supplier-reject", "REJECTED"], ["request-clarification", "CLARIFICATION_REQUESTED"]] as const) {
+    app.post(`/api/v2/procurement/purchase-orders/:id/${path}`, auth.ensureAuthenticated, async (req, res) => {
+      try {
+        const body = confirmationAction.parse(req.body ?? {});
+        if ((status === "REJECTED" || status === "CLARIFICATION_REQUESTED") && !body.reason?.trim()) return sendError(res, 400, "REASON_REQUIRED", "A reason is required.");
+        const org = getActiveOrganizationId();
+        const poId = positiveInt(req.params.id, 0);
+        const userId = Number((req as any).user?.id ?? 0);
+        const role = String(getOptionalTenantContext()?.userRole ?? (req as any).user?.role ?? "");
+        const result = await withTransaction(async (client) => {
+          const po = await client.query(`SELECT * FROM purchase_orders WHERE id=$1 AND organization_id=$2 FOR UPDATE`, [poId, org]);
+          if (!po.rows[0]) throw new Error("NOT_FOUND");
+          if (!["SENT", "ACKNOWLEDGED", "PARTIALLY_RECEIVED"].includes(String(po.rows[0].status).toUpperCase())) throw new Error("STATE_CONFIRMATION_NOT_ALLOWED");
+          if (role === "supplier") {
+            const mapping = await client.query(`SELECT 1 FROM supplier_portal_mappings WHERE organization_id=$1 AND user_id=$2 AND supplier_id=$3 AND active=true`, [org, userId, po.rows[0].supplier_id]);
+            if (!mapping.rows[0]) throw new Error("FORBIDDEN_SUPPLIER_SCOPE");
+          } else if (!["admin", "manager", "planner"].includes(role.toLowerCase())) {
+            throw new Error("FORBIDDEN_CONFIRMATION_ACTION");
+          }
+          await client.query(`DELETE FROM po_supplier_confirmations WHERE organization_id=$1 AND purchase_order_id=$2 AND status='AWAITING'`, [org, poId]);
+          const inserted = await client.query(
+            `INSERT INTO po_supplier_confirmations (organization_id,purchase_order_id,supplier_id,status,reason,promised_delivery_date,source,actor_user_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            [org, poId, po.rows[0].supplier_id, status, body.reason ?? null, body.promisedDeliveryDate ?? null, role === "supplier" ? "SUPPLIER_PORTAL" : "INTERNAL", userId || null],
+          );
+          if (status === "REJECTED" || status === "CLARIFICATION_REQUESTED") await createProcurementException(client, org, { type: status === "REJECTED" ? "supplier_rejected_po" : "supplier_po_clarification", severity: status === "REJECTED" ? "high" : "medium", title: `${status === "REJECTED" ? "Supplier rejected" : "Supplier clarification requested for"} PO ${po.rows[0].order_number}`, description: body.reason ?? status, refs: { purchaseOrderId: poId, supplierId: po.rows[0].supplier_id } });
+          await recordActivity(client, org, "purchase_order", poId, `PO_CONFIRMATION_${status}`, { actorUserId: userId, reason: body.reason });
+          return inserted.rows[0];
+        });
+        return sendOk(res, result, 201);
+      } catch (error) { return handleError(res, error); }
+    });
+  }
+
+  app.get("/api/v2/procurement/purchase-orders/:id/workflow", ...read, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId();
+      const id = positiveInt(req.params.id, 0);
+      const result = await pool.query(
+        `SELECT po.id,po.order_number AS "number",po.status,po.approval_status AS "approvalStatus",
+          CASE WHEN upper(po.approval_status) NOT IN ('APPROVED') THEN 'Complete approval'
+               WHEN upper(po.status::text) IN ('DRAFT','OPEN') THEN 'Send to supplier'
+               WHEN upper(po.status::text) IN ('SENT','ACKNOWLEDGED') AND COALESCE(c.status,'AWAITING')='AWAITING' THEN 'Await supplier confirmation'
+               WHEN upper(po.status::text) IN ('SENT','ACKNOWLEDGED','PARTIALLY_RECEIVED') THEN 'Receive goods or services'
+               WHEN upper(po.status::text)='RECEIVED' THEN 'Close purchase order' ELSE 'No action' END AS "nextAction",
+          c.status AS "confirmationStatus",c.reason AS "confirmationReason",
+          jsonb_build_object('requisitionId',po.requisition_id,'sourcingAwardId',po.sourcing_award_id,'contractId',po.contract_id) AS "linkedRecords",
+          (SELECT count(*)::int FROM ap_receipts r WHERE r.organization_id=$1 AND r.purchase_order_id=po.id) AS "receiptCount",
+          (SELECT count(*)::int FROM invoices i WHERE i.organization_id=$1 AND i.purchase_order_id=po.id) AS "invoiceCount",
+          (SELECT count(*)::int FROM operational_exceptions e WHERE e.organization_id=$1 AND e.status IN ('open','in_progress') AND e.related_refs @> jsonb_build_object('purchaseOrderId',po.id)) AS "exceptionCount"
+         FROM purchase_orders po
+         LEFT JOIN LATERAL (SELECT status,reason FROM po_supplier_confirmations WHERE organization_id=$1 AND purchase_order_id=po.id ORDER BY created_at DESC,id DESC LIMIT 1) c ON true
+         WHERE po.organization_id=$1 AND po.id=$2`,
+        [org, id],
+      );
+      if (!result.rows[0]) return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found.");
+      return sendOk(res, result.rows[0]);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/receipts", ...read, async (req, res) => {
+    try {
+      const { page, pageSize, offset } = pagination(req);
+      const org = getActiveOrganizationId();
+      const q = String(req.query.q ?? "").trim();
+      const status = String(req.query.status ?? "all").toUpperCase();
+      const supplierId = req.query.supplierId ? positiveInt(req.query.supplierId, 0) : null;
+      const warehouseId = req.query.warehouseId ? positiveInt(req.query.warehouseId, 0) : null;
+      const params = [org, q || null, status === "ALL" ? null : status, supplierId, warehouseId, pageSize, offset];
+      const where = `r.organization_id=$1 AND ($2::text IS NULL OR r.receipt_number ILIKE '%'||$2||'%' OR po.order_number ILIKE '%'||$2||'%') AND ($3::text IS NULL OR r.status::text=$3) AND ($4::int IS NULL OR COALESCE(r.supplier_id,po.supplier_id)=$4) AND ($5::int IS NULL OR EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.organization_id=$1 AND sm.reference_type='ap_receipt' AND sm.reference_id=r.id AND sm.warehouse_id=$5))`;
+      const [rows, count] = await Promise.all([
+        pool.query(`SELECT r.id,r.receipt_number AS "receiptNumber",r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber",COALESCE(r.supplier_id,po.supplier_id) AS "supplierId",COALESCE(NULLIF(s.name,''),'Historical supplier #'||COALESCE(r.supplier_id,po.supplier_id)::text) AS "supplierName",r.status,r.received_date AS "receivedDate",r.received_by AS "receivedBy",r.notes,(SELECT count(*)::int FROM ap_receipt_items ri WHERE ri.receipt_id=r.id) AS "lineCount",COALESCE((SELECT sum(accepted_quantity) FROM ap_receipt_items ri WHERE ri.receipt_id=r.id),0)::numeric::text AS "acceptedQuantity",COALESCE((SELECT sum(rejected_quantity) FROM ap_receipt_items ri WHERE ri.receipt_id=r.id),0)::numeric::text AS "rejectedQuantity",EXISTS(SELECT 1 FROM goods_receipt_reversals gr WHERE gr.organization_id=$1 AND gr.receipt_id=r.id) AS reversed FROM ap_receipts r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1 LEFT JOIN suppliers s ON s.id=COALESCE(r.supplier_id,po.supplier_id) AND s.organization_id=$1 WHERE ${where} ORDER BY r.received_date DESC,r.id DESC LIMIT $6 OFFSET $7`, params),
+        pool.query(`SELECT count(*)::int AS total FROM ap_receipts r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1 WHERE ${where}`, params.slice(0, 5)),
+      ]);
+      const total = Number(count.rows[0]?.total ?? 0);
+      return sendOk(res, { items: rows.rows, total, page, pageSize, hasNext: page * pageSize < total });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/receipts/:id", ...read, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId();
+      const id = positiveInt(req.params.id, 0);
+      const [receipt, lines, reversals] = await Promise.all([
+        pool.query(`SELECT r.*,po.order_number,COALESCE(r.supplier_id,po.supplier_id) AS supplier_id,COALESCE(NULLIF(s.name,''),'Historical supplier #'||COALESCE(r.supplier_id,po.supplier_id)::text) AS supplier_name FROM ap_receipts r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1 LEFT JOIN suppliers s ON s.id=COALESCE(r.supplier_id,po.supplier_id) AND s.organization_id=$1 WHERE r.organization_id=$1 AND r.id=$2`, [org, id]),
+        pool.query(`SELECT ri.*,COALESCE(ii.sku,poi.item_code_snapshot,'ITEM-'||ri.item_id::text) AS sku,COALESCE(ii.name,poi.item_description_snapshot,poi.description,'Historical item') AS item_name,poi.quantity AS ordered_quantity,poi.received_quantity FROM ap_receipt_items ri JOIN ap_receipts r ON r.id=ri.receipt_id AND r.organization_id=$1 LEFT JOIN inventory_items ii ON ii.id=ri.item_id AND ii.organization_id=$1 LEFT JOIN purchase_order_items poi ON poi.id=ri.purchase_order_item_id AND poi.order_id=r.purchase_order_id WHERE ri.receipt_id=$2 ORDER BY ri.id`, [org, id]),
+        pool.query(`SELECT * FROM goods_receipt_reversals WHERE organization_id=$1 AND receipt_id=$2 ORDER BY created_at DESC`, [org, id]),
+      ]);
+      if (!receipt.rows[0]) return sendError(res, 404, "RECEIPT_NOT_FOUND", "Goods receipt not found.");
+      return sendOk(res, { receipt: receipt.rows[0], lines: lines.rows, reversals: reversals.rows });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/purchase-orders/:id/receive", ...manage, async (req, res) => {
+    try {
+      const found = await pool.query(
+        `SELECT order_number FROM purchase_orders WHERE id=$1 AND organization_id=$2`,
+        [positiveInt(req.params.id, 0), getActiveOrganizationId()],
+      );
+      if (!found.rows[0]) return sendError(res, 404, "PURCHASE_ORDER_NOT_FOUND", "Purchase order not found.");
+      return res.redirect(307, `/api/ops/purchase-orders/${encodeURIComponent(found.rows[0].order_number)}/receive`);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/receipts/:id/reverse", ...approve, async (req, res) => {
+    try {
+      const reason = z.string().trim().min(5).max(2000).parse(req.body?.reason);
+      const key = String(req.get("Idempotency-Key") ?? "").trim();
+      if (!key) return sendError(res, 400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required.");
+      const org = getActiveOrganizationId(), receiptId = positiveInt(req.params.id, 0), userId = Number((req as any).user?.id ?? 0);
+      await assertPhaseEnabled(org, 2);
+      const result = await withTransaction(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`${org}:receipt-reversal:${receiptId}`]);
+        const existing = await client.query(`SELECT * FROM goods_receipt_reversals WHERE organization_id=$1 AND idempotency_key=$2`, [org, key]);
+        if (existing.rows[0]) {
+          if(Number(existing.rows[0].receipt_id)!==receiptId || existing.rows[0].reason!==reason) throw new Error("IDEMPOTENCY_CONFLICT");
+          return existing.rows[0];
+        }
+        const receipt = await client.query(`SELECT * FROM ap_receipts WHERE organization_id=$1 AND id=$2 FOR UPDATE`, [org, receiptId]);
+        if (!receipt.rows[0]) throw new Error("NOT_FOUND");
+        if (String(receipt.rows[0].status) !== "POSTED") throw new Error("STATE_RECEIPT_NOT_POSTED");
+        const ownedOrder=await client.query("SELECT id FROM purchase_orders WHERE id=$1 AND organization_id=$2 FOR UPDATE",
+          [receipt.rows[0].purchase_order_id,org]);
+        if(!ownedOrder.rowCount) throw new Error("NOT_FOUND");
+        const items = await client.query(`SELECT * FROM ap_receipt_items WHERE receipt_id=$1 ORDER BY id FOR UPDATE`, [receiptId]);
+        for (const line of items.rows) {
+          const acceptedQuantity = Number(line.accepted_quantity ?? 0);
+          const quantity = acceptedQuantity === 0 ? 0 : wholeStockQuantity(line.accepted_quantity);
+          const movement = await client.query(`SELECT warehouse_id FROM stock_movements WHERE organization_id=$1 AND reference_type='ap_receipt' AND reference_id=$2 AND item_id=$3 ORDER BY id DESC LIMIT 1`, [org, receiptId, line.item_id]);
+          const warehouseId = movement.rows[0]?.warehouse_id;
+          if (warehouseId && quantity > 0) {
+            const stock = await client.query(`SELECT id,quantity FROM warehouse_inventory WHERE organization_id=$1 AND warehouse_id=$2 AND item_id=$3 FOR UPDATE`, [org, warehouseId, line.item_id]);
+            if (!stock.rows[0] || Number(stock.rows[0].quantity) < quantity) throw new Error("INSUFFICIENT_STOCK_FOR_REVERSAL");
+            await assertUnreservedStock(client, org, line.item_id, warehouseId, Number(stock.rows[0].quantity), quantity, "INSUFFICIENT_ELIGIBLE_STOCK_FOR_REVERSAL");
+            await client.query(`UPDATE warehouse_inventory SET quantity=quantity-$1,updated_at=now() WHERE id=$2`, [quantity, stock.rows[0].id]);
+            await client.query(`UPDATE inventory_items SET quantity=quantity-$1,updated_at=now() WHERE id=$2 AND organization_id=$3`, [quantity, line.item_id, org]);
+            await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,timestamp) VALUES ($1,$2,$3,'RECEIPT_REVERSAL',$4,$5,'ap_receipt_reversal',$6,$7,$8,$9,now())`, [org, line.item_id, warehouseId, -quantity, receiptId, reason, userId || null, Number(stock.rows[0].quantity), Number(stock.rows[0].quantity) - quantity]);
+          }
+          if (line.purchase_order_item_id) {
+            const updated=await client.query(`UPDATE purchase_order_items SET received_quantity=GREATEST(COALESCE(received_quantity,0)-$1,0) WHERE id=$2 AND order_id=$3`, [Number(line.accepted_quantity ?? 0), line.purchase_order_item_id,receipt.rows[0].purchase_order_id]);
+            if(!updated.rowCount) throw new Error("RECEIPT_LINE_ORDER_MISMATCH");
+          }
+        }
+        await client.query(`UPDATE ap_receipts SET status='CANCELLED',updated_at=now() WHERE id=$1 AND organization_id=$2`, [receiptId, org]);
+        const progress=await client.query(`SELECT CASE WHEN COALESCE(sum(received_quantity),0)<=0 THEN 'SENT'
+          WHEN COALESCE(sum(received_quantity),0)<COALESCE(sum(quantity),0) THEN 'PARTIALLY_RECEIVED'
+          ELSE 'RECEIVED' END AS status FROM purchase_order_items WHERE order_id=$1`,[receipt.rows[0].purchase_order_id]);
+        await client.query("UPDATE purchase_orders SET status=$1,updated_at=now() WHERE id=$2 AND organization_id=$3",
+          [progress.rows[0].status,receipt.rows[0].purchase_order_id,org]);
+        const inserted = await client.query(`INSERT INTO goods_receipt_reversals (organization_id,receipt_id,reason,reversed_by,idempotency_key) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [org, receiptId, reason, userId || null, key]);
+        await captureReceiptReversalValue(client,org,Number(inserted.rows[0].id),userId);
+        await recordActivity(client, org, "goods_receipt", receiptId, "GOODS_RECEIPT_REVERSED", { actorUserId: userId, reason });
+        return inserted.rows[0];
+      });
+      return sendOk(res, result, 201);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/contracts", ...read, async (req, res) => {
+    try {
+      const { page, pageSize, offset } = pagination(req); const org = getActiveOrganizationId(); const q = String(req.query.q ?? "").trim();
+      const status = String(req.query.status ?? "").trim().toLowerCase();
+      const supplierId = req.query.supplierId ? positiveInt(req.query.supplierId, 0) : null;
+      const [rows, count] = await Promise.all([
+        pool.query(`SELECT c.id,COALESCE(NULLIF(c.contract_number,''),NULLIF(c.reference_number,''),'AGR-'||c.id::text) AS "contractNumber",c.title,c.contract_type AS "contractType",c.category,c.supplier_id AS "supplierId",s.name AS "supplierName",CASE WHEN c.approval_status='APPROVED' AND c.status='active' AND c.end_date<now() THEN 'expired' ELSE c.status END AS status,c.approval_status AS "approvalStatus",c.start_date AS "startDate",c.end_date AS "endDate",c.renewal_date AS "renewalDate",c.renewal_notice_days AS "renewalNoticeDays",c.maximum_value::text AS "maximumValue",c.committed_value::text AS "committedValue",CASE WHEN c.maximum_value IS NULL THEN NULL ELSE (c.maximum_value-c.committed_value)::text END AS "remainingValue",c.currency AS "currencyCode",c.version,(SELECT count(*)::int FROM supplier_contract_lines l WHERE l.contract_id=c.id AND l.active=true) AS "lineCount",(SELECT count(*)::int FROM supplier_contract_releases r WHERE r.organization_id=$1 AND r.contract_id=c.id) AS "releaseCount" FROM supplier_contracts c JOIN suppliers s ON s.id=c.supplier_id AND s.organization_id=$1 WHERE c.organization_id=$1 AND ($2='' OR c.title ILIKE '%'||$2||'%' OR c.contract_number ILIKE '%'||$2||'%' OR c.reference_number ILIKE '%'||$2||'%' OR s.name ILIKE '%'||$2||'%') AND ($3='' OR ($3='expired' AND c.approval_status='APPROVED' AND c.status='active' AND c.end_date<now()) OR ($3<>'expired' AND lower(c.status)=$3)) AND ($4::int IS NULL OR c.supplier_id=$4) ORDER BY c.updated_at DESC,c.id DESC LIMIT $5 OFFSET $6`, [org, q, status, supplierId, pageSize, offset]),
+        pool.query(`SELECT count(*)::int AS total FROM supplier_contracts c JOIN suppliers s ON s.id=c.supplier_id AND s.organization_id=$1 WHERE c.organization_id=$1 AND ($2='' OR c.title ILIKE '%'||$2||'%' OR c.contract_number ILIKE '%'||$2||'%' OR s.name ILIKE '%'||$2||'%') AND ($3='' OR ($3='expired' AND c.approval_status='APPROVED' AND c.status='active' AND c.end_date<now()) OR ($3<>'expired' AND lower(c.status)=$3)) AND ($4::int IS NULL OR c.supplier_id=$4)`, [org, q, status, supplierId]),
+      ]); const total = Number(count.rows[0]?.total ?? 0); return sendOk(res, { items: rows.rows, total, page, pageSize, hasNext: page * pageSize < total });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/contracts", ...manage, async (req, res) => {
+    const schema = z.object({
+      contractNumber: z.string().trim().min(2).max(80).optional(), supplierId: z.coerce.number().int().positive(),
+      title: z.string().trim().min(2).max(200), contractType: z.enum(["blanket", "framework"]), category: z.string().trim().max(100).optional().nullable(),
+      ownerUserId: z.coerce.number().int().positive().optional().nullable(), currencyCode: z.string().trim().length(3),
+      startDate: z.coerce.date(), endDate: z.coerce.date().optional().nullable(), maximumValue: z.coerce.number().positive(),
+      renewalDate: z.coerce.date().optional().nullable(), renewalNoticeDays: z.coerce.number().int().min(0).max(3650).default(30),
+      paymentTermsId: z.coerce.number().int().positive().optional().nullable(), incotermId: z.coerce.number().int().positive().optional().nullable(),
+      defaultTaxCodeId: z.coerce.number().int().positive().optional().nullable(), defaultWarehouseId: z.coerce.number().int().positive().optional().nullable(),
+      defaultDeliveryAddress: z.string().trim().max(1000).optional().nullable(), summary: z.string().trim().max(4000).optional().nullable(),
+      releaseRules: z.object({ approvedRequisitionRequired: z.literal(true).default(true), allowPartialRelease: z.boolean().default(false) }).default({ approvedRequisitionRequired: true, allowPartialRelease: false }),
+    }).refine((body) => !body.endDate || body.endDate >= body.startDate, { path: ["endDate"], message: "End date must not precede start date." });
+    try {
+      const body = schema.parse(req.body), org = getActiveOrganizationId(), userId = Number((req as any).user?.id ?? 0);
+      await assertPhaseEnabled(org, 2);
+      const created = await withTransaction(async (client) => {
+        const supplier = await client.query(`SELECT id FROM suppliers WHERE id=$1 AND organization_id=$2 AND status='active'`, [body.supplierId, org]);
+        if (!supplier.rows[0]) throw new Error("INVALID_SUPPLIER");
+        const currency = await client.query(`SELECT 1 FROM currencies WHERE upper(code)=upper($1) AND active=true AND (organization_id=$2 OR organization_id IS NULL)`, [body.currencyCode, org]);
+        if (!currency.rows[0]) throw new Error("INVALID_CURRENCY");
+        if (body.defaultWarehouseId) { const warehouse = await client.query(`SELECT 1 FROM warehouses WHERE id=$1 AND organization_id=$2`, [body.defaultWarehouseId, org]); if (!warehouse.rows[0]) throw new Error("INVALID_WAREHOUSE"); }
+        if (body.paymentTermsId) { const terms = await client.query(`SELECT 1 FROM payment_terms WHERE id=$1 AND active=true AND (organization_id=$2 OR organization_id IS NULL)`, [body.paymentTermsId, org]); if (!terms.rows[0]) throw new Error("INVALID_PAYMENT_TERMS"); }
+        if (body.incotermId) { const term = await client.query(`SELECT 1 FROM incoterms WHERE id=$1 AND active=true AND (organization_id=$2 OR organization_id IS NULL)`, [body.incotermId, org]); if (!term.rows[0]) throw new Error("INVALID_INCOTERM"); }
+        const number = body.contractNumber ?? `BPA-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+        const result = await client.query(`INSERT INTO supplier_contracts (organization_id,supplier_id,title,contract_type,contract_number,reference_number,category,owner_user_id,approval_status,start_date,end_date,maximum_value,committed_value,currency,status,summary,payment_terms_id,incoterm_id,default_tax_code_id,default_warehouse_id,default_delivery_address,renewal_date,renewal_notice_days,release_rules,version) VALUES ($1,$2,$3,$4,$5,$5,$6,$7,'DRAFT',$8,$9,$10,0,$11,'draft',$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,1) RETURNING id,contract_number AS "contractNumber",title,status,approval_status AS "approvalStatus",version`, [org,body.supplierId,body.title,body.contractType,number,body.category??null,body.ownerUserId ?? (userId || null),body.startDate,body.endDate??null,body.maximumValue,body.currencyCode.toUpperCase(),body.summary??null,body.paymentTermsId??null,body.incotermId??null,body.defaultTaxCodeId??null,body.defaultWarehouseId??null,body.defaultDeliveryAddress??null,body.renewalDate??null,body.renewalNoticeDays,JSON.stringify(body.releaseRules)]);
+        await recordActivity(client, org, "supplier_contract", result.rows[0].id, "AGREEMENT_CREATED", { actorUserId: userId, contractNumber: number, contractType: body.contractType });
+        return result.rows[0];
+      });
+      return sendOk(res, created, 201);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.patch("/api/v2/procurement/contracts/:id", ...manage, async (req, res) => {
+    const schema = z.object({
+      expectedVersion: z.coerce.number().int().positive(),
+      title: z.string().trim().min(2).max(200),
+      category: z.string().trim().max(100).optional().nullable(),
+      startDate: z.coerce.date(),
+      endDate: z.coerce.date().optional().nullable(),
+      maximumValue: z.coerce.number().positive(),
+      renewalDate: z.coerce.date().optional().nullable(),
+      renewalNoticeDays: z.coerce.number().int().min(0).max(3650),
+      paymentTermsId: z.coerce.number().int().positive().optional().nullable(),
+      incotermId: z.coerce.number().int().positive().optional().nullable(),
+      defaultTaxCodeId: z.coerce.number().int().positive().optional().nullable(),
+      defaultWarehouseId: z.coerce.number().int().positive().optional().nullable(),
+      defaultDeliveryAddress: z.string().trim().max(1000).optional().nullable(),
+      summary: z.string().trim().max(4000).optional().nullable(),
+      editReason: z.string().trim().min(5).max(2000),
+    }).refine((body) => !body.endDate || body.endDate >= body.startDate, {
+      path: ["endDate"], message: "End date must not precede start date.",
+    });
+    try {
+      const body = schema.parse(req.body);
+      const org = getActiveOrganizationId();
+      const id = positiveInt(req.params.id, 0);
+      const userId = Number((req as any).user?.id ?? 0);
+      await assertPhaseEnabled(org, 2);
+      const updated = await withTransaction(async (client) => {
+        const current = await client.query(
+          `SELECT * FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`,
+          [id, org],
+        );
+        if (!current.rows[0]) throw new Error("NOT_FOUND");
+        if (current.rows[0].approval_status !== "DRAFT") {
+          throw new Error("STATE_AGREEMENT_HEADER_IMMUTABLE");
+        }
+        if (Number(current.rows[0].version) !== body.expectedVersion) throw new Error("STALE_AGREEMENT_VERSION");
+        if (Number(current.rows[0].committed_value ?? 0) > body.maximumValue) throw new Error("INSUFFICIENT_CONTRACT_VALUE");
+        if (body.defaultWarehouseId) {
+          const warehouse = await client.query(`SELECT 1 FROM warehouses WHERE id=$1 AND organization_id=$2`, [body.defaultWarehouseId, org]);
+          if (!warehouse.rows[0]) throw new Error("INVALID_WAREHOUSE");
+        }
+        if (body.paymentTermsId) {
+          const terms = await client.query(`SELECT 1 FROM payment_terms WHERE id=$1 AND active=true AND (organization_id=$2 OR organization_id IS NULL)`, [body.paymentTermsId, org]);
+          if (!terms.rows[0]) throw new Error("INVALID_PAYMENT_TERMS");
+        }
+        if (body.incotermId) {
+          const term = await client.query(`SELECT 1 FROM incoterms WHERE id=$1 AND active=true AND (organization_id=$2 OR organization_id IS NULL)`, [body.incotermId, org]);
+          if (!term.rows[0]) throw new Error("INVALID_INCOTERM");
+        }
+        if (body.defaultTaxCodeId) {
+          const tax = await client.query(`SELECT 1 FROM tax_codes WHERE id=$1 AND organization_id=$2 AND active=true`, [body.defaultTaxCodeId, org]);
+          if (!tax.rows[0]) throw new Error("INVALID_TAX_CODE");
+        }
+        const result = await client.query(
+          `UPDATE supplier_contracts SET title=$1,category=$2,start_date=$3,end_date=$4,maximum_value=$5,
+             renewal_date=$6,renewal_notice_days=$7,payment_terms_id=$8,incoterm_id=$9,default_tax_code_id=$10,
+             default_warehouse_id=$11,default_delivery_address=$12,summary=$13,lifecycle_reason=$14,
+             status='draft',version=version+1,updated_at=now()
+           WHERE id=$15 AND organization_id=$16
+           RETURNING id,contract_number AS "contractNumber",title,status,approval_status AS "approvalStatus",version`,
+          [body.title,body.category??null,body.startDate,body.endDate??null,body.maximumValue,body.renewalDate??null,
+            body.renewalNoticeDays,body.paymentTermsId??null,body.incotermId??null,body.defaultTaxCodeId??null,
+            body.defaultWarehouseId??null,body.defaultDeliveryAddress??null,body.summary??null,body.editReason,id,org],
+        );
+        await recordActivity(client, org, "supplier_contract", id, "AGREEMENT_DRAFT_UPDATED", {
+          actorUserId: userId, reason: body.editReason, previousVersion: body.expectedVersion,
+        });
+        return result.rows[0];
+      });
+      return sendOk(res, updated);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/contracts/:id", ...read, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId(), id = positiveInt(req.params.id, 0);
+      const captureAvailable = await hasAgreementReleaseEvidence(pool);
+      const [contract, lines, releases, versions, activity] = await Promise.all([
+        pool.query(`SELECT c.id,COALESCE(NULLIF(c.contract_number,''),NULLIF(c.reference_number,''),'AGR-'||c.id::text) AS "contractNumber",c.title,c.contract_type AS "contractType",c.category,c.supplier_id AS "supplierId",s.name AS "supplierName",c.owner_user_id AS "ownerUserId",u.username AS "ownerName",CASE WHEN c.approval_status='APPROVED' AND c.status='active' AND c.end_date<now() THEN 'expired' ELSE c.status END AS status,c.approval_status AS "approvalStatus",c.start_date AS "startDate",c.end_date AS "endDate",c.maximum_value::text AS "maximumValue",c.committed_value::text AS "committedValue",CASE WHEN c.maximum_value IS NULL THEN NULL ELSE (c.maximum_value-c.committed_value)::text END AS "remainingValue",c.currency AS "currencyCode",c.summary,c.payment_terms_id AS "paymentTermsId",c.incoterm_id AS "incotermId",c.default_tax_code_id AS "defaultTaxCodeId",c.default_warehouse_id AS "defaultWarehouseId",c.default_delivery_address AS "defaultDeliveryAddress",c.renewal_date AS "renewalDate",c.renewal_notice_days AS "renewalNoticeDays",c.release_rules AS "releaseRules",c.version,c.lifecycle_reason AS "lifecycleReason",c.created_at AS "createdAt",c.updated_at AS "updatedAt" FROM supplier_contracts c JOIN suppliers s ON s.id=c.supplier_id AND s.organization_id=$1 LEFT JOIN users u ON u.id=c.owner_user_id WHERE c.id=$2 AND c.organization_id=$1`, [org, id]),
+        pool.query(`SELECT l.id,l.line_number AS "lineNumber",l.line_type AS "lineType",l.item_id AS "itemId",i.sku,i.name AS "itemName",l.description,l.unit_of_measure_id AS "unitOfMeasureId",uom.code AS "unitOfMeasure",l.currency_code AS "currencyCode",l.unit_price::text AS "unitPrice",l.minimum_quantity::text AS "minimumQuantity",l.maximum_quantity::text AS "maximumQuantity",l.committed_quantity::text AS "committedQuantity",CASE WHEN l.maximum_quantity IS NULL THEN NULL ELSE (l.maximum_quantity-l.committed_quantity)::text END AS "remainingQuantity",l.lead_time_days AS "leadTimeDays",l.tax_code_id AS "taxCodeId",l.valid_from AS "validFrom",l.valid_to AS "validTo",l.active,COALESCE((SELECT json_agg(json_build_object('id',b.id,'minimumQuantity',b.minimum_quantity::text,'unitPrice',b.unit_price::text) ORDER BY b.minimum_quantity) FROM supplier_contract_price_breaks b WHERE b.organization_id=$1 AND b.contract_line_id=l.id),'[]'::json) AS "priceBreaks" FROM supplier_contract_lines l LEFT JOIN inventory_items i ON i.id=l.item_id AND i.organization_id=$1 LEFT JOIN units_of_measure uom ON uom.id=l.unit_of_measure_id WHERE l.organization_id=$1 AND l.contract_id=$2 ORDER BY l.line_number,l.id`, [org, id]),
+        pool.query(`SELECT r.id,r.requisition_id AS "requisitionId",r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber",
+          r.release_amount::text AS "releaseAmount",r.created_at AS "createdAt",
+          ${captureAvailable ? "e.agreement_version" : "NULL::int"} AS "agreementVersion",
+          ${captureAvailable ? "e.snapshot->'agreement'->>'currencyCode'" : "NULL::text"} AS "capturedCurrency"
+          FROM supplier_contract_releases r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1
+          ${captureAvailable ? "LEFT JOIN agreement_release_policy_evidence e ON e.release_id=r.id" : ""}
+          WHERE r.organization_id=$1 AND r.contract_id=$2 ORDER BY r.created_at DESC,r.id DESC LIMIT 100`, [org, id]),
+        pool.query(`SELECT id,version,change_reason AS "changeReason",created_by AS "createdBy",created_at AS "createdAt" FROM supplier_contract_versions WHERE organization_id=$1 AND contract_id=$2 ORDER BY version DESC LIMIT 100`, [org, id]),
+        pool.query(`SELECT id,actor,action,summary_json AS summary,created_at AS "createdAt" FROM ops_activity WHERE organization_id=$1 AND entity_type='supplier_contract' AND entity_id=$2::text ORDER BY created_at DESC,id DESC LIMIT 100`, [org, id]),
+      ]);
+      if (!contract.rows[0]) return sendError(res, 404, "CONTRACT_NOT_FOUND", "Contract not found.");
+      return sendOk(res, { contract: contract.rows[0], lines: lines.rows, releases: releases.rows, versions: versions.rows, activity: activity.rows });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/contracts/:id/releases/:releaseId/evidence", ...read, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId(), id = z.coerce.number().int().positive().max(2147483647).parse(req.params.id);
+      const releaseId = z.string().refine(value => /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n).parse(req.params.releaseId);
+      const { page, pageSize } = z.object({ page: z.coerce.number().int().min(1).max(10000).default(1),
+        pageSize: z.enum(["25", "50", "100"]).default("25").transform(Number) }).strict().parse(req.query);
+      const offset = (page - 1) * pageSize;
+      const captureAvailable = await hasAgreementReleaseEvidence(pool);
+      const { rows } = await pool.query(`SELECT r.id::text AS "releaseId",
+        ${captureAvailable ? `e.agreement_version AS "agreementVersion",e.captured_at AS "capturedAt",
+          e.snapshot->'agreement' AS agreement,e.snapshot->'approval' AS approval,e.snapshot->'supplier' AS supplier,
+          e.snapshot->'budgetReservation' AS "budgetReservation",
+          jsonb_array_length(e.snapshot->'lines') AS "lineCount",
+          COALESCE((SELECT jsonb_agg(item ORDER BY ordinal) FROM (
+            SELECT item,ordinal FROM jsonb_array_elements(e.snapshot->'lines') WITH ORDINALITY AS items(item,ordinal)
+            ORDER BY ordinal LIMIT $4 OFFSET $5) bounded),'[]'::jsonb) AS lines`
+          : `NULL::int AS "agreementVersion",NULL::int AS "lineCount", '[]'::jsonb AS lines`}
+        FROM supplier_contract_releases r
+        JOIN supplier_contracts c ON c.id=r.contract_id AND c.organization_id=r.organization_id
+        JOIN purchase_orders p ON p.id=r.purchase_order_id AND p.organization_id=r.organization_id
+        ${captureAvailable ? "LEFT JOIN agreement_release_policy_evidence e ON e.release_id=r.id" : ""}
+        WHERE r.organization_id=$1 AND r.contract_id=$2 AND r.id=$3`,
+      captureAvailable ? [org, id, releaseId, pageSize, offset] : [org, id, releaseId]);
+      if (!rows[0]) return sendError(res, 404, "AGREEMENT_RELEASE_NOT_FOUND", "The requested agreement release was not found.");
+      return sendOk(res, { ...rows[0], page, pageSize, hasNext: page * pageSize < (rows[0].lineCount ?? 0) });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/contracts/:id/document.pdf", ...read, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId();
+      const id = positiveInt(req.params.id, 0);
+      const [agreement, lines, branding] = await Promise.all([
+        pool.query(
+          `SELECT c.*,s.name AS supplier_name,COALESCE(s.legal_name,s.name) AS supplier_legal_name,
+             s.registration_number AS supplier_registration_number,s.tax_identification_number AS supplier_tax_number,
+             s.address AS supplier_address,s.email AS supplier_email,s.phone AS supplier_phone,
+             pt.name AS payment_terms_name,it.name AS incoterm_name,w.name AS warehouse_name
+           FROM supplier_contracts c
+           JOIN suppliers s ON s.id=c.supplier_id AND s.organization_id=$1
+           LEFT JOIN payment_terms pt ON pt.id=c.payment_terms_id
+           LEFT JOIN incoterms it ON it.id=c.incoterm_id
+           LEFT JOIN warehouses w ON w.id=c.default_warehouse_id AND w.organization_id=$1
+           WHERE c.organization_id=$1 AND c.id=$2`,
+          [org, id],
+        ),
+        pool.query(
+          `SELECT l.line_number,l.line_type,l.description,i.sku,u.code AS uom,l.unit_price::text,l.currency_code,
+             l.minimum_quantity::text,l.maximum_quantity::text,l.committed_quantity::text
+           FROM supplier_contract_lines l
+           LEFT JOIN inventory_items i ON i.id=l.item_id AND i.organization_id=$1
+           LEFT JOIN units_of_measure u ON u.id=l.unit_of_measure_id
+           WHERE l.organization_id=$1 AND l.contract_id=$2 AND l.active=true ORDER BY l.line_number,l.id`,
+          [org, id],
+        ),
+        getOrganizationDocumentBranding(org, { loadLogo: true }),
+      ]);
+      const record = agreement.rows[0];
+      if (!record) return sendError(res, 404, "CONTRACT_NOT_FOUND", "Contract not found.");
+      const agreementNumber = String(record.contract_number || record.reference_number || `AGR-${record.id}`);
+      const pdf = await PDFDocument.create();
+      const font = await pdf.embedFont(StandardFonts.Helvetica);
+      const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+      let logo: Awaited<ReturnType<typeof pdf.embedPng>> | undefined;
+      if (branding.logoBytes?.length) {
+        try { logo = await pdf.embedPng(branding.logoBytes); } catch { try { logo = await pdf.embedJpg(branding.logoBytes); } catch { /* text branding remains */ } }
+      }
+      const addPage = () => {
+        const page = pdf.addPage([595, 842]);
+        if (logo) { const size=logo.scaleToFit(80,40); page.drawImage(logo,{x:50,y:780,width:size.width,height:size.height}); }
+        page.drawText(branding.displayName,{x:logo?145:50,y:810,size:13,font:bold,color:rgb(0.05,0.35,0.4)});
+        page.drawText("BLANKET PURCHASE AGREEMENT",{x:50,y:756,size:18,font:bold});
+        page.drawText(agreementNumber,{x:410,y:759,size:10,font:bold});
+        return page;
+      };
+      const write = (page: ReturnType<typeof addPage>, text: unknown, x: number, y: number, size=8, useBold=false) => {
+        page.drawText(String(text ?? "Not specified").replace(/[\r\n]+/g," ").slice(0,105), { x, y, size, font: useBold ? bold : font });
+      };
+      let page = addPage(); let y=730;
+      write(page,"BUYER / ORGANIZATION",50,y,9,true); write(page,"SUPPLIER",310,y,9,true); y-=15;
+      write(page,branding.legalName,50,y,8,true); write(page,record.supplier_legal_name,310,y,8,true); y-=12;
+      write(page,branding.address,50,y); write(page,record.supplier_address,310,y); y-=12;
+      write(page,branding.registrationNumber?`Registration: ${branding.registrationNumber}`:"Registration: Not specified",50,y);
+      write(page,record.supplier_registration_number?`Registration: ${record.supplier_registration_number}`:"Registration: Not specified",310,y); y-=12;
+      write(page,branding.taxNumber?`Tax: ${branding.taxNumber}`:"Tax: Not specified",50,y);
+      write(page,record.supplier_tax_number?`Tax: ${record.supplier_tax_number}`:"Tax: Not specified",310,y); y-=22;
+      write(page,`Title: ${record.title}`,50,y,10,true); y-=16;
+      write(page,`Type: ${record.contract_type} | Status: ${record.status} / ${record.approval_status} | Version: ${record.version}`,50,y); y-=13;
+      write(page,`Validity: ${String(record.start_date).slice(0,10)} to ${record.end_date?String(record.end_date).slice(0,10):"open-ended"}`,50,y); y-=13;
+      write(page,`Maximum: ${record.currency} ${Number(record.maximum_value).toFixed(2)} | Committed: ${record.currency} ${Number(record.committed_value).toFixed(2)} | Remaining: ${record.currency} ${(Number(record.maximum_value)-Number(record.committed_value)).toFixed(2)}`,50,y); y-=13;
+      write(page,`Payment terms: ${record.payment_terms_name??"Not specified"} | Incoterm: ${record.incoterm_name??"Not specified"} | Warehouse: ${record.warehouse_name??"Not specified"}`,50,y); y-=20;
+      write(page,"LINES",50,y,10,true); y-=15;
+      write(page,"# / Type",50,y,8,true); write(page,"Description",115,y,8,true); write(page,"Qty commitment",365,y,8,true); write(page,"Unit price",475,y,8,true); y-=13;
+      for (const line of lines.rows) {
+        if (y < 70) { page=addPage(); y=730; }
+        write(page,`${line.line_number} / ${line.line_type}`,50,y);
+        write(page,`${line.sku?`${line.sku} - `:""}${line.description}`,115,y);
+        write(page,`${line.committed_quantity} / ${line.maximum_quantity??"uncapped"} ${line.uom??""}`,365,y);
+        write(page,`${line.currency_code} ${Number(line.unit_price).toFixed(2)}`,475,y); y-=13;
+      }
+      for (const [index,pdfPage] of pdf.getPages().entries()) {
+        write(pdfPage, branding.reportFooter, 50, 30, 6.5);
+        write(pdfPage, `Page ${index+1} of ${pdf.getPageCount()}`, 510, 30, 6.5);
+      }
+      const bytes=await pdf.save();
+      res.setHeader("Content-Type","application/pdf");
+      res.setHeader("Content-Disposition",`inline; filename="${agreementNumber.replace(/[^A-Za-z0-9_-]/g,"-")}.pdf"`);
+      return res.status(200).send(Buffer.from(bytes));
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/contracts/:id/lines", ...manage, async (req, res) => {
+    try {
+      const body = z.object({ lineType: z.enum(["CATALOG","NON_STOCK","SERVICE"]), itemId: z.coerce.number().int().positive().optional().nullable(), description: z.string().trim().min(2), unitOfMeasureId: z.coerce.number().int().positive().optional().nullable(), currencyCode: z.string().trim().length(3), unitPrice: z.coerce.number().nonnegative(), minimumQuantity: z.coerce.number().nonnegative().default(0), maximumQuantity: z.coerce.number().positive().optional().nullable(), leadTimeDays: z.coerce.number().int().nonnegative().optional().nullable(), taxCodeId: z.coerce.number().int().positive().optional().nullable(), validFrom: z.coerce.date(), validTo: z.coerce.date().optional().nullable(), priceBreaks: z.array(z.object({ minimumQuantity: z.coerce.number().positive(), unitPrice: z.coerce.number().nonnegative() })).default([]) })
+        .refine((line) => line.lineType !== "CATALOG" || !!line.itemId, { path:["itemId"], message:"Catalog lines require an item." })
+        .refine((line) => line.maximumQuantity == null || line.maximumQuantity >= line.minimumQuantity, { path:["maximumQuantity"], message:"Maximum quantity must be at least the minimum quantity." })
+        .refine((line) => !line.validTo || line.validTo >= line.validFrom, { path:["validTo"], message:"Line validity end must not precede its start." })
+        .parse(req.body);
+      const org = getActiveOrganizationId(), id = positiveInt(req.params.id, 0);
+      await assertPhaseEnabled(org, 2);
+      const created = await withTransaction(async (client) => {
+        const contract = await client.query(`SELECT id,approval_status,status,currency FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`, [id, org]);
+        if (!contract.rows[0]) throw new Error("NOT_FOUND");
+        if (contract.rows[0].approval_status !== "DRAFT" || contract.rows[0].status !== "draft") throw new Error("STATE_AGREEMENT_LINES_IMMUTABLE");
+        if (String(contract.rows[0].currency).toUpperCase() !== body.currencyCode.toUpperCase()) throw new Error("INVALID_AGREEMENT_LINE_CURRENCY");
+        if (body.itemId) { const owned = await client.query(`SELECT 1 FROM inventory_items WHERE id=$1 AND organization_id=$2 AND status='active'`, [body.itemId, org]); if (!owned.rows[0]) throw new Error("INVALID_ITEM"); }
+        if (body.unitOfMeasureId) { const uom = await client.query(`SELECT 1 FROM units_of_measure WHERE id=$1 AND active=true AND (organization_id=$2 OR organization_id IS NULL)`, [body.unitOfMeasureId, org]); if (!uom.rows[0]) throw new Error("INVALID_UNIT_OF_MEASURE"); }
+        if (body.taxCodeId) { const tax = await client.query(`SELECT 1 FROM tax_codes WHERE id=$1 AND active=true AND (organization_id=$2 OR organization_id IS NULL)`, [body.taxCodeId, org]); if (!tax.rows[0]) throw new Error("INVALID_TAX_CODE"); }
+        const lineNo = await client.query(`SELECT COALESCE(max(line_number),0)+1 AS next FROM supplier_contract_lines WHERE contract_id=$1`, [id]);
+        const line = await client.query(`INSERT INTO supplier_contract_lines (organization_id,contract_id,line_number,line_type,item_id,description,unit_of_measure_id,currency_code,unit_price,minimum_quantity,maximum_quantity,lead_time_days,tax_code_id,valid_from,valid_to) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`, [org,id,lineNo.rows[0].next,body.lineType,body.itemId??null,body.description,body.unitOfMeasureId??null,body.currencyCode.toUpperCase(),body.unitPrice,body.minimumQuantity,body.maximumQuantity??null,body.leadTimeDays??null,body.taxCodeId??null,body.validFrom,body.validTo??null]);
+        for (const priceBreak of body.priceBreaks) await client.query(`INSERT INTO supplier_contract_price_breaks (organization_id,contract_line_id,minimum_quantity,unit_price) VALUES ($1,$2,$3,$4)`, [org,line.rows[0].id,priceBreak.minimumQuantity,priceBreak.unitPrice]);
+        await client.query(`UPDATE supplier_contracts SET version=version+1,updated_at=now() WHERE id=$1 AND organization_id=$2`, [id, org]);
+        await recordActivity(client, org, "supplier_contract", id, "AGREEMENT_LINE_ADDED", { actorUserId: Number((req as any).user?.id ?? 0), lineId: line.rows[0].id, lineType: body.lineType });
+        return line.rows[0];
+      });
+      return sendOk(res, created, 201);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.post("/api/v2/procurement/contracts/:id/lines/:lineId/deactivate", ...manage, async (req, res) => {
+    try {
+      const org = getActiveOrganizationId(), id = positiveInt(req.params.id, 0), lineId = positiveInt(req.params.lineId, 0);
+      const userId = Number((req as any).user?.id ?? 0);
+      const body = z.object({ expectedVersion: z.coerce.number().int().positive(), reason: z.string().trim().min(5).max(2000) }).parse(req.body);
+      await assertPhaseEnabled(org, 2);
+      const result = await withTransaction(async (client) => {
+        const contract = await client.query(`SELECT version,approval_status,status FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`, [id, org]);
+        if (!contract.rows[0]) throw new Error("NOT_FOUND");
+        if (contract.rows[0].approval_status !== "DRAFT" || contract.rows[0].status !== "draft") throw new Error("STATE_AGREEMENT_LINES_IMMUTABLE");
+        if (Number(contract.rows[0].version) !== body.expectedVersion) throw new Error("STALE_AGREEMENT_VERSION");
+        const line = await client.query(`UPDATE supplier_contract_lines SET active=false WHERE id=$1 AND contract_id=$2 AND organization_id=$3 AND active=true RETURNING id,line_number AS "lineNumber"`, [lineId, id, org]);
+        if (!line.rows[0]) throw new Error("NOT_FOUND");
+        const remaining = await client.query(`SELECT count(*)::int AS total FROM supplier_contract_lines WHERE contract_id=$1 AND organization_id=$2 AND active=true`, [id, org]);
+        if (Number(remaining.rows[0].total) < 1) throw new Error("STATE_AGREEMENT_REQUIRES_ACTIVE_LINE");
+        const updated = await client.query(`UPDATE supplier_contracts SET version=version+1,lifecycle_reason=$1,updated_at=now() WHERE id=$2 AND organization_id=$3 RETURNING version`, [body.reason, id, org]);
+        await recordActivity(client, org, "supplier_contract", id, "AGREEMENT_LINE_DEACTIVATED", { actorUserId:userId, lineId, reason:body.reason });
+        return { ...line.rows[0], agreementVersion:Number(updated.rows[0].version) };
+      });
+      return sendOk(res, result);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  for (const action of ["submit","approve","suspend","resume","close"] as const) app.post(`/api/v2/procurement/contracts/:id/${action}`, ...(action === "approve" ? approve : manage), async (req, res) => {
+    try {
+      const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0),reason=String(req.body?.reason??"").trim(); await assertPhaseEnabled(org,2);
+      if ((action === "suspend" || action === "resume" || action === "close") && reason.length < 5) return sendError(res,400,"AGREEMENT_REASON_REQUIRED","A meaningful reason is required.");
+      const result=await withTransaction(async(client)=>{
+        const current=await client.query(`SELECT * FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[id,org]); if(!current.rows[0])throw new Error("NOT_FOUND");
+        const lineCount=await client.query(`SELECT count(*)::int total FROM supplier_contract_lines WHERE organization_id=$1 AND contract_id=$2 AND active=true`,[org,id]);
+        if(action==="submit"&&(current.rows[0].approval_status!=="DRAFT"||Number(lineCount.rows[0].total)<1))throw new Error("STATE_AGREEMENT_NOT_READY");
+        if(action==="approve"&&(current.rows[0].approval_status!=="PENDING_APPROVAL"||current.rows[0].owner_user_id===userId))throw new Error("FORBIDDEN_AGREEMENT_SELF_APPROVAL");
+        if(action==="suspend"||action==="close"){if(current.rows[0].approval_status!=="APPROVED"||!["active","suspended"].includes(current.rows[0].status))throw new Error("STATE_AGREEMENT_TRANSITION_BLOCKED");}
+        if(action==="resume"&&(current.rows[0].approval_status!=="APPROVED"||current.rows[0].status!=="suspended"))throw new Error("STATE_AGREEMENT_RESUME_BLOCKED");
+        let approvalStep: Awaited<ReturnType<typeof authorizeApprovalStep>> | null = null;
+        if (action === "approve") {
+          approvalStep = await authorizeApprovalStep({
+            organizationId: org,
+            entityType: "contract",
+            entityId: id,
+            amount: Number(current.rows[0].maximum_value ?? 0),
+            actorUserId: userId,
+            actorRole: String(getOptionalTenantContext()?.userRole ?? (req as any).user?.role ?? ""),
+            actorPreferences: (req as any).user?.preferences,
+          });
+          await client.query(`INSERT INTO approval_history (organization_id,entity_type,entity_id,level,action,performed_by,comment,previous_status,new_status) VALUES ($1,'contract',$2,$3,'approved',$4,$5,$6,$7)`, [org,id,approvalStep.level,userId,reason||null,current.rows[0].approval_status,approvalStep.isFinal?"APPROVED":"PENDING_APPROVAL"]);
+        }
+        const approvalStatus=action==="submit"?"PENDING_APPROVAL":action==="approve"&&approvalStep?.isFinal?"APPROVED":current.rows[0].approval_status;
+        const status=action==="submit"?"draft":action==="approve"&&approvalStep?.isFinal?"active":action==="suspend"?"suspended":action==="resume"?"active":action==="close"?"closed":current.rows[0].status;
+        const finalApproval = action === "approve" && Boolean(approvalStep?.isFinal);
+        const updated=await client.query(`UPDATE supplier_contracts SET approval_status=$1,status=$2,lifecycle_reason=$3,submitted_by=CASE WHEN $4='submit' THEN $5 ELSE submitted_by END,submitted_at=CASE WHEN $4='submit' THEN now() ELSE submitted_at END,approved_by=CASE WHEN $8 THEN $5 ELSE approved_by END,approved_at=CASE WHEN $8 THEN now() ELSE approved_at END,suspended_at=CASE WHEN $4='suspend' THEN now() WHEN $4='resume' THEN NULL ELSE suspended_at END,closed_at=CASE WHEN $4='close' THEN now() ELSE closed_at END,updated_at=now() WHERE id=$6 AND organization_id=$7 RETURNING id,contract_number AS "contractNumber",approval_status AS "approvalStatus",status,version`,[approvalStatus,status,reason||null,action,userId||null,id,org,finalApproval]);
+        await recordActivity(client,org,"supplier_contract",id,`AGREEMENT_${action.toUpperCase()}`,{actorUserId:userId,reason:reason||null,approvalLevel:approvalStep?.level??null,approvalComplete:approvalStep?.isFinal??null}); return {...updated.rows[0],approvalProgress:approvalStep?{requiredLevels:approvalStep.progress.requiredLevels,completedLevels:[...approvalStep.progress.completedLevels,approvalStep.level],state:approvalStep.isFinal?"approved":"pending"}:undefined};
+      }); return sendOk(res,result);
+    }catch(error){return handleError(res,error);}
+  });
+
+  app.post("/api/v2/procurement/contracts/:id/amend", ...manage, async (req,res)=>{try{const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0),reason=String(req.body?.reason??"").trim();if(reason.length<5)return sendError(res,400,"AMENDMENT_REASON_REQUIRED","A meaningful amendment reason is required.");await assertPhaseEnabled(org,2);const result=await withTransaction(async(client)=>{const current=await client.query(`SELECT * FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[id,org]);if(!current.rows[0])throw new Error("NOT_FOUND");if(current.rows[0].approval_status!=="APPROVED"||!["active","suspended"].includes(current.rows[0].status))throw new Error("STATE_AGREEMENT_AMENDMENT_BLOCKED");const lines=await client.query(`SELECT l.*,COALESCE((SELECT json_agg(b.* ORDER BY b.minimum_quantity) FROM supplier_contract_price_breaks b WHERE b.contract_line_id=l.id),'[]'::json) AS price_breaks FROM supplier_contract_lines l WHERE l.organization_id=$1 AND l.contract_id=$2 ORDER BY l.line_number`,[org,id]);await client.query(`INSERT INTO supplier_contract_versions(organization_id,contract_id,version,snapshot,change_reason,created_by) VALUES($1,$2,$3,$4::jsonb,$5,$6)`,[org,id,current.rows[0].version,JSON.stringify({contract:current.rows[0],lines:lines.rows}),reason,userId||null]);const updated=await client.query(`UPDATE supplier_contracts SET version=version+1,approval_status='DRAFT',status='draft',approved_by=null,approved_at=null,lifecycle_reason=$1,updated_at=now() WHERE id=$2 AND organization_id=$3 RETURNING id,version,status,approval_status AS "approvalStatus"`,[reason,id,org]);await recordActivity(client,org,"supplier_contract",id,"AGREEMENT_AMENDMENT_OPENED",{actorUserId:userId,reason,previousVersion:current.rows[0].version});return updated.rows[0];});return sendOk(res,result);}catch(error){return handleError(res,error);}});
+
+  app.post("/api/v2/procurement/contracts/:id/renew", ...manage, async (req,res)=>{
+    try {
+      const body=z.object({ expectedVersion:z.coerce.number().int().positive(), newEndDate:z.coerce.date(), renewalDate:z.coerce.date().optional().nullable(), reason:z.string().trim().min(5).max(2000) }).parse(req.body);
+      const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0);
+      await assertPhaseEnabled(org,2);
+      const result=await withTransaction(async(client)=>{
+        const current=await client.query(`SELECT * FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[id,org]);
+        if(!current.rows[0])throw new Error("NOT_FOUND");
+        if(current.rows[0].approval_status!=="APPROVED"||!["active","suspended","expired"].includes(current.rows[0].status))throw new Error("STATE_AGREEMENT_RENEWAL_BLOCKED");
+        if(Number(current.rows[0].version)!==body.expectedVersion)throw new Error("STALE_AGREEMENT_VERSION");
+        const previousEnd=current.rows[0].end_date?new Date(current.rows[0].end_date):null;
+        if(body.newEndDate<=new Date()||(previousEnd&&body.newEndDate<=previousEnd))throw new Error("INVALID_RENEWAL_END_DATE");
+        if(body.renewalDate&&body.renewalDate>body.newEndDate)throw new Error("INVALID_RENEWAL_REVIEW_DATE");
+        const lines=await client.query(`SELECT l.*,COALESCE((SELECT json_agg(b.* ORDER BY b.minimum_quantity) FROM supplier_contract_price_breaks b WHERE b.contract_line_id=l.id),'[]'::json) AS price_breaks FROM supplier_contract_lines l WHERE l.organization_id=$1 AND l.contract_id=$2 ORDER BY l.line_number`,[org,id]);
+        await client.query(`INSERT INTO supplier_contract_versions(organization_id,contract_id,version,snapshot,change_reason,created_by) VALUES($1,$2,$3,$4::jsonb,$5,$6)`,[org,id,current.rows[0].version,JSON.stringify({contract:current.rows[0],lines:lines.rows}),body.reason,userId||null]);
+        const updated=await client.query(`UPDATE supplier_contracts SET version=version+1,end_date=$1,renewal_date=$2,approval_status='DRAFT',status='draft',approved_by=null,approved_at=null,lifecycle_reason=$3,updated_at=now() WHERE id=$4 AND organization_id=$5 RETURNING id,version,end_date AS "endDate",renewal_date AS "renewalDate",status,approval_status AS "approvalStatus"`,[body.newEndDate,body.renewalDate??null,body.reason,id,org]);
+        await recordActivity(client,org,"supplier_contract",id,"AGREEMENT_RENEWAL_OPENED",{actorUserId:userId,reason:body.reason,previousVersion:current.rows[0].version,previousEndDate:current.rows[0].end_date,newEndDate:body.newEndDate.toISOString()});
+        return updated.rows[0];
+      });
+      return sendOk(res,result);
+    } catch(error){return handleError(res,error);}
+  });
+
+  app.get("/api/v2/procurement/contracts/:id/eligible-requisitions", ...read, async (req,res)=>{try{const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0);const result=await pool.query(`SELECT r.id,r.requisition_number AS "requisitionNumber",r.total_amount::text AS "requestedAmount",r.currency_code AS "currencyCode",r.required_date AS "requiredDate",count(ri.id)::int AS "lineCount",json_agg(json_build_object('id',ri.id,'lineNumber',ri.line_number,'lineType',ri.line_type,'itemId',ri.item_id,'description',COALESCE(ri.description,ri.item_description_snapshot),'quantity',ri.quantity,'suggestedContractLineId',(SELECT l.id FROM supplier_contract_lines l WHERE l.organization_id=$1 AND l.contract_id=$2 AND l.active=true AND (l.item_id IS NOT DISTINCT FROM ri.item_id) ORDER BY l.line_number,l.id LIMIT 1)) ORDER BY ri.line_number,ri.id) AS lines FROM supplier_contracts c JOIN purchase_requisitions r ON r.organization_id=c.organization_id AND (r.supplier_id IS NULL OR r.supplier_id=c.supplier_id) JOIN purchase_requisition_items ri ON ri.requisition_id=r.id WHERE c.id=$2 AND c.organization_id=$1 AND upper(r.status)='APPROVED' AND NOT EXISTS(SELECT 1 FROM supplier_contract_releases cr WHERE cr.organization_id=$1 AND cr.requisition_id=r.id) GROUP BY r.id ORDER BY r.updated_at DESC,r.id DESC LIMIT 100`,[org,id]);return sendOk(res,{items:result.rows});}catch(error){return handleError(res,error);}});
+
+  app.post("/api/v2/procurement/contracts/:id/release-po", ...approve, async (req,res)=>{
+    try{
+      const body=z.object({requisitionId:z.coerce.number().int().positive(),lineMappings:z.array(z.object({requisitionItemId:z.coerce.number().int().positive(),contractLineId:z.coerce.number().int().positive()})).default([])}).parse(req.body);
+      const key=String(req.get("Idempotency-Key")??"").trim();if(!key)return sendError(res,400,"IDEMPOTENCY_KEY_REQUIRED","Idempotency-Key is required.");
+      const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0);
+      const mappings = new Map(body.lineMappings.map(mapping => [mapping.requisitionItemId, mapping.contractLineId]));
+      if (mappings.size !== body.lineMappings.length) throw new Error("INVALID_AGREEMENT_LINE_MAPPING");
+      const commandHash = releaseCommandHash(id, body.requisitionId, body.lineMappings);
+      await assertPhaseEnabled(org, 2);
+      const released=await withTransaction(async(client)=>{
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`agreement-release:${org}:${key}`]);
+        const captureAvailable = await hasAgreementReleaseEvidence(client);
+        const previous=await client.query(`SELECT r.*,r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber",
+          ${captureAvailable ? "e.agreement_version AS \"agreementVersion\",e.command_hash" : "NULL::int AS \"agreementVersion\",NULL::text AS command_hash"}
+          FROM supplier_contract_releases r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1
+          ${captureAvailable ? "LEFT JOIN agreement_release_policy_evidence e ON e.release_id=r.id" : ""}
+          WHERE r.organization_id=$1 AND r.idempotency_key=$2`,[org,key]);
+        if(previous.rows[0]) {
+          const { command_hash: originalCommand, ...result } = previous.rows[0];
+          if (result.contract_id !== id || result.requisition_id !== body.requisitionId || (originalCommand && originalCommand !== commandHash)) {
+            throw Object.assign(new Error("This release key is already bound to a different request."), { status: 409, code: "AGREEMENT_RELEASE_KEY_CONFLICT" });
+          }
+          return result;
+        }
+        const c=await client.query(`SELECT *,start_date<=now() AND (end_date IS NULL OR end_date>=now()) AS date_eligible
+          FROM supplier_contracts WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[id,org]);
+        if(!c.rows[0])throw new Error("NOT_FOUND");
+        const agreement = c.rows[0];
+        if(agreement.approval_status!=="APPROVED"||agreement.status!=="active"||!agreement.date_eligible)throw new Error("STATE_CONTRACT_NOT_AVAILABLE");
+        const supplierResult = await client.query(`SELECT id,name,status,compliance_status,blocked_reason
+          FROM suppliers WHERE id=$1 AND organization_id=$2 FOR SHARE`, [agreement.supplier_id, org]);
+        const supplier = supplierResult.rows[0];
+        if (!supplier) throw new Error("INVALID_SUPPLIER");
+        assertSupplierTransactionAllowed({ supplierName: supplier.name, status: supplier.status,
+          complianceStatus: supplier.compliance_status, blockedReason: supplier.blocked_reason }, "agreement releases");
+        const reqRow=await client.query(`SELECT * FROM purchase_requisitions WHERE id=$1 AND organization_id=$2 AND upper(status)='APPROVED' FOR UPDATE`,[body.requisitionId,org]);if(!reqRow.rows[0])throw new Error("INVALID_APPROVED_REQUISITION");if(reqRow.rows[0].supplier_id&&reqRow.rows[0].supplier_id!==c.rows[0].supplier_id)throw new Error("INVALID_REQUISITION_SUPPLIER");
+        const reqLines=await client.query(`SELECT * FROM purchase_requisition_items WHERE requisition_id=$1 ORDER BY line_number,id FOR UPDATE`,[body.requisitionId]);if(!reqLines.rows.length)throw new Error("INVALID_REQUISITION_LINES");
+        if (mappings.size && [...mappings.keys()].some(itemId => !reqLines.rows.some(line => line.id === itemId))) throw new Error("INVALID_AGREEMENT_LINE_MAPPING");
+        const resolved=[] as Array<{req:any;line:any;unitPrice:number;amount:number;priceBreak: { id: string; minimum_quantity: string } | null}>;
+        const quantitiesByLine = new Map<string, number>();
+        let amount=0;
+        for (const requisitionLine of reqLines.rows) {
+          const lineResult=await client.query(`SELECT * FROM supplier_contract_lines
+            WHERE organization_id=$1 AND contract_id=$2 AND active=true
+              AND valid_from<=now() AND (valid_to IS NULL OR valid_to>=now()) AND currency_code=$5
+              AND ($3::bigint IS NOT NULL AND id=$3 OR $3::bigint IS NULL AND item_id IS NOT DISTINCT FROM $4)
+            ORDER BY line_number,id LIMIT 1 FOR UPDATE`,[org,id,mappings.get(requisitionLine.id)??null,requisitionLine.item_id??null,agreement.currency]);
+          const line=lineResult.rows[0];
+          if(!line)throw new Error("INVALID_AGREEMENT_LINE_MAPPING");
+          if(line.line_type!==(requisitionLine.line_type??"CATALOG") || (line.line_type==="CATALOG"&&line.item_id!==requisitionLine.item_id))throw new Error("INVALID_AGREEMENT_ITEM");
+          const qty=Number(requisitionLine.quantity);
+          const lineKey = String(line.id), previouslyRequested = quantitiesByLine.get(lineKey) ?? 0;
+          if(qty<Number(line.minimum_quantity)||line.maximum_quantity!=null&&Number(line.committed_quantity)+previouslyRequested+qty>Number(line.maximum_quantity))throw new Error("INSUFFICIENT_AGREEMENT_QUANTITY");
+          quantitiesByLine.set(lineKey, previouslyRequested + qty);
+          const price=await client.query(`SELECT id,minimum_quantity::text,unit_price FROM supplier_contract_price_breaks
+            WHERE organization_id=$1 AND contract_line_id=$2 AND minimum_quantity<=$3 ORDER BY minimum_quantity DESC LIMIT 1 FOR SHARE`,[org,line.id,qty]);
+          const unitPrice=Number(price.rows[0]?.unit_price??line.unit_price),lineAmount=Number((qty*unitPrice).toFixed(4));
+          amount+=lineAmount;
+          resolved.push({req:requisitionLine,line,unitPrice,amount:lineAmount,priceBreak:price.rows[0]??null});
+        }
+        amount=Number(amount.toFixed(4));
+        if(c.rows[0].maximum_value!=null&&Number(c.rows[0].committed_value)+amount>Number(c.rows[0].maximum_value))throw new Error("INSUFFICIENT_CONTRACT_VALUE");
+        if (Number(reqRow.rows[0].requestor_id) === userId || Number(c.rows[0].owner_user_id) === userId) throw new Error("FORBIDDEN_RELEASE_SELF_APPROVAL");
+        const releaseApproval = await authorizeApprovalStep({
+          organizationId: org,
+          entityType: "contract_release",
+          entityId: body.requisitionId,
+          amount,
+          actorUserId: userId,
+          actorRole: String(getOptionalTenantContext()?.userRole ?? (req as any).user?.role ?? ""),
+          actorPreferences: (req as any).user?.preferences,
+        });
+        const approvalEvent = await client.query(`INSERT INTO approval_history (organization_id,entity_type,entity_id,level,action,performed_by,comment,previous_status,new_status) VALUES ($1,'contract_release',$2,$3,'approved',$4,$5,'PENDING_APPROVAL',$6) RETURNING id`, [org,body.requisitionId,releaseApproval.level,userId,`Agreement ${c.rows[0].contract_number} release`,releaseApproval.isFinal?"APPROVED":"PENDING_APPROVAL"]);
+        if (!releaseApproval.isFinal) return { pendingApproval: true, requisitionId: body.requisitionId, contractId: id, approvalProgress: { requiredLevels: releaseApproval.progress.requiredLevels, completedLevels: [...releaseApproval.progress.completedLevels, releaseApproval.level], state: "pending" } };
+        const poNumber=`BPA-${new Date().getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`;const po=await client.query(`INSERT INTO purchase_orders(organization_id,order_number,supplier_id,requisition_id,department_id,contract_id,payment_terms_id,incoterm_id,currency_code,tax_code_id,status,approval_status,created_by_user_id,expected_delivery_date,delivery_address,total_amount,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'DRAFT','APPROVED',$11,$12,$13,$14,$15) RETURNING *`,[org,poNumber,c.rows[0].supplier_id,body.requisitionId,reqRow.rows[0].department_id,id,c.rows[0].payment_terms_id,c.rows[0].incoterm_id,c.rows[0].currency,c.rows[0].default_tax_code_id,userId||null,reqRow.rows[0].required_date,c.rows[0].default_delivery_address,amount,`Blanket agreement release ${c.rows[0].contract_number}`]);
+        const ins=await client.query(`INSERT INTO supplier_contract_releases (organization_id,contract_id,requisition_id,purchase_order_id,release_amount,released_by,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[org,id,body.requisitionId,po.rows[0].id,amount,userId||null,key]);
+        const capturedLines: Array<Record<string, unknown>> = [];
+        for (const { req: lineRequest, line, unitPrice, amount: lineAmount, priceBreak } of resolved) {
+          const poi=await client.query(`INSERT INTO purchase_order_items(order_id,item_id,line_number,line_type,description,item_code_snapshot,item_description_snapshot,manual_entry_reason,fulfilment_type,receipt_required,quantity,unit_price,total_price,unit_of_measure_id,tax_code_id,cost_centre_id,gl_account_code,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,[po.rows[0].id,lineRequest.item_id,lineRequest.line_number,lineRequest.line_type,lineRequest.description,lineRequest.item_code_snapshot,lineRequest.item_description_snapshot,lineRequest.manual_entry_reason,lineRequest.fulfilment_type,lineRequest.receipt_required,lineRequest.quantity,unitPrice,lineAmount,lineRequest.unit_of_measure_id,lineRequest.tax_code_id,lineRequest.cost_centre_id,lineRequest.gl_account_code,lineRequest.notes]);
+          const stored = await client.query(`INSERT INTO supplier_contract_release_lines(organization_id,release_id,contract_line_id,requisition_item_id,purchase_order_item_id,quantity,unit_price,line_amount)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+            RETURNING quantity::text,unit_price::text AS "unitPrice",line_amount::text AS "lineAmount"`,
+          [org,ins.rows[0].id,line.id,lineRequest.id,poi.rows[0].id,lineRequest.quantity,unitPrice,lineAmount]);
+          if (captureAvailable) capturedLines.push({ ...stored.rows[0], contractLineId: String(line.id),
+            requisitionItemId: lineRequest.id, purchaseOrderItemId: poi.rows[0].id, lineNumber: line.line_number,
+            lineType: line.line_type, itemId: line.item_id, description: line.description,
+            validFrom: line.valid_from, validTo: line.valid_to, baseUnitPrice: String(line.unit_price),
+            minimumQuantity: String(line.minimum_quantity), maximumQuantity: line.maximum_quantity == null ? null : String(line.maximum_quantity),
+            committedQuantityBefore: String(line.committed_quantity),
+            priceBreak: priceBreak ? { id: String(priceBreak.id), minimumQuantity: priceBreak.minimum_quantity } : null });
+          await client.query(`UPDATE supplier_contract_lines SET committed_quantity=committed_quantity+$1 WHERE id=$2 AND organization_id=$3`,[lineRequest.quantity,line.id,org]);
+        }
+        const budgetTransfer = await transferRequisitionBudget(client, org, body.requisitionId, po.rows[0].id);
+        await bindPurchaseOrderBudgetProvenance(client, org, body.requisitionId, [po.rows[0].id], "agreement_release");
+        if (captureAvailable) {
+          const policy = releaseApproval.progress.nextPolicy;
+          const snapshot = {
+            schemaVersion: 1,
+            agreement: { id, reference: agreement.contract_number || agreement.reference_number || `AGR-${id}`,
+              currencyCode: agreement.currency, approvedAt: agreement.approved_at, startDate: agreement.start_date, endDate: agreement.end_date,
+              maximumValue: agreement.maximum_value == null ? null : String(agreement.maximum_value),
+              committedValueBefore: String(agreement.committed_value), releaseAmount: String(ins.rows[0].release_amount),
+              configuredReleaseRules: agreement.release_rules },
+            supplier: { id: supplier.id, status: supplier.status, complianceStatus: supplier.compliance_status },
+            budgetReservation: { transferred: Boolean(budgetTransfer), transfer: budgetTransfer },
+            approval: { historyId: approvalEvent.rows[0].id, approverId: userId, level: releaseApproval.level,
+              policyId: policy?.id ?? null, policyVersion: policy?.version ?? null, requiredLevels: releaseApproval.progress.requiredLevels },
+            lines: capturedLines,
+          };
+          const evidence = await client.query(`INSERT INTO agreement_release_policy_evidence(release_id,agreement_version,command_hash,snapshot)
+            VALUES($1,$2,$3,$4::jsonb) RETURNING captured_at`, [ins.rows[0].id, agreement.version, commandHash, JSON.stringify(snapshot)]);
+          await appendAuditEventWithClient(client, { organizationId: org, actor: { userId }, action: "AGREEMENT_RELEASE_POLICY_CAPTURED",
+            resourceType: "supplier_contract", resourceId: id, after: { agreementVersion: agreement.version, releaseId: String(ins.rows[0].id),
+              purchaseOrderId: po.rows[0].id, capturedAt: evidence.rows[0].captured_at.toISOString(), lineCount: capturedLines.length } });
+        }
+        await client.query(`UPDATE supplier_contracts SET committed_value=committed_value+$1,version=version+1,updated_at=now() WHERE id=$2 AND organization_id=$3`,[amount,id,org]);
+        await client.query(`UPDATE purchase_requisitions SET status='CONVERTED_TO_PO',supplier_id=$1,updated_at=now() WHERE id=$2 AND organization_id=$3`,[c.rows[0].supplier_id,body.requisitionId,org]);
+        await recordActivity(client,org,"supplier_contract",id,"AGREEMENT_RELEASE_PO_CREATED",{actorUserId:userId,requisitionId:body.requisitionId,purchaseOrderId:po.rows[0].id,purchaseOrderNumber:poNumber,amount});
+        return {...ins.rows[0],purchaseOrderId:po.rows[0].id,purchaseOrderNumber:poNumber,agreementVersion:captureAvailable ? agreement.version : null};
+      });return sendOk(res,released,201);
+    }catch(error){return handleError(res,error);}
+  });
+
+  app.get("/api/v2/procurement/supplier-price-lists",...read,async(req,res)=>{try{const {page,pageSize,offset}=pagination(req),org=getActiveOrganizationId(),supplierId=req.query.supplierId?positiveInt(req.query.supplierId,0):null;const [rows,count]=await Promise.all([pool.query(`SELECT p.id,p.code,p.name,p.supplier_id AS "supplierId",s.name AS "supplierName",p.currency_code AS "currencyCode",p.valid_from AS "validFrom",p.valid_to AS "validTo",p.status,(SELECT count(*)::int FROM supplier_price_list_lines l WHERE l.price_list_id=p.id) AS "lineCount" FROM supplier_price_lists p JOIN suppliers s ON s.id=p.supplier_id AND s.organization_id=$1 WHERE p.organization_id=$1 AND ($2::int IS NULL OR p.supplier_id=$2) ORDER BY p.updated_at DESC,p.id DESC LIMIT $3 OFFSET $4`,[org,supplierId,pageSize,offset]),pool.query(`SELECT count(*)::int total FROM supplier_price_lists WHERE organization_id=$1 AND ($2::int IS NULL OR supplier_id=$2)`,[org,supplierId])]);const total=Number(count.rows[0]?.total??0);return sendOk(res,{items:rows.rows,total,page,pageSize,hasNext:page*pageSize<total});}catch(error){return handleError(res,error);}});
+
+  app.post("/api/v2/procurement/supplier-price-lists",...manage,async(req,res)=>{try{const body=z.object({supplierId:z.coerce.number().int().positive(),code:z.string().trim().min(2),name:z.string().trim().min(2),currencyCode:z.string().trim().length(3),validFrom:z.coerce.date(),validTo:z.coerce.date().optional().nullable(),lines:z.array(z.object({itemId:z.coerce.number().int().positive().optional().nullable(),description:z.string().trim().min(2),unitOfMeasureId:z.coerce.number().int().positive().optional().nullable(),minimumQuantity:z.coerce.number().nonnegative().default(0),unitPrice:z.coerce.number().nonnegative(),leadTimeDays:z.coerce.number().int().nonnegative().optional().nullable()})).min(1)}).parse(req.body);const org=getActiveOrganizationId();await assertPhaseEnabled(org,3);const created=await withTransaction(async(client)=>{const supplier=await client.query(`SELECT id FROM suppliers WHERE id=$1 AND organization_id=$2 AND status='active'`,[body.supplierId,org]);if(!supplier.rows[0])throw new Error("INVALID_SUPPLIER");const header=await client.query(`INSERT INTO supplier_price_lists (organization_id,supplier_id,code,name,currency_code,valid_from,valid_to) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[org,body.supplierId,body.code,body.name,body.currencyCode.toUpperCase(),body.validFrom,body.validTo??null]);for(const line of body.lines)await client.query(`INSERT INTO supplier_price_list_lines (organization_id,price_list_id,item_id,description,unit_of_measure_id,minimum_quantity,unit_price,lead_time_days) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,[org,header.rows[0].id,line.itemId??null,line.description,line.unitOfMeasureId??null,line.minimumQuantity,line.unitPrice,line.leadTimeDays??null]);return header.rows[0];});return sendOk(res,created,201);}catch(error){return handleError(res,error);}});
+
+  app.post("/api/v2/procurement/supplier-price-lists/:id/approve",...approve,async(req,res)=>{try{const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0);await assertPhaseEnabled(org,3);const result=await pool.query(`UPDATE supplier_price_lists SET status='ACTIVE',approved_by=$1,approved_at=now(),updated_at=now() WHERE id=$2 AND organization_id=$3 AND status='DRAFT' AND valid_from<=now() AND (valid_to IS NULL OR valid_to>=now()) RETURNING *`,[userId||null,id,org]);if(!result.rows[0])return sendError(res,409,"PRICE_LIST_APPROVAL_BLOCKED","Price list must be a current draft.");return sendOk(res,result.rows[0]);}catch(error){return handleError(res,error);}});
+
+  app.get("/api/v2/procurement/pricing/resolve", ...read, async (req, res) => {
+    try {
+      const input = z.object({ supplierId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive(), quantity: z.coerce.number().positive(), contractId: z.coerce.number().int().positive().optional(), sourcingAwardId: z.coerce.number().int().positive().optional() }).parse(req.query);
+      const org = getActiveOrganizationId();
+      const contract = await pool.query(`SELECT l.id AS "lineId",l.contract_id AS "contractId",c.contract_number AS "reference",l.unit_price::text AS "unitPrice",l.currency_code AS "currencyCode",'CONTRACT'::text AS source FROM supplier_contract_lines l JOIN supplier_contracts c ON c.id=l.contract_id AND c.organization_id=$1 WHERE l.organization_id=$1 AND c.supplier_id=$2 AND l.item_id=$3 AND l.active=true AND c.approval_status='APPROVED' AND c.status='active' AND ($4::int IS NULL OR c.id=$4) AND l.minimum_quantity<=$5 AND (l.maximum_quantity IS NULL OR l.maximum_quantity>=$5) AND l.valid_from<=now() AND (l.valid_to IS NULL OR l.valid_to>=now()) AND c.start_date<=now() AND (c.end_date IS NULL OR c.end_date>=now()) ORDER BY l.minimum_quantity DESC,l.id DESC LIMIT 1`, [org,input.supplierId,input.itemId,input.contractId??null,input.quantity]);
+      if (contract.rows[0]) return sendOk(res, { resolved: true, ...contract.rows[0], manualOverrideRequiresReason: false });
+      const priceList = await pool.query(`SELECT l.id AS "lineId",l.price_list_id AS "priceListId",p.code AS "reference",l.unit_price::text AS "unitPrice",p.currency_code AS "currencyCode",l.lead_time_days AS "leadTimeDays",'PRICE_LIST'::text AS source FROM supplier_price_list_lines l JOIN supplier_price_lists p ON p.id=l.price_list_id AND p.organization_id=$1 WHERE l.organization_id=$1 AND p.supplier_id=$2 AND l.item_id=$3 AND l.active=true AND p.status='ACTIVE' AND l.minimum_quantity<=$4 AND p.valid_from<=now() AND (p.valid_to IS NULL OR p.valid_to>=now()) ORDER BY l.minimum_quantity DESC,p.valid_from DESC,l.id DESC LIMIT 1`, [org,input.supplierId,input.itemId,input.quantity]);
+      if (priceList.rows[0]) return sendOk(res, { resolved: true, ...priceList.rows[0], manualOverrideRequiresReason: false });
+      if (input.sourcingAwardId) {
+        const award = await pool.query(`SELECT al.id AS "lineId",al.award_id AS "sourcingAwardId",('Award #'||al.award_id)::text AS reference,al.awarded_unit_price::text AS "unitPrice",al.currency_code AS "currencyCode",'SOURCING_AWARD'::text AS source FROM sourcing_award_lines al JOIN sourcing_awards a ON a.id=al.award_id AND a.organization_id=$1 JOIN sourcing_event_lines el ON el.id=al.event_line_id AND el.organization_id=$1 WHERE al.organization_id=$1 AND al.supplier_id=$2 AND el.item_id=$3 AND al.award_id=$4 AND a.status IN ('APPROVED','CONVERTED') ORDER BY al.id DESC LIMIT 1`, [org,input.supplierId,input.itemId,input.sourcingAwardId]);
+        if (award.rows[0]) return sendOk(res, { resolved: true, ...award.rows[0], manualOverrideRequiresReason: false });
+      }
+      return sendOk(res, { resolved: false, source: "MANUAL", unitPrice: null, currencyCode: null, reference: null, manualOverrideRequiresReason: true });
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/finance/budgets",...read,async(req,res)=>{try{
+    const {page,pageSize,offset}=pagination(req),org=getActiveOrganizationId(),year=positiveInt(req.query.fiscalYear,new Date().getFullYear());
+    const [rows,count]=await Promise.all([
+      pool.query(`SELECT b.id,b.fiscal_year AS "fiscalYear",b.currency_code AS "currencyCode",b.department_id AS "departmentId",d.name AS "departmentName",b.cost_centre_id AS "costCentreId",cc.name AS "costCentreName",b.project_id AS "projectId",b.gl_account_code AS "glAccountCode",b.approved_amount::text AS "approvedAmount",b.status,COALESCE(sum(CASE WHEN c.status='ACTIVE' THEN c.amount ELSE 0 END),0)::text AS committed,(b.approved_amount-COALESCE(sum(CASE WHEN c.status='ACTIVE' THEN c.amount ELSE 0 END),0))::text AS available FROM finance_budgets b LEFT JOIN departments d ON d.id=b.department_id AND d.organization_id=$1 LEFT JOIN mdm_cost_centres cc ON cc.id=b.cost_centre_id AND cc.organization_id=$1 LEFT JOIN budget_commitments c ON c.budget_id=b.id AND c.organization_id=$1 WHERE b.organization_id=$1 AND b.fiscal_year=$2 GROUP BY b.id,d.name,cc.name ORDER BY b.updated_at DESC,b.id DESC LIMIT $3 OFFSET $4`,[org,year,pageSize,offset]),
+      pool.query(`SELECT count(*)::int total FROM finance_budgets WHERE organization_id=$1 AND fiscal_year=$2`,[org,year]),
+    ]);
+    const total=Number(count.rows[0]?.total??0);return sendOk(res,{items:rows.rows,total,page,pageSize,hasNext:page*pageSize<total});
+  }catch(error){return handleError(res,error);}});
+
+  app.post("/api/v2/finance/budgets",...admin,async(req,res)=>{try{
+    const body=z.object({fiscalYear:z.coerce.number().int().min(2000).max(2200),currencyCode:z.string().trim().length(3),departmentId:z.coerce.number().int().positive().optional().nullable(),costCentreId:z.coerce.number().int().positive().optional().nullable(),projectId:z.coerce.number().int().positive().optional().nullable(),glAccountCode:z.string().trim().max(80).optional().nullable(),approvedAmount:z.coerce.number().nonnegative(),status:z.enum(["DRAFT","ACTIVE"]).default("DRAFT")}).parse(req.body);
+    const org=getActiveOrganizationId();
+    await assertPhaseEnabled(org,3);
+    if(body.departmentId){const owned=await pool.query(`SELECT 1 FROM departments WHERE id=$1 AND organization_id=$2`,[body.departmentId,org]);if(!owned.rows[0])throw new Error("INVALID_DEPARTMENT");}
+    if(body.costCentreId){const owned=await pool.query(`SELECT 1 FROM mdm_cost_centres WHERE id=$1 AND organization_id=$2`,[body.costCentreId,org]);if(!owned.rows[0])throw new Error("INVALID_COST_CENTRE");}
+    const result=await pool.query(`INSERT INTO finance_budgets (organization_id,fiscal_year,currency_code,department_id,cost_centre_id,project_id,gl_account_code,approved_amount,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,[org,body.fiscalYear,body.currencyCode.toUpperCase(),body.departmentId??null,body.costCentreId??null,body.projectId??null,body.glAccountCode??null,body.approvedAmount,body.status]);
+    return sendOk(res,result.rows[0],201);
+  }catch(error){return handleError(res,error);}});
+
+  app.post("/api/v2/finance/budgets/:id/activate",...admin,async(req,res)=>{try{const org=getActiveOrganizationId();await assertPhaseEnabled(org,3);const result=await pool.query(`UPDATE finance_budgets SET status='ACTIVE',updated_at=now() WHERE id=$1 AND organization_id=$2 AND status='DRAFT' RETURNING *`,[positiveInt(req.params.id,0),org]);if(!result.rows[0])return sendError(res,409,"BUDGET_ACTIVATION_BLOCKED","Only a tenant-owned draft budget can be activated.");return sendOk(res,result.rows[0]);}catch(error){return handleError(res,error);}});
+
+  app.get("/api/v2/procurement/budgets/availability",...read,async(req,res)=>{try{const org=getActiveOrganizationId(),departmentId=req.query.departmentId?positiveInt(req.query.departmentId,0):null,costCentreId=req.query.costCentreId?positiveInt(req.query.costCentreId,0):null,year=positiveInt(req.query.fiscalYear,new Date().getFullYear());const rows=await pool.query(`SELECT b.id,b.currency_code AS "currencyCode",b.approved_amount::text AS "approvedAmount",COALESCE(sum(CASE WHEN c.status='ACTIVE' THEN c.amount ELSE 0 END),0)::text AS committed,(b.approved_amount-COALESCE(sum(CASE WHEN c.status='ACTIVE' THEN c.amount ELSE 0 END),0))::text AS available FROM finance_budgets b LEFT JOIN budget_commitments c ON c.budget_id=b.id AND c.organization_id=$1 WHERE b.organization_id=$1 AND b.fiscal_year=$2 AND b.status='ACTIVE' AND ($3::int IS NULL OR b.department_id=$3) AND ($4::int IS NULL OR b.cost_centre_id=$4) GROUP BY b.id ORDER BY b.id`,[org,year,departmentId,costCentreId]);return sendOk(res,rows.rows);}catch(error){return handleError(res,error);}});
+
+  app.get("/api/v2/procurement/returns",...read,async(req,res)=>{try{const {page,pageSize,offset}=pagination(req),org=getActiveOrganizationId(),status=String(req.query.status??"all").toUpperCase();const [rows,count]=await Promise.all([pool.query(`SELECT r.id,r.return_number AS "returnNumber",r.purchase_order_id AS "purchaseOrderId",po.order_number AS "purchaseOrderNumber",r.receipt_id AS "receiptId",r.supplier_id AS "supplierId",s.name AS "supplierName",r.warehouse_id AS "warehouseId",w.name AS "warehouseName",r.status,r.reason,r.created_at AS "createdAt",COALESCE((SELECT sum(quantity) FROM purchase_return_lines l WHERE l.return_id=r.id),0)::numeric::text AS quantity FROM purchase_returns r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1 JOIN suppliers s ON s.id=r.supplier_id AND s.organization_id=$1 JOIN warehouses w ON w.id=r.warehouse_id AND w.organization_id=$1 WHERE r.organization_id=$1 AND ($2='ALL' OR r.status=$2) ORDER BY r.updated_at DESC,r.id DESC LIMIT $3 OFFSET $4`,[org,status,pageSize,offset]),pool.query(`SELECT count(*)::int total FROM purchase_returns WHERE organization_id=$1 AND ($2='ALL' OR status=$2)`,[org,status])]);const total=Number(count.rows[0]?.total??0);return sendOk(res,{items:rows.rows,total,page,pageSize,hasNext:page*pageSize<total});}catch(error){return handleError(res,error);}});
+
+  app.post("/api/v2/procurement/returns",...manage,async(req,res)=>{try{const body=z.object({receiptId:z.coerce.number().int().positive(),warehouseId:z.coerce.number().int().positive(),reason:z.string().trim().min(5),lines:z.array(z.object({receiptItemId:z.coerce.number().int().positive(),quantity:z.coerce.number().positive(),reason:z.string().trim().min(3),unitPrice:z.coerce.number().nonnegative().default(0),taxAmount:z.coerce.number().nonnegative().default(0),batchNumber:z.string().optional().nullable(),serialNumbers:z.array(z.string()).default([])})).min(1)}).parse(req.body);const org=getActiveOrganizationId(),userId=Number((req as any).user?.id??0);await assertPhaseEnabled(org,4);const created=await withTransaction(async(client)=>{const receipt=await client.query(`SELECT r.*,po.supplier_id FROM ap_receipts r JOIN purchase_orders po ON po.id=r.purchase_order_id AND po.organization_id=$1 WHERE r.id=$2 AND r.organization_id=$1 AND r.status='POSTED' FOR UPDATE`,[org,body.receiptId]);if(!receipt.rows[0])throw new Error("INVALID_RECEIPT");const warehouse=await client.query(`SELECT id FROM warehouses WHERE id=$1 AND organization_id=$2`,[body.warehouseId,org]);if(!warehouse.rows[0])throw new Error("INVALID_WAREHOUSE");const number=`RTN-${new Date().getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`;const header=await client.query(`INSERT INTO purchase_returns (organization_id,return_number,purchase_order_id,receipt_id,supplier_id,warehouse_id,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[org,number,receipt.rows[0].purchase_order_id,body.receiptId,receipt.rows[0].supplier_id,body.warehouseId,body.reason,userId||null]);for(const line of body.lines){
+        const ri=await client.query(
+          `SELECT ri.*,
+             COALESCE((SELECT sum(prl.quantity) FROM purchase_return_lines prl
+               JOIN purchase_returns pr ON pr.id=prl.return_id AND pr.organization_id=$3
+               WHERE prl.receipt_item_id=ri.id AND pr.status<>'CANCELLED'),0) AS already_returned
+           FROM ap_receipt_items ri WHERE ri.id=$1 AND ri.receipt_id=$2 FOR UPDATE`,
+          [line.receiptItemId,body.receiptId,org],
+        );
+        const remaining=Number(ri.rows[0]?.accepted_quantity??0)-Number(ri.rows[0]?.already_returned??0);
+        if(!ri.rows[0]||Number(line.quantity)>remaining)throw new Error("INVALID_RETURN_QUANTITY");
+        await client.query(`INSERT INTO purchase_return_lines (organization_id,return_id,receipt_item_id,item_id,quantity,unit_price,tax_amount,batch_number,serial_numbers,reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)`,[org,header.rows[0].id,line.receiptItemId,ri.rows[0].item_id,line.quantity,line.unitPrice,line.taxAmount,line.batchNumber??null,JSON.stringify(line.serialNumbers),line.reason]);
+      }return header.rows[0];});return sendOk(res,created,201);}catch(error){return handleError(res,error);}});
+
+  for(const action of ["submit","approve","cancel"] as const){app.post(`/api/v2/procurement/returns/:id/${action}`,...(action==="approve"?approve:manage),async(req,res)=>{try{const org=getActiveOrganizationId(),id=positiveInt(req.params.id,0),userId=Number((req as any).user?.id??0),reason=String(req.body?.reason??"").trim();await assertPhaseEnabled(org,4);if(action==="cancel"&&reason.length<5)return sendError(res,400,"CANCELLATION_REASON_REQUIRED","A meaningful cancellation reason is required.");const from=action==="submit"?["DRAFT"]:action==="approve"?["PENDING_APPROVAL"]:["DRAFT","PENDING_APPROVAL","APPROVED"];const to=action==="submit"?"PENDING_APPROVAL":action==="approve"?"APPROVED":"CANCELLED";const result=await pool.query(`UPDATE purchase_returns SET status=$1,approved_by=CASE WHEN $1='APPROVED' THEN $2 ELSE approved_by END,approved_at=CASE WHEN $1='APPROVED' THEN now() ELSE approved_at END,reason=CASE WHEN $1='CANCELLED' AND $3<>'' THEN $3 ELSE reason END,updated_at=now() WHERE id=$4 AND organization_id=$5 AND status=ANY($6::text[]) AND ($1<>'APPROVED' OR created_by IS NULL OR created_by<>$2) RETURNING *`,[to,userId||null,reason,id,org,from]);if(!result.rows[0])return sendError(res,409,"RETURN_TRANSITION_BLOCKED","The transition is invalid or the creator attempted to approve their own return.");return sendOk(res,result.rows[0]);}catch(error){return handleError(res,error);}});}
+
+  app.post("/api/v2/procurement/returns/:id/dispatch", ...manage, async (req, res) => {
+    try {
+      const key = String(req.get("Idempotency-Key") ?? "").trim();
+      if (!key) return sendError(res, 400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required.");
+      const org = getActiveOrganizationId(), id = positiveInt(req.params.id, 0), userId = Number((req as any).user?.id ?? 0);
+      await assertPhaseEnabled(org, 4);
+      const result = await withTransaction(async (client) => {
+        const header = await client.query(`SELECT * FROM purchase_returns WHERE id=$1 AND organization_id=$2 FOR UPDATE`, [id, org]);
+        if (!header.rows[0]) throw new Error("NOT_FOUND");
+        if (header.rows[0].status === "DISPATCHED") return header.rows[0];
+        if (header.rows[0].status !== "APPROVED") throw new Error("STATE_RETURN_NOT_APPROVED");
+        const lines = await client.query(`SELECT * FROM purchase_return_lines WHERE return_id=$1 AND organization_id=$2 ORDER BY id FOR UPDATE`, [id, org]);
+        for (const line of lines.rows) {
+          const qty = wholeStockQuantity(line.quantity);
+          const stock = await client.query(`SELECT id,quantity FROM warehouse_inventory WHERE organization_id=$1 AND warehouse_id=$2 AND item_id=$3 FOR UPDATE`, [org, header.rows[0].warehouse_id, line.item_id]);
+          if (!stock.rows[0] || Number(stock.rows[0].quantity) < qty) throw new Error("INSUFFICIENT_STOCK_FOR_RETURN");
+          await assertUnreservedStock(client, org, line.item_id, header.rows[0].warehouse_id, Number(stock.rows[0].quantity), qty, "INSUFFICIENT_ELIGIBLE_STOCK_FOR_RETURN");
+          await client.query(`UPDATE warehouse_inventory SET quantity=quantity-$1,updated_at=now() WHERE id=$2`, [qty, stock.rows[0].id]);
+          await client.query(`UPDATE inventory_items SET quantity=quantity-$1,updated_at=now() WHERE id=$2 AND organization_id=$3`, [qty, line.item_id, org]);
+          await client.query(`INSERT INTO stock_movements (organization_id,item_id,warehouse_id,type,quantity,reference_id,reference_type,notes,user_id,previous_quantity,new_quantity,timestamp) VALUES ($1,$2,$3,'PURCHASE_RETURN',$4,$5,'purchase_return',$6,$7,$8,$9,now())`, [org, line.item_id, header.rows[0].warehouse_id, -qty, id, header.rows[0].reason, userId || null, Number(stock.rows[0].quantity), Number(stock.rows[0].quantity) - qty]);
+        }
+        const totals = await client.query(`SELECT COALESCE(sum(quantity*unit_price),0) subtotal,COALESCE(sum(tax_amount),0) tax FROM purchase_return_lines WHERE return_id=$1`, [id]);
+        const subtotal = Number(totals.rows[0].subtotal), tax = Number(totals.rows[0].tax);
+        await client.query(`INSERT INTO supplier_debit_notes (organization_id,debit_note_number,return_id,supplier_id,currency_code,subtotal,tax_amount,total_amount) SELECT $1,$2,$3,$4,COALESCE(po.currency_code,'ZAR'),$5,$6,$7 FROM purchase_orders po WHERE po.id=$8 AND po.organization_id=$1 ON CONFLICT (organization_id,return_id) DO NOTHING`, [org, `DN-${new Date().getUTCFullYear()}-${id}`, id, header.rows[0].supplier_id, subtotal, tax, subtotal + tax, header.rows[0].purchase_order_id]);
+        const updated = await client.query(`UPDATE purchase_returns SET status='DISPATCHED',dispatched_at=now(),updated_at=now() WHERE id=$1 AND organization_id=$2 RETURNING *`, [id, org]);
+        await recordActivity(client, org, "purchase_return", id, "PURCHASE_RETURN_DISPATCHED", { actorUserId: userId, idempotencyKey: key });
+        return updated.rows[0];
+      });
+      return sendOk(res, result);
+    } catch (error) { return handleError(res, error); }
+  });
+
+  app.get("/api/v2/procurement/debit-notes", ...read, async (req, res) => {
+    try {
+      const { page, pageSize, offset } = pagination(req), org = getActiveOrganizationId();
+      const status = String(req.query.status ?? "all").toUpperCase(), q = String(req.query.q ?? "").trim();
+      const where = `d.organization_id=$1 AND ($2='ALL' OR d.status=$2) AND ($3='' OR d.debit_note_number ILIKE '%'||$3||'%' OR r.return_number ILIKE '%'||$3||'%' OR s.name ILIKE '%'||$3||'%')`;
+      const [rows, count] = await Promise.all([
+        pool.query(`SELECT d.id,d.debit_note_number AS "debitNoteNumber",d.return_id AS "returnId",r.return_number AS "returnNumber",d.supplier_id AS "supplierId",s.name AS "supplierName",d.currency_code AS "currencyCode",d.subtotal::text,d.tax_amount::text AS "taxAmount",d.total_amount::text AS "totalAmount",d.status,d.created_at AS "createdAt" FROM supplier_debit_notes d JOIN purchase_returns r ON r.id=d.return_id AND r.organization_id=$1 JOIN suppliers s ON s.id=d.supplier_id AND s.organization_id=$1 WHERE ${where} ORDER BY d.created_at DESC,d.id DESC LIMIT $4 OFFSET $5`, [org,status,q,pageSize,offset]),
+        pool.query(`SELECT count(*)::int total FROM supplier_debit_notes d JOIN purchase_returns r ON r.id=d.return_id AND r.organization_id=$1 JOIN suppliers s ON s.id=d.supplier_id AND s.organization_id=$1 WHERE ${where}`, [org,status,q]),
+      ]);
+      const total = Number(count.rows[0]?.total ?? 0);
+      return sendOk(res, { items: rows.rows, total, page, pageSize, hasNext: page * pageSize < total });
+    } catch (error) { return handleError(res, error); }
+  });
+}
