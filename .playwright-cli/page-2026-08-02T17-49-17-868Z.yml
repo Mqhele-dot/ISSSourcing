@@ -1,0 +1,58 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e6]:
+      - heading "Inventory Manager" [level=1] [ref=e7]
+      - paragraph [ref=e8]: Sign in to access your inventory dashboard
+      - generic [ref=e9]:
+        - tablist [ref=e10]:
+          - tab "Login" [selected] [ref=e11] [cursor=pointer]
+          - tab "Register" [ref=e12] [cursor=pointer]
+        - tabpanel "Login" [ref=e13]:
+          - generic [ref=e14]:
+            - generic [ref=e15]:
+              - heading "Welcome back" [level=3] [ref=e16]
+              - paragraph [ref=e17]: Enter your credentials to sign in to your account
+            - generic [ref=e18]:
+              - generic [ref=e19]:
+                - paragraph [ref=e20]: Demo users
+                - paragraph [ref=e21]: Click to autofill credentials for reviewer walkthroughs.
+                - generic [ref=e22]:
+                  - button "Admin · Full access" [active] [ref=e23] [cursor=pointer]
+                  - button "Planner · Planning + execution" [ref=e24] [cursor=pointer]
+                  - button "Viewer · Read-only" [ref=e25] [cursor=pointer]
+              - generic [ref=e26]:
+                - generic [ref=e27]:
+                  - text: Username
+                  - textbox "Username" [ref=e28]:
+                    - /placeholder: Enter your username
+                    - text: admin
+                - generic [ref=e29]:
+                  - text: Password
+                  - textbox "Password" [ref=e30]:
+                    - /placeholder: Enter your password
+                    - text: Admin123!
+                - generic [ref=e31]:
+                  - generic [ref=e32]:
+                    - checkbox "Remember me" [checked] [ref=e33] [cursor=pointer]
+                    - checkbox [checked]
+                    - generic [ref=e34]: Remember me
+                  - button "Forgot password?" [ref=e35] [cursor=pointer]
+                - button "Sign In" [ref=e36] [cursor=pointer]
+    - generic [ref=e38]:
+      - heading "Manage Your Inventory with Ease" [level=2] [ref=e39]
+      - paragraph [ref=e40]: Track inventory across multiple warehouses, generate purchase orders, and get real-time insights into your stock levels.
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - heading "Real-time Tracking" [level=3] [ref=e43]
+          - paragraph [ref=e44]: Monitor inventory changes instantly across your organization
+        - generic [ref=e45]:
+          - heading "Smart Reordering" [level=3] [ref=e46]
+          - paragraph [ref=e47]: Automated suggestions when stock levels run low
+        - generic [ref=e48]:
+          - heading "Multi-warehouse" [level=3] [ref=e49]
+          - paragraph [ref=e50]: Manage inventory across different physical locations
+        - generic [ref=e51]:
+          - heading "Detailed Reports" [level=3] [ref=e52]
+          - paragraph [ref=e53]: Generate comprehensive reports in multiple formats
+  - region "Notifications (F8)":
+    - list

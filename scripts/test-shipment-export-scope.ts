@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import {randomUUID} from "node:crypto";
+import pg from "pg";
+import "dotenv/config";
+import {assertDisposableDatabaseUrl} from "../server/config/database-safety";
+import {shipmentOrderLinkSql,shipmentOrderCandidateJoinSql} from "../server/modules/operations/shipment-order-link";
+if(!process.argv.includes('--local-disposable'))throw new Error('Use --local-disposable; business databases are never mutation targets.');
+const configured=process.env.DATABASE_URL||(process.env.PGHOST&&process.env.PGUSER&&process.env.PGPASSWORD?`postgresql://${encodeURIComponent(process.env.PGUSER)}:${encodeURIComponent(process.env.PGPASSWORD)}@${process.env.PGHOST}:${process.env.PGPORT||5432}/postgres`:null);assert.ok(configured);
+const url=new URL(configured);assert.ok(['localhost','127.0.0.1','[::1]'].includes(url.hostname));url.pathname='/postgres';const name=`iss_export_test_${randomUUID().replaceAll('-','')}`;
+const owner=new pg.Client({connectionString:url.toString()});let db:pg.Pool|undefined,created=false;
+try{
+  await owner.connect();await owner.query(`CREATE DATABASE "${name}"`);created=true;console.log(`Created exact test-owned database ${name}.`);url.pathname=`/${name}`;assertDisposableDatabaseUrl(url.toString());db=new pg.Pool({connectionString:url.toString()});assert.equal((await db.query('SELECT current_database() name')).rows[0].name,name);
+  await db.query(`CREATE TABLE purchase_orders(id int PRIMARY KEY,organization_id int,order_number text);
+    INSERT INTO purchase_orders VALUES(1,1,'SAME'),(2,2,'SAME'),(3,1,'DUP'),(4,1,'DUP'),(5,1,'UNIQUE');
+    CREATE TABLE shipments(id int PRIMARY KEY,organization_id int,purchase_order_id int,po_number text);
+    INSERT INTO shipments VALUES(1,1,1,'SAME'),(2,1,NULL,'SAME'),(3,2,2,'SAME'),(4,NULL,NULL,'SAME'),(5,1,2,'SAME'),(6,1,NULL,'DUP'),(7,1,3,'DIFFERENT_RAW_NUMBER'),(8,1,NULL,'UNIQUE')`);
+  const unsafe=await db.query("SELECT sh.id FROM shipments sh JOIN purchase_orders po ON po.order_number=sh.po_number WHERE po.organization_id=1");
+  assert.ok(unsafe.rows.some(row=>row.id===3),'Fixture reproduces the old cross-tenant number-join leak');
+  const safe=await db.query(`SELECT sh.id,po.id AS po_id FROM shipments sh JOIN purchase_orders po ON ${shipmentOrderLinkSql('sh','po')} WHERE po.organization_id=$1 ORDER BY sh.id`,[1]);
+  assert.deepEqual(safe.rows,[{id:1,po_id:1},{id:7,po_id:3},{id:8,po_id:5}]);
+  const other=await db.query(`SELECT sh.id FROM shipments sh JOIN purchase_orders po ON ${shipmentOrderLinkSql('sh','po')} WHERE po.organization_id=$1`,[2]);assert.deepEqual(other.rows,[{id:3}]);
+  const comparison=await db.query(`SELECT po.id,sh.id AS shipment_id FROM purchase_orders po LEFT JOIN shipments sh ON ${shipmentOrderLinkSql('sh','po')} WHERE po.organization_id=1 ORDER BY po.id`);
+  assert.deepEqual(comparison.rows,[{id:1,shipment_id:1},{id:3,shipment_id:7},{id:4,shipment_id:null},{id:5,shipment_id:8}]);
+  const candidate=shipmentOrderCandidateJoinSql('sh','po');
+  assert.deepEqual((await db.query(`SELECT sh.id,po.id AS po_id FROM ${candidate.relation} JOIN purchase_orders po ON ${candidate.predicate} WHERE po.organization_id=$1 ORDER BY sh.id`,[1])).rows,safe.rows);
+  assert.deepEqual((await db.query(`SELECT sh.id FROM ${candidate.relation} JOIN purchase_orders po ON ${candidate.predicate} WHERE po.organization_id=$1`,[2])).rows,other.rows);
+  assert.deepEqual((await db.query(`SELECT po.id,sh.id AS shipment_id FROM purchase_orders po LEFT JOIN ${candidate.relation} ON ${candidate.predicate} WHERE po.organization_id=$1 ORDER BY po.id`,[1])).rows,comparison.rows);
+  assert.throws(()=>shipmentOrderLinkSql('sh;DROP TABLE shipments','po'),/Invalid/);
+  assert.throws(()=>shipmentOrderCandidateJoinSql('sh','po;DROP TABLE shipments'),/Invalid/);assert.throws(()=>shipmentOrderCandidateJoinSql('sh','po',0),/Invalid/);
+  assert.equal((await db.query('SELECT count(*)::int n FROM shipments WHERE organization_id IS NULL')).rows[0].n,1,'Unassigned ownership stays unresolved; no records are repaired');
+  console.log(JSON.stringify({status:'passed',testDatabase:name,checks:['old leak reproduced with synthetic rows','canonical tenant/id binding','globally ambiguous legacy numbers rejected','unique legacy reference supported','foreign and unassigned shipments excluded','canonical ID wins over differing text','comparison does not duplicate ambiguous records','no business correction']}));
+}finally{await db?.end();if(created){await owner.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()',[name]);await owner.query(`DROP DATABASE "${name}"`);console.log(`Removed exact test-owned database ${name}.`);}await owner.end();}

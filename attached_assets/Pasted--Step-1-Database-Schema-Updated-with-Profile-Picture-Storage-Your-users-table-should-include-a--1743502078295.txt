@@ -1,0 +1,167 @@
+🔹 Step 1: Database Schema (Updated with Profile Picture Storage)
+Your users table should include a profile picture URL field:
+
+sql
+Copy
+Edit
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    profile_picture TEXT,  -- URL of the profile picture (Stored in Cloud)
+    role VARCHAR(20) DEFAULT 'user',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+🔹 Step 2: Upload Profile Pictures (Backend API)
+Storage Options:
+✅ Cloudinary (Recommended)
+✅ AWS S3
+✅ Firebase Storage
+
+Install Required Libraries (Node.js Example)
+sh
+Copy
+Edit
+npm install multer cloudinary dotenv express
+Backend API for Uploading Profile Pictures
+javascript
+Copy
+Edit
+const express = require("express");
+const multer = require("multer");
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+require("dotenv").config();
+
+const app = express();
+app.use(express.json());
+
+// Configure Cloudinary  
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Multer Storage for Cloudinary  
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "profile_pictures",
+    allowed_formats: ["jpg", "png", "jpeg"],
+  },
+});
+const upload = multer({ storage });
+
+// Profile Picture Upload API  
+app.post("/upload-profile", upload.single("profile_picture"), async (req, res) => {
+  try {
+    const imageUrl = req.file.path;
+    res.json({ success: true, imageUrl });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Upload failed" });
+  }
+});
+
+// Start Server  
+app.listen(3000, () => console.log("Server running on port 3000"));
+🔹 Step 3: Update Profile Picture URL in the Database
+Modify User Profile API to Store Image URL
+javascript
+Copy
+Edit
+const updateProfile = async (req, res) => {
+  const { userId, username, email, profilePicture } = req.body;
+
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { username, email, profile_picture: profilePicture },
+    { new: true }
+  );
+
+  res.json(updatedUser);
+};
+🔹 Step 4: Frontend (React) Profile Picture Upload
+Install Axios for API Requests
+sh
+Copy
+Edit
+npm install axios
+React Component for Profile Picture Upload
+jsx
+Copy
+Edit
+import { useState } from "react";
+import axios from "axios";
+
+export default function ProfilePictureUpload() {
+    const [image, setImage] = useState(null);
+    const [uploading, setUploading] = useState(false);
+
+    const handleUpload = async (event) => {
+        setUploading(true);
+        const file = event.target.files[0];
+        const formData = new FormData();
+        formData.append("profile_picture", file);
+
+        try {
+            const response = await axios.post("/upload-profile", formData);
+            console.log("Uploaded Image URL:", response.data.imageUrl);
+        } catch (error) {
+            console.error("Upload Failed", error);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    return (
+        <div>
+            <input type="file" accept="image/*" onChange={handleUpload} />
+            {uploading && <p>Uploading...</p>}
+        </div>
+    );
+}
+🔹 Step 5: Profile Management Features
+Users should be able to:
+✅ Edit Profile Info (Name, Email, Address)
+✅ Change Profile Picture
+✅ Set Preferences (Dark Mode, Notifications, etc.)
+✅ Reset Password
+✅ View Account Activity
+
+Profile Page (React)
+jsx
+Copy
+Edit
+import { useState, useEffect } from "react";
+import axios from "axios";
+
+export default function Profile() {
+    const [user, setUser] = useState(null);
+
+    useEffect(() => {
+        axios.get("/api/profile").then(response => setUser(response.data));
+    }, []);
+
+    if (!user) return <p>Loading...</p>;
+
+    return (
+        <div className="p-6 max-w-lg mx-auto">
+            <h2 className="text-2xl font-bold">{user.username}</h2>
+            <img src={user.profilePicture || "/default-avatar.png"} alt="Profile" className="w-24 h-24 rounded-full" />
+            <p>Email: {user.email}</p>
+        </div>
+    );
+}
+🔹 Step 6: User Settings & Security Features
+✔ Privacy Settings – Make profile public/private
+✔ Notification Preferences – Email/SMS alerts
+✔ Multi-Factor Authentication (MFA) – Extra security for logins
+✔ Dark Mode & UI Customization
+
+🎯 Final Steps
+✅ Setup Backend API for Profile Management
+✅ Enable Profile Picture Upload to Cloudinary
+✅ Build React Frontend for User Profiles
+✅ Add Security Features (MFA, Privacy Settings, etc.)

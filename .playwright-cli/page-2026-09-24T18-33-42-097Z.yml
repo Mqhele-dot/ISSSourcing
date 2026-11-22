@@ -1,0 +1,238 @@
+- main [ref=e3]:
+  - paragraph [ref=e4]: Disposable integration fixture — not your live database
+  - button "Request New Item" [ref=e5] [cursor=pointer]
+  - generic [ref=e6]:
+    - generic [ref=e10]:
+      - heading "Stock positions" [level=1] [ref=e11]
+      - paragraph [ref=e12]: Verify existing warehouse balances against normalized sites, zones and bins.
+    - note [ref=e13]:
+      - paragraph [ref=e14]: Location verification does not split balances or change quantities. Item-wide holds and PO receipt inspection rules are available under Safety holds after applying their migrations.
+      - paragraph [ref=e15]: Per-bin/lot quality eligibility and projected supply are not enabled. Item-wide safety holds override available stock to zero. Existing reservations are shown at warehouse/item level, not as bin reservations. Any stock change invalidates the reconciliation snapshot.
+      - link "Manage canonical sites in Master Data" [ref=e16] [cursor=pointer]:
+        - /url: /admin/master-data/sites
+    - group [ref=e17]:
+      - generic "Location setup — warehouse permissions required" [ref=e18] [cursor=pointer]
+      - option "Select setup warehouse" [selected]
+      - option "Warehouse 1 (#1)"
+      - option "(#90001)"
+      - option "Select master data site" [selected]
+      - option "JHB — Johannesburg (#1)"
+    - generic [ref=e19]:
+      - heading "Warehouse balance reconciliation" [level=3] [ref=e21]
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - textbox "Search stock positions" [ref=e24]:
+            - /placeholder: Search SKU, item or warehouse
+            - text: PROJECTION-TEST
+          - generic [ref=e25]: Location state
+          - combobox "Location state" [ref=e26]:
+            - option "All" [selected]
+            - option "Unresolved"
+            - option "Reconciled"
+          - generic [ref=e27]: Rows
+          - combobox "Rows" [ref=e28]:
+            - option "25" [selected]
+            - option "50"
+            - option "100"
+        - paragraph [ref=e42]: 0 reconciled · 1 unresolved in the filtered results
+        - region "Stock positions table — horizontally scrollable" [ref=e30]:
+          - table [ref=e31]:
+            - rowgroup [ref=e32]:
+              - row [ref=e33]:
+                - columnheader "Item" [ref=e34]
+                - columnheader "Warehouse" [ref=e35]
+                - columnheader "On hand" [ref=e36]
+                - columnheader "Location evidence" [ref=e37]
+                - columnheader "Quality" [ref=e38]
+                - columnheader "Actions" [ref=e39]
+            - rowgroup [ref=e43]:
+              - row [ref=e44]:
+                - cell "PROJECTION-TEST Projection item" [ref=e45]: PROJECTION-TESTProjection item
+                - cell "Warehouse 1" [ref=e46]
+                - cell "10" [ref=e47]
+                - 'cell "Unresolved — legacy label: none" [ref=e48]'
+                - cell "Item-wide safety hold" [ref=e49]
+                - cell [ref=e50]:
+                  - generic [ref=e51]:
+                    - button "Verify PROJECTION-TEST" [ref=e52] [cursor=pointer]
+                    - button "Safety holds for PROJECTION-TEST" [ref=e53] [cursor=pointer]
+                    - button "History for PROJECTION-TEST" [ref=e54] [cursor=pointer]
+        - generic [ref=e40]:
+          - generic [ref=e41]: 1–1 of 1
+          - button "First" [disabled]
+          - button "Previous" [disabled]
+          - button "Next" [disabled]
+          - button "Last" [disabled]
+    - region "Safety holds for PROJECTION-TEST" [ref=e55]:
+      - heading "Item-wide safety holds — PROJECTION-TEST" [level=2] [ref=e56]
+      - generic [ref=e57]:
+        - button "Receipt inspection rule" [expanded] [ref=e58] [cursor=pointer]
+        - generic [ref=e181]:
+          - paragraph [ref=e182]: Requires inventory approval permission and all-warehouse access. Inspection is required if either the item or supplier rule requires it.
+          - paragraph [ref=e183]:
+            - text: "Conservative mode: each new PO receipt holds this item in"
+            - strong [ref=e184]: all warehouses
+            - text: ", including existing stock, until a different approver releases its hold with inspection evidence. Disabling a rule does not release existing holds. This is not receipt-only or lot-level inspection."
+          - paragraph [ref=e185]: "Current rule: Inspection required · revision 1"
+          - generic [ref=e186]:
+            - text: Change reason (required)
+            - textbox "Change reason (required)" [ref=e187]
+          - button "Disable future inspection requirement" [disabled]
+          - status [ref=e294]: Rule saved. Existing holds are unchanged.
+      - generic [ref=e59]:
+        - button "Availability and inbound evidence" [expanded] [ref=e60] [cursor=pointer]
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - text: Project through (inclusive)
+            - textbox "Project through (inclusive)" [ref=e75]: 2026-10-31
+          - alert [ref=e188]: "Unreconciled item/warehouse totals: 1 units. Projection is unavailable until these are reconciled."
+          - status [ref=e189]: Item-wide hold is active. Available quantity remains zero; reservations are not subtracted again.
+          - generic [ref=e190]:
+            - generic [ref=e191]:
+              - term [ref=e192]: Warehouse on hand
+              - definition [ref=e193]: "10"
+            - generic [ref=e194]:
+              - term [ref=e195]: Active reservations
+              - definition [ref=e196]: "2"
+            - generic [ref=e197]:
+              - term [ref=e198]: Available now
+              - definition [ref=e199]: "0"
+            - generic [ref=e200]:
+              - term [ref=e201]: Dated inbound by horizon
+              - definition [ref=e202]: "5012"
+            - generic [ref=e203]:
+              - term [ref=e204]: Undated inbound (excluded)
+              - definition [ref=e205]: "4"
+            - generic [ref=e206]:
+              - term [ref=e207]: Inspection inbound (excluded)
+              - definition [ref=e208]: "5012"
+            - generic [ref=e209]:
+              - term [ref=e210]: Known projected available
+              - definition [ref=e211]: Reconciliation required
+          - paragraph [ref=e212]: All active reservations are deducted once now; no delivery date is inferred for demand.
+          - paragraph [ref=e213]: Planning estimate, not allocation authority. Excludes undated inbound and inspection-dependent supply; held items remain unavailable. PO/ASN/shipment representations are counted only through PO lines. Receipt, put-away and quality checks still govern actual availability.
+          - heading "All open inbound PO lines" [level=3] [ref=e214]
+          - article [ref=e215]:
+            - link "PO-SUPPLY" [ref=e216] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e217]: "Line #10 · 7 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e218]:
+            - link "PO-INSPECTION-SUPPLY" [ref=e219] [cursor=pointer]:
+              - /url: /procurement/orders/PO-INSPECTION-SUPPLY
+            - paragraph [ref=e220]: "Line #11 · 5 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e221]:
+            - link "PO-SUPPLY" [ref=e222] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e223]: "Line #10001 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e224]:
+            - link "PO-SUPPLY" [ref=e225] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e226]: "Line #10002 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e227]:
+            - link "PO-SUPPLY" [ref=e228] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e229]: "Line #10003 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e230]:
+            - link "PO-SUPPLY" [ref=e231] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e232]: "Line #10004 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e233]:
+            - link "PO-SUPPLY" [ref=e234] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e235]: "Line #10005 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e236]:
+            - link "PO-SUPPLY" [ref=e237] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e238]: "Line #10006 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e239]:
+            - link "PO-SUPPLY" [ref=e240] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e241]: "Line #10007 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e242]:
+            - link "PO-SUPPLY" [ref=e243] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e244]: "Line #10008 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e245]:
+            - link "PO-SUPPLY" [ref=e246] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e247]: "Line #10009 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e248]:
+            - link "PO-SUPPLY" [ref=e249] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e250]: "Line #10010 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e251]:
+            - link "PO-SUPPLY" [ref=e252] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e253]: "Line #10011 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e254]:
+            - link "PO-SUPPLY" [ref=e255] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e256]: "Line #10012 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e257]:
+            - link "PO-SUPPLY" [ref=e258] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e259]: "Line #10013 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e260]:
+            - link "PO-SUPPLY" [ref=e261] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e262]: "Line #10014 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e263]:
+            - link "PO-SUPPLY" [ref=e264] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e265]: "Line #10015 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e266]:
+            - link "PO-SUPPLY" [ref=e267] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e268]: "Line #10016 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e269]:
+            - link "PO-SUPPLY" [ref=e270] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e271]: "Line #10017 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e272]:
+            - link "PO-SUPPLY" [ref=e273] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e274]: "Line #10018 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e275]:
+            - link "PO-SUPPLY" [ref=e276] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e277]: "Line #10019 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e278]:
+            - link "PO-SUPPLY" [ref=e279] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e280]: "Line #10020 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e281]:
+            - link "PO-SUPPLY" [ref=e282] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e283]: "Line #10021 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e284]:
+            - link "PO-SUPPLY" [ref=e285] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e286]: "Line #10022 · 1 remaining · 01/10/2026 · Inspection required"
+          - article [ref=e287]:
+            - link "PO-SUPPLY" [ref=e288] [cursor=pointer]:
+              - /url: /procurement/orders/PO-SUPPLY
+            - paragraph [ref=e289]: "Line #10023 · 1 remaining · 01/10/2026 · Inspection required"
+          - generic [ref=e290]:
+            - button "Previous" [disabled]
+            - generic [ref=e291]: Page 1 · 5004 lines
+            - button "Next" [ref=e292] [cursor=pointer]
+      - paragraph [ref=e61]: A hold blocks stock decreases for this item in every warehouse. Receipts remain held. It does not classify individual bins or lots. Approval permission and all-warehouse access are required; a different approver must release each hold.
+      - generic [ref=e62]: Hold type
+      - combobox "Hold type" [ref=e63]:
+        - option "INSPECTION"
+        - option "QUARANTINE" [selected]
+        - option "DAMAGED"
+        - option "BLOCKED"
+      - generic [ref=e64]: Reason / inspection evidence (required for apply or release)
+      - textbox "Reason / inspection evidence (required for apply or release)" [ref=e65]
+      - button "Hold item in all warehouses" [disabled]
+      - article [ref=e66]:
+        - paragraph [ref=e67]: INSPECTION — Active
+        - paragraph [ref=e68]: Projection hold test
+        - paragraph [ref=e69]: "Created by #1 · 24/09/2026, 20:26:47"
+        - 'button "Release hold #8" [disabled]'
+      - generic [ref=e70]:
+        - button "Previous" [disabled]
+        - generic [ref=e71]: Page 1 · 1 records
+        - button "Next" [disabled]
+        - button "Close safety holds" [ref=e72] [cursor=pointer]

@@ -1,0 +1,224 @@
+
+> rest-express@1.0.0 dev
+> tsx server/index.ts
+
+{"timestamp":"2026-07-29T10:32:08.837Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"development","ssl":false,"disposableTestDatabase":true}}
+No email credentials found; using local JSON email transport.
+{"timestamp":"2026-07-29T10:32:16.262Z","level":"info","message":"Database connection successful","meta":{"build":{"version":"1.0.0","commitSha":null,"buildId":null,"builtAt":null,"runtimeProfile":"development","deploymentMode":"development"}}}
+Session table (connect-pg-simple) ready
+Initializing database schema...
+Session table (connect-pg-simple) ready
+Tenant security and audit chain columns ready
+categories.organization_id column and index ready
+departments.organization_id column and index ready
+carriers.organization_id column and index ready
+warehouses.organization_id column and index ready
+inventory_items.organization_id column and index ready
+suppliers.organization_id column and index ready
+app_settings.organization_id column and index ready
+reorder_requests.organization_id column and index ready
+purchase_requisitions.organization_id column and index ready
+purchase_orders.organization_id column and index ready
+inventory_serials.organization_id column and index ready
+custom_roles.organization_id column and index ready
+Purchase requisitions tables ready
+Professional supply chain tables and columns ready
+Strategic sourcing tables ready
+Database already initialized with tables existing
+{"timestamp":"2026-07-29T10:32:16.945Z","level":"info","message":"Database seed check completed","meta":{"seeded":false}}
+{"timestamp":"2026-07-29T10:32:17.038Z","level":"info","message":"Development bootstrap completed","meta":{"opSeed":{"purchaseOrders":1044,"shipments":157,"exceptions":111,"integrationRuns":15,"activity":1625}}}
+WebSocket server initialized for inventory sync
+Real-time sync WebSocket service initialized
+WebSocket servers initialized for real-time inventory synchronization
+{"timestamp":"2026-07-29T10:32:17.065Z","level":"info","message":"Export worker started"}
+{"timestamp":"2026-07-29T10:32:17.136Z","level":"info","message":"Setting up low stock alert checks","meta":{"checkFrequencyMinutes":30}}
+Running scheduled low stock check...
+Found 112 items with low stock
+
+============================================================================
+  ISSSourcing — web app (API + static/Vite)
+  Browser URL:  http://127.0.0.1:5050
+  Port:         5050   (set PORT in .env to change; default 5000)
+  Health check: http://127.0.0.1:5050/api/ready
+  URL file:     C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\.local-dev-url  (gitignored, for copy/paste)
+============================================================================
+
+12:32:17 PM [express] serving on 127.0.0.1:5050
+12:32:17 PM [express] Startup URL (local): http://127.0.0.1:5050
+12:32:17 PM [express] WebSocket server for real-time inventory sync is active
+{"timestamp":"2026-07-29T10:32:17.286Z","level":"info","message":"Server listening","meta":{"host":"127.0.0.1","port":5050,"build":{"version":"1.0.0","commitSha":null,"buildId":null,"builtAt":null,"runtimeProfile":"development","deploymentMode":"development"},"runtimeProfile":"development"}}
+{"timestamp":"2026-07-29T10:32:22.413Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a284ee3f-24bd-4cc2-851a-3bd91b0b0f7b","method":"GET","route":"/api/ready","status":200,"durationMs":23,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.170Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1fde87f5-fb74-479f-9b20-fa5f9231578c","method":"GET","route":"/api/ready","status":200,"durationMs":14,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.253Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3f01a9f1-f093-4fd3-90c8-87a2852cec30","method":"GET","route":"/api/csrf-token","status":200,"durationMs":48,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.357Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1c1c18b0-3479-4287-a9c0-9a8fcc74b562","method":"GET","route":"/api/ready","status":200,"durationMs":5,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.379Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a519da9a-7365-402a-9cf5-3764e45338c0","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.481Z","level":"info","message":"HTTP request completed","meta":{"requestId":"92d57962-3436-43d8-8197-78c99f07a96b","method":"POST","route":"/api/auth/login","status":200,"durationMs":218,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.498Z","level":"info","message":"HTTP request completed","meta":{"requestId":"d3f25f77-5616-4025-b0cb-60a1857f80f5","method":"POST","route":"/api/auth/login","status":200,"durationMs":108,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.655Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f5422dce-7ec2-4968-9d89-ab8ed9740d42","method":"GET","route":"/api/approval-policies","status":200,"durationMs":23,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.668Z","level":"info","message":"HTTP request completed","meta":{"requestId":"68d94107-05da-4f5b-889f-225c06dbb9fc","method":"GET","route":"/api/csrf-token","status":200,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.686Z","level":"info","message":"HTTP request completed","meta":{"requestId":"de548371-26d9-4f4d-82c1-bfd0aa1e3595","method":"POST","route":"/api/approval-policies","status":409,"durationMs":14,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.700Z","level":"info","message":"HTTP request completed","meta":{"requestId":"13b09ba2-de51-4e54-ba7d-428e936fc37f","method":"GET","route":"/api/csrf-token","status":200,"durationMs":12,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.721Z","level":"info","message":"HTTP request completed","meta":{"requestId":"96971cee-7876-4bdd-832f-a512db40008f","method":"PATCH","route":"/api/approval-policies/528","status":409,"durationMs":17,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.731Z","level":"info","message":"HTTP request completed","meta":{"requestId":"032f5593-a943-4b61-9a3e-6f345b49f949","method":"GET","route":"/api/csrf-token","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.753Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9a91f6fd-b912-4cd7-abdd-754649b8d4cd","method":"PATCH","route":"/api/approval-policies/528","status":200,"durationMs":19,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.764Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0f77c805-f843-4a82-aea5-4a896471f466","method":"GET","route":"/api/diagnostics/summary","status":200,"durationMs":263,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.805Z","level":"info","message":"HTTP request completed","meta":{"requestId":"67bde3a0-42a1-4342-abf5-a62c9d2ae199","method":"GET","route":"/api/csrf-token","status":200,"durationMs":29,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.824Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6db93c70-b204-4a82-baf2-bfdb8cbd81c1","method":"PATCH","route":"/api/approval-policies/530","status":404,"durationMs":17,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:58.975Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5cea2972-bd88-467e-970f-96e022e8c684","method":"GET","route":"/api/diagnostics/summary","status":200,"durationMs":144,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.006Z","level":"info","message":"HTTP request completed","meta":{"requestId":"dd34d2d0-1b36-4342-bae7-49f64b8dbdf8","method":"GET","route":"/api/purchase-requisitions/1204","status":404,"durationMs":28,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.020Z","level":"info","message":"HTTP request completed","meta":{"requestId":"062f995f-76ee-44c5-ab72-68b060e75059","method":"GET","route":"/api/purchase-requisitions/1204/items","status":200,"durationMs":12,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.256Z","level":"info","message":"HTTP request completed","meta":{"requestId":"aa7b1451-a155-4122-80b1-a4b8c53bbedc","method":"GET","route":"/api/ready","status":200,"durationMs":4,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.318Z","level":"info","message":"HTTP request completed","meta":{"requestId":"82022202-b318-40ce-b905-3f00a1606d2d","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.429Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ae04e29c-ad43-4f1d-8e38-228805092623","method":"POST","route":"/api/auth/login","status":200,"durationMs":99,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.444Z","level":"info","message":"HTTP request completed","meta":{"requestId":"17cbab82-0c61-4ecd-ae1b-0d40d6f9afab","method":"GET","route":"/api/ready","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.467Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6a2459c7-58fe-485a-913e-b328929a5059","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.566Z","level":"info","message":"HTTP request completed","meta":{"requestId":"2892fe11-4880-405b-a6ad-a8af81d4856e","method":"POST","route":"/api/auth/login","status":200,"durationMs":84,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.597Z","level":"info","message":"HTTP request completed","meta":{"requestId":"768cbde4-5bd3-4254-a758-004bb5e1d87d","method":"GET","route":"/api/csrf-token","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.685Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3dbedb51-930c-4e8f-9a21-b74a8c427509","method":"POST","route":"/api/purchase-requisitions","status":201,"durationMs":85,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.698Z","level":"info","message":"HTTP request completed","meta":{"requestId":"845a7cac-9d74-448d-8cd2-7e472e66ccd1","method":"GET","route":"/api/csrf-token","status":200,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.705Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a3668df0-6810-4df5-a113-24a224aa3821","method":"GET","route":"/api/csrf-token","status":200,"durationMs":9,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.748Z","level":"info","message":"HTTP request completed","meta":{"requestId":"779ccd71-d690-4fa0-9a75-1fa151170563","method":"POST","route":"/api/purchase-requisitions/1205/approve","status":200,"durationMs":47,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.758Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a24e9bca-8898-4007-a04e-2a3c731b242d","method":"GET","route":"/api/csrf-token","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.828Z","level":"info","message":"HTTP request completed","meta":{"requestId":"61ffc9e8-aaa0-4cbd-917a-e6361c194cab","method":"POST","route":"/api/auth/login","status":200,"durationMs":118,"orgId":null,"userId":258,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.847Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8be3e940-a200-4a28-bd9d-8a1778caa016","method":"GET","route":"/api/csrf-token","status":200,"durationMs":16,"orgId":null,"userId":258,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.862Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9cb67492-3b57-4ec0-848d-50178a1734c1","method":"POST","route":"/api/purchase-requisitions/1205/convert","status":201,"durationMs":100,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.915Z","level":"info","message":"HTTP request completed","meta":{"requestId":"fc991386-7af3-4ad1-b7fe-5344ff702009","method":"POST","route":"/api/purchase-requisitions","status":201,"durationMs":66,"orgId":null,"userId":258,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.925Z","level":"info","message":"HTTP request completed","meta":{"requestId":"27d6048c-82dc-4ec1-b220-795e07210447","method":"GET","route":"/api/csrf-token","status":200,"durationMs":7,"orgId":null,"userId":258,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.939Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7bfb42d1-837a-40a8-9a60-9039d7f50202","method":"GET","route":"/api/csrf-token","status":200,"durationMs":9,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.946Z","level":"info","message":"HTTP request completed","meta":{"requestId":"76fef6e8-63a0-4032-8a88-ff18e3785782","method":"POST","route":"/api/purchase-requisitions/1207/approve","status":403,"durationMs":18,"orgId":null,"userId":258,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.954Z","level":"info","message":"HTTP request completed","meta":{"requestId":"37217354-7d13-4337-9276-270d1c6db602","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.980Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e93087f2-050b-473d-b5af-5d88cf3ef235","method":"POST","route":"/api/reports/preview","status":200,"durationMs":39,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.989Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5bf034ea-6858-49fc-bde9-eae626d7eb1a","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:32:59.997Z","level":"info","message":"HTTP request completed","meta":{"requestId":"eda806ea-6667-45cf-8f15-02b34da43608","method":"POST","route":"/api/export-jobs/12/download-token","status":401,"durationMs":6,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.006Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7012bfbd-6c1f-411c-8b56-58a3b71589f0","method":"GET","route":"/api/csrf-token","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.027Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5dfe411a-2824-47ac-aff9-a80da0d10520","method":"POST","route":"/api/export-jobs/12/download-token","status":200,"durationMs":19,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.056Z","level":"info","message":"HTTP request completed","meta":{"requestId":"50deec93-385a-4a4a-b147-45d23ee3130d","method":"POST","route":"/api/auth/login","status":200,"durationMs":100,"orgId":null,"userId":259,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.067Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e5eafc44-40ea-4c48-a24b-ad66dd828d05","method":"GET","route":"/api/csrf-token","status":200,"durationMs":10,"orgId":null,"userId":259,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.078Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0f2d224c-7a62-4325-8c30-0d7511a8d13c","method":"POST","route":"/api/suppliers","status":403,"durationMs":9,"orgId":null,"userId":259,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.082Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ccc718cc-def2-4ea2-9aa2-cac56fbf052a","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.163Z","level":"info","message":"HTTP request completed","meta":{"requestId":"80a11c09-6813-44e0-9579-4168e924ff41","method":"POST","route":"/api/auth/login","status":200,"durationMs":79,"orgId":null,"userId":260,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.182Z","level":"info","message":"HTTP request completed","meta":{"requestId":"560a3d20-d52a-407c-b05d-01df5ea18175","method":"GET","route":"/api/diagnostics/findings","status":200,"durationMs":151,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.189Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f8ae21c9-8bfc-405b-92c9-8db0bd0355f0","method":"GET","route":"/api/csrf-token","status":200,"durationMs":25,"orgId":null,"userId":260,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.259Z","level":"info","message":"HTTP request completed","meta":{"requestId":"28181457-1d9b-470d-9058-6343a20a135a","method":"POST","route":"/api/reports/preview","status":200,"durationMs":68,"orgId":null,"userId":260,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.268Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0bc5a15d-1dba-40f8-9b50-2c60c9822eb7","method":"GET","route":"/api/csrf-token","status":200,"durationMs":8,"orgId":null,"userId":260,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.281Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9e6c7344-db2e-4253-8dd2-eee2b10f51c6","method":"POST","route":"/api/export-center/custom-export","status":403,"durationMs":11,"orgId":null,"userId":260,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.289Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4721a3e3-52e9-438a-a0ef-b02351ab7997","method":"GET","route":"/api/csrf-token","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.309Z","level":"info","message":"HTTP request completed","meta":{"requestId":"829034b7-6b60-4b85-b1b3-11a3e902c41f","method":"POST","route":"/api/approval-policies","status":201,"durationMs":17,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.313Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7b78098b-fdb0-47cf-a2a9-298fa2226ed7","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.393Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7bc51635-fbf4-4a43-968e-8f68927befba","method":"POST","route":"/api/auth/login","status":200,"durationMs":78,"orgId":null,"userId":261,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.404Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7e5d0096-5dba-44e5-9f92-bbcce38dd595","method":"GET","route":"/api/approval-policies","status":200,"durationMs":10,"orgId":null,"userId":261,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.411Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e8674c38-9a33-44d4-9c9a-39e15598e393","method":"GET","route":"/api/csrf-token","status":200,"durationMs":7,"orgId":null,"userId":261,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.419Z","level":"info","message":"HTTP request completed","meta":{"requestId":"254ab751-ae10-45c8-90d6-a83a0012a2dd","method":"PATCH","route":"/api/approval-policies/532","status":403,"durationMs":7,"orgId":null,"userId":261,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.426Z","level":"info","message":"HTTP request completed","meta":{"requestId":"725c1ab3-16e6-4f30-9391-dbb398b6aeed","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":261,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.436Z","level":"info","message":"HTTP request completed","meta":{"requestId":"83dfcc27-6b2d-4fe5-8b06-a41fb8fe95cf","method":"DELETE","route":"/api/approval-policies/532","status":403,"durationMs":9,"orgId":null,"userId":261,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.444Z","level":"info","message":"HTTP request completed","meta":{"requestId":"be766c51-22a7-47a8-bef7-efe8ca8e5062","method":"GET","route":"/api/diagnostics/summary","status":403,"durationMs":7,"orgId":null,"userId":260,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.473Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7b5cc30f-7fbb-44e8-997d-b6b7dd4148ad","method":"GET","route":"/api/csrf-token","status":200,"durationMs":2,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.542Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5bf481a7-cf6d-487b-a46d-1c13ac30d590","method":"POST","route":"/api/auth/login","status":200,"durationMs":68,"orgId":null,"userId":262,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.551Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a6ba819c-441f-4163-b761-ba426abc570d","method":"GET","route":"/api/csrf-token","status":200,"durationMs":7,"orgId":null,"userId":262,"errorCode":null}}
+{"timestamp":"2026-07-29T10:33:00.573Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b0b3987a-350b-450e-8423-ae0213ec816a","method":"POST","route":"/api/invoices/1035/items","status":409,"durationMs":21,"orgId":null,"userId":262,"errorCode":null}}
+{"timestamp":"2026-07-29T10:34:38.151Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ad59ba16-447e-42ac-b0e3-7be7cba9d1a4","method":"GET","route":"/api/ready","status":200,"durationMs":8,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:34:38.174Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9b826b67-ea53-4e3f-8362-100eca9a5826","method":"GET","route":"/api/csrf-token","status":200,"durationMs":4,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:34:38.253Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8d62a08d-6b70-4873-847d-589489201459","method":"POST","route":"/api/auth/login","status":200,"durationMs":71,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:34:38.367Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c98fabc7-7ff5-4476-9f72-0672fce0018a","method":"GET","route":"/api/purchase-requisitions/1208","status":404,"durationMs":13,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:35:10.156Z","level":"info","message":"HTTP request completed","meta":{"requestId":"58d173c2-753b-4024-9d41-3d0ba7bdfee8","method":"GET","route":"/api/ready","status":200,"durationMs":2,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:35:10.169Z","level":"info","message":"HTTP request completed","meta":{"requestId":"01a37b76-745e-47f7-8763-67d8564e2477","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-07-29T10:35:10.234Z","level":"info","message":"HTTP request completed","meta":{"requestId":"83c19d6f-51ce-4065-bfde-bee1aa66bfe3","method":"POST","route":"/api/auth/login","status":200,"durationMs":60,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:35:10.470Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f28e4872-bf3c-4d5a-a188-e85b96b9df59","method":"GET","route":"/api/diagnostics/summary","status":200,"durationMs":221,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:35:10.684Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a5e6444d-b768-4de2-8ed5-75529ec430c8","method":"GET","route":"/api/diagnostics/summary","status":200,"durationMs":213,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-07-29T10:35:10.707Z","level":"info","message":"HTTP request completed","meta":{"requestId":"15e340c8-b51f-4f16-b1cb-275772430b40","method":"GET","route":"/api/purchase-requisitions/1209","status":404,"durationMs":22,"orgId":null,"userId":1,"errorCode":null}}
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Cleanup complete. Active clients: 0
+Running scheduled low stock check...
+Found 117 items with low stock
+Cleanup complete. Active clients: 0

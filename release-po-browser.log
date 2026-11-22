@@ -1,0 +1,473 @@
+
+> rest-express@1.0.0 test:e2e:disposable
+> node scripts/run-disposable-small-business-e2e.mjs --full e2e/purchase-order-actions.spec.ts
+
+Created test-owned database iss_e2e_test_c8f86520d2cd481b8074f9241057c05d. Current application database was not changed.
+
+> rest-express@1.0.0 db:push:force
+> node scripts/db-migration-preflight.mjs && drizzle-kit push --force
+
+DB migration preflight passed; no legacy enum columns required normalization.
+No config path provided, using default 'drizzle.config.ts'
+Reading config file 'C:\Users\USER-PC\OneDrive\Documents\GITHUB REPO\ISSSourcing\drizzle.config.ts'
+Using 'pg' driver for database querying
+[⣷] Pulling schema from database...
+[2K[1G[⣯] Pulling schema from database...
+[2K[1G[✓] Pulling schema from database...
+[✓] Changes applied
+
+> rest-express@1.0.0 db:init:commercial-test
+> tsx scripts/initialize-commercial-test-database.ts
+
+{"timestamp":"2026-10-10T21:04:34.401Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+{"timestamp":"2026-10-10T21:04:36.267Z","level":"info","message":"Database connection successful","meta":{"build":{"version":"1.0.0","commitSha":null,"buildId":null,"builtAt":null,"runtimeProfile":"test","deploymentMode":"test"}}}
+Session table (connect-pg-simple) ready
+Initializing database schema...
+Database already initialized with tables existing
+Session table (connect-pg-simple) ready
+Contract date constraint (end_date >= start_date) applied
+Tenant security and audit chain columns ready
+categories.organization_id column and index ready
+departments.organization_id column and index ready
+carriers.organization_id column and index ready
+warehouses.organization_id column and index ready
+inventory_items.organization_id column and index ready
+suppliers.organization_id column and index ready
+app_settings.organization_id column and index ready
+reorder_requests.organization_id column and index ready
+purchase_requisitions.organization_id column and index ready
+purchase_orders.organization_id column and index ready
+inventory_serials.organization_id column and index ready
+custom_roles.organization_id column and index ready
+barcodes.organization_id ownership and index ready
+Purchase requisitions tables ready
+Professional supply chain tables and columns ready
+Strategic sourcing tables ready
+Commercial quotation tables ready
+categories.organization_id column and index ready
+departments.organization_id column and index ready
+carriers.organization_id column and index ready
+warehouses.organization_id column and index ready
+inventory_items.organization_id column and index ready
+suppliers.organization_id column and index ready
+app_settings.organization_id column and index ready
+reorder_requests.organization_id column and index ready
+purchase_requisitions.organization_id column and index ready
+purchase_orders.organization_id column and index ready
+inventory_serials.organization_id column and index ready
+custom_roles.organization_id column and index ready
+barcodes.organization_id ownership and index ready
+Professional supply chain tables and columns ready
+Professional supply chain tables and columns ready
+{"timestamp":"2026-10-10T21:04:38.224Z","level":"info","message":"Database seed check completed","meta":{"seeded":true}}
+{"timestamp":"2026-10-10T21:04:39.103Z","level":"info","message":"Development bootstrap completed","meta":{"opSeed":{"purchaseOrders":1,"shipments":2,"exceptions":4,"integrationRuns":4,"activity":30}}}
+Commercial release test database initialized.
+
+> rest-express@1.0.0 test:e2e
+> node scripts/run-playwright-e2e.mjs e2e/purchase-order-actions.spec.ts
+
+
+--- E2E dev server wrapper ---
+PORT=5000
+READY_URL=http://127.0.0.1:5000/api/ready
+AUTH_URL=http://127.0.0.1:5000/auth
+DEV_COMMAND=npm run dev
+START_TIMEOUT_MS=300000
+---
+
+[E2E] No healthy server on both URLs yet; spawning dev server.
+[E2E]   initial ready: FAIL error=fetch failed (58ms)
+[E2E]   initial auth: FAIL error=fetch failed (3ms)
+[E2E] Command: npm run dev
+[E2E] (stdio from dev server follows)
+
+{"timestamp":"2026-10-10T21:05:02.044Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+No email credentials found; using local JSON email transport.
+{"timestamp":"2026-10-10T21:05:10.246Z","level":"info","message":"Database connection successful","meta":{"build":{"version":"1.0.0","commitSha":null,"buildId":null,"builtAt":null,"runtimeProfile":"test","deploymentMode":"test"}}}
+Session table (connect-pg-simple) ready
+Initializing database schema...
+Database already initialized with tables existing
+Session table (connect-pg-simple) ready
+Tenant security and audit chain columns ready
+categories.organization_id column and index ready
+departments.organization_id column and index ready
+carriers.organization_id column and index ready
+warehouses.organization_id column and index ready
+inventory_items.organization_id column and index ready
+suppliers.organization_id column and index ready
+app_settings.organization_id column and index ready
+reorder_requests.organization_id column and index ready
+purchase_requisitions.organization_id column and index ready
+purchase_orders.organization_id column and index ready
+inventory_serials.organization_id column and index ready
+custom_roles.organization_id column and index ready
+barcodes.organization_id ownership and index ready
+Purchase requisitions tables ready
+Professional supply chain tables and columns ready
+Strategic sourcing tables ready
+Commercial quotation tables ready
+{"timestamp":"2026-10-10T21:05:10.922Z","level":"info","message":"Database seed check completed","meta":{"seeded":false}}
+{"timestamp":"2026-10-10T21:05:11.110Z","level":"info","message":"Development bootstrap completed","meta":{"opSeed":{"purchaseOrders":1,"shipments":3,"exceptions":8,"integrationRuns":8,"activity":30}}}
+WebSocket server initialized for inventory sync
+Real-time sync WebSocket service initialized
+WebSocket servers initialized for real-time inventory synchronization
+{"timestamp":"2026-10-10T21:05:11.169Z","level":"info","message":"Export worker started"}
+
+============================================================================
+  ISSSourcing — web app (API + static/Vite)
+  Browser URL:  http://127.0.0.1:5000
+  Port:         5000   (set PORT in .env to change; default 5000)
+  Health check: http://127.0.0.1:5000/api/ready
+============================================================================
+
+11:05:11 PM [express] serving on 127.0.0.1:5000
+11:05:11 PM [express] Startup URL (local): http://127.0.0.1:5000
+11:05:11 PM [express] WebSocket server for real-time inventory sync is active
+{"timestamp":"2026-10-10T21:05:11.190Z","level":"info","message":"Server listening","meta":{"host":"127.0.0.1","port":5000,"build":{"version":"1.0.0","commitSha":null,"buildId":null,"builtAt":null,"runtimeProfile":"test","deploymentMode":"test"},"runtimeProfile":"test"}}
+{"timestamp":"2026-10-10T21:05:11.297Z","level":"info","message":"Setting up low stock alert checks","meta":{"checkFrequencyMinutes":30}}
+Running scheduled low stock check...
+No low stock items found
+{"timestamp":"2026-10-10T21:05:11.490Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a47ccfa3-83bb-4ad8-8bbe-dfdd2a568701","method":"GET","route":"/api/ready","status":200,"durationMs":52,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:11.536Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4ca91d93-d434-4268-8e27-da0f61f21f5c","method":"GET","route":"/api/ready","status":200,"durationMs":10,"orgId":null,"userId":null,"errorCode":null}}
+[E2E] Ready: ready: ok status=200 (71ms)
+[E2E] Ready: auth: ok status=200 (26ms)
+
+{"timestamp":"2026-10-10T21:05:11.563Z","level":"info","message":"HTTP request completed","meta":{"requestId":"48a9b56b-e046-4948-a586-4077f93cc5cf","method":"GET","route":"/api/ready","status":200,"durationMs":24,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:11.587Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4616c5e1-4652-4ad6-9d52-d5d39ffc9221","method":"GET","route":"/api/ready","status":200,"durationMs":13,"orgId":null,"userId":null,"errorCode":null}}
+[E2E] Running npm run test:purchase-order-endpoints (server is up)...
+
+{"timestamp":"2026-10-10T21:05:14.886Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+{"timestamp":"2026-10-10T21:05:14.950Z","level":"info","message":"HTTP request completed","meta":{"requestId":"33e3c95c-b3ba-461d-877e-57c674df5377","method":"GET","route":"/api/ready","status":200,"durationMs":8,"orgId":null,"userId":null,"errorCode":null}}
+
+> rest-express@1.0.0 seed:functional-qa
+> tsx server/seed-functional-qa.ts
+
+{"timestamp":"2026-10-10T21:05:18.760Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+seed-functional-qa: completed
+(node:7128) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{"timestamp":"2026-10-10T21:05:19.420Z","level":"info","message":"HTTP request completed","meta":{"requestId":"55e4cc29-1c49-4ed4-a674-b649f567c10b","method":"GET","route":"/api/ready","status":200,"durationMs":10,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:19.444Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b8a400f7-a479-4132-a22c-63ac12aad4cd","method":"GET","route":"/api/csrf-token","status":200,"durationMs":20,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:19.649Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4fd4b791-6a96-49a9-945e-3cf9cc52b6ea","method":"POST","route":"/api/login","status":200,"durationMs":194,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:19.833Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a8ffe285-c438-4f2f-842c-a12f8e247d79","method":"GET","route":"/api/purchase/orders/PO-FQA-001","status":200,"durationMs":63,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:19.891Z","level":"info","message":"HTTP request completed","meta":{"requestId":"68b23b9d-2bd8-43a2-9e1a-be18a4983c39","method":"GET","route":"/api/purchase/orders/PO-FQA-001","status":200,"durationMs":55,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:19.900Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b9725347-de0b-4e92-ae96-68874a05f048","method":"GET","route":"/api/csrf-token","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:19.963Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e25851c2-a76f-4773-be24-75976540a3e6","method":"POST","route":"/api/purchase/orders/PO-FQA-001/approve","status":200,"durationMs":61,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:19.975Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e8c3039f-692c-494c-b9f3-c704fccd1486","method":"GET","route":"/api/csrf-token","status":200,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.005Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0b0bb5c0-5ba5-46f1-a804-098297f76694","method":"POST","route":"/api/purchase/orders/PO-FQA-001/send","status":200,"durationMs":27,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.014Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ffc8c2cf-1c83-42f5-9036-df9d2c8f84e8","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.024Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3960ae4b-db6f-4aa0-82f9-787ece11b680","method":"POST","route":"/api/purchase/orders/PO-FQA-001/send","status":400,"durationMs":9,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.037Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ad0d0ab5-5982-429b-9dfe-63b63fbf14b3","method":"GET","route":"/api/csrf-token","status":200,"durationMs":9,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.047Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5728eb3b-b256-46ba-9f34-35a413996ce9","method":"POST","route":"/api/purchase/orders/PO-FQA-001/send","status":400,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.051Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b1dad41d-e154-470a-8ae4-7a0fa97c01be","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.125Z","level":"info","message":"HTTP request completed","meta":{"requestId":"068e718d-5a4b-4554-ab47-f09eb87042d1","method":"POST","route":"/api/login","status":200,"durationMs":72,"orgId":null,"userId":3,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.134Z","level":"info","message":"HTTP request completed","meta":{"requestId":"2812a6d7-5a80-4887-a97a-31721e22950a","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":3,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.142Z","level":"info","message":"HTTP request completed","meta":{"requestId":"237a7f21-442c-421c-94fa-fdb39af4493c","method":"POST","route":"/api/purchase/orders/PO-FQA-001/approve","status":403,"durationMs":6,"orgId":null,"userId":3,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.146Z","level":"info","message":"HTTP request completed","meta":{"requestId":"775e00f5-e69a-4fdf-af39-c86bbf8e953a","method":"GET","route":"/api/csrf-token","status":200,"durationMs":2,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.211Z","level":"info","message":"HTTP request completed","meta":{"requestId":"014e9bd8-c2bd-4906-9af1-b3b05a66eebe","method":"POST","route":"/api/login","status":200,"durationMs":63,"orgId":null,"userId":4,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.220Z","level":"info","message":"HTTP request completed","meta":{"requestId":"61d32e26-cf07-4bcf-80ae-b9cd6510a901","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":4,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.229Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8e478406-7bac-42b0-9216-19be34558253","method":"POST","route":"/api/purchase/orders/PO-FQA-001/approve","status":403,"durationMs":7,"orgId":null,"userId":4,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.232Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e0de4cc2-c79a-4475-91e1-d8704909567d","method":"GET","route":"/api/csrf-token","status":200,"durationMs":2,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.301Z","level":"info","message":"HTTP request completed","meta":{"requestId":"992a4450-ca43-4afc-a5f9-97935fdf4e60","method":"POST","route":"/api/login","status":200,"durationMs":68,"orgId":null,"userId":2,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.309Z","level":"info","message":"HTTP request completed","meta":{"requestId":"315ee88e-2aef-4462-8fe2-9904a23e9e6e","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":2,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.332Z","level":"info","message":"HTTP request completed","meta":{"requestId":"44d28ec6-fe10-4715-9411-4b77e91f05d6","method":"POST","route":"/api/purchase/orders/PO-FQA-001/approve","status":200,"durationMs":21,"orgId":null,"userId":2,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.335Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f6bab180-8038-4722-96cc-8b8e4e712349","method":"GET","route":"/api/csrf-token","status":200,"durationMs":2,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.401Z","level":"info","message":"HTTP request completed","meta":{"requestId":"540f7262-e5da-4117-b74e-3c0c682c990e","method":"POST","route":"/api/login","status":200,"durationMs":64,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.413Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a1ba47ab-f599-487f-9c30-bdbb58bb727c","method":"GET","route":"/api/procurement/purchase-orders/records","status":200,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.428Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7934ec5d-3f7b-4c0f-bea9-1bbd20e8304c","method":"GET","route":"/api/purchase/orders/PO-FQA-002","status":200,"durationMs":14,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.437Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9e85cf2f-98e2-4b94-a05b-c0b0387bce09","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.459Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c9ad8abd-96c2-4462-ba35-d4488eda5bdc","method":"PUT","route":"/api/purchase-orders/3","status":409,"durationMs":20,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.465Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e2bdf92f-f8df-49d4-a3a4-a626fbc7d07e","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.483Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e0a01a8c-5306-4380-9d85-70b0d03dc861","method":"PUT","route":"/api/purchase-orders/3","status":409,"durationMs":16,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.502Z","level":"info","message":"HTTP request completed","meta":{"requestId":"78502a61-ca4f-452a-ad92-fa3597f71df2","method":"GET","route":"/api/purchase/orders/PO-FQA-003","status":200,"durationMs":18,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.512Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4ab06703-c9da-486f-a067-14be4f096bc1","method":"GET","route":"/api/csrf-token","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.526Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4477c052-d4ba-4e75-ae24-43f06066ee8e","method":"PUT","route":"/api/purchase-orders/4","status":409,"durationMs":13,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.542Z","level":"info","message":"HTTP request completed","meta":{"requestId":"986e8afc-8e96-4aed-8572-7abfd003fa21","method":"GET","route":"/api/activity","status":200,"durationMs":13,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.553Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f6349815-a925-4141-8cb1-db3e2c999ca7","method":"GET","route":"/api/activity","status":200,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:20.564Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c77ff2c6-32d5-48cc-88b1-72a8798b5b9d","method":"GET","route":"/api/activity","status":200,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+test-purchase-order-endpoints: all checks passed.
+[E2E] Running npm run test:dashboard-data (server is up)...
+
+
+> rest-express@1.0.0 seed:functional-qa
+> tsx server/seed-functional-qa.ts
+
+{"timestamp":"2026-10-10T21:05:26.097Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+seed-functional-qa: completed
+(node:24216) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{"timestamp":"2026-10-10T21:05:26.840Z","level":"info","message":"HTTP request completed","meta":{"requestId":"bafe30d6-0e42-44cd-8cc9-c734e4fc17ff","method":"GET","route":"/api/ready","status":200,"durationMs":9,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:26.857Z","level":"info","message":"HTTP request completed","meta":{"requestId":"984fef08-90f1-43ac-a643-03aa921f2288","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:26.941Z","level":"info","message":"HTTP request completed","meta":{"requestId":"64b0b3d4-e4fe-4d18-a3a7-861bd038232f","method":"POST","route":"/api/login","status":200,"durationMs":74,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:27.013Z","level":"info","message":"HTTP request completed","meta":{"requestId":"93e5a59a-a1ca-4a30-a29a-17ac1a39ea26","method":"GET","route":"/api/dashboard/control-tower","status":200,"durationMs":70,"orgId":null,"userId":1,"errorCode":null}}
+test-dashboard-data: all checks passed.
+[E2E] Running npm run test-logistics-filters (server is up)...
+
+{"timestamp":"2026-10-10T21:05:30.232Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+
+> rest-express@1.0.0 seed:functional-qa
+> tsx server/seed-functional-qa.ts
+
+{"timestamp":"2026-10-10T21:05:34.044Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+seed-functional-qa: completed
+(node:29896) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{"timestamp":"2026-10-10T21:05:34.700Z","level":"info","message":"HTTP request completed","meta":{"requestId":"fb05ac30-601b-4d54-a15c-40cd2973802a","method":"GET","route":"/api/ready","status":200,"durationMs":7,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:34.722Z","level":"info","message":"HTTP request completed","meta":{"requestId":"99ebcabd-a698-4dc9-80da-0e6919bb5e8b","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:34.804Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c76bea9d-4496-4b8a-b856-094a045a3d03","method":"POST","route":"/api/login","status":200,"durationMs":75,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:34.814Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b12f5223-3c51-4f1a-b0c8-494e6d43799b","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:34.822Z","level":"info","message":"HTTP request completed","meta":{"requestId":"68db6a3a-6318-447b-b066-d6d6c4e898e6","method":"GET","route":"/api/logistics/shipments","status":400,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:34.829Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c099cb60-9968-43bc-93b8-c8a78f4b779d","method":"GET","route":"/api/logistics/shipments","status":400,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.056Z","level":"info","message":"HTTP request completed","meta":{"requestId":"fd4fc805-e6f9-49f0-9d34-066aea126343","method":"GET","route":"/api/csrf-token","status":200,"durationMs":4,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.066Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e82c51b8-13d8-49a2-bc15-f400fb19e975","method":"POST","route":"/api/logistics/shipments","status":400,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.072Z","level":"info","message":"HTTP request completed","meta":{"requestId":"20f18e5c-eae9-420a-8b0d-af8d6b06b1fa","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.087Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6ee687ae-85eb-41ec-876e-6db1ac4de7ec","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":13,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.095Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f4ba749f-3cf9-4ede-a907-c880be418aa4","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.106Z","level":"info","message":"HTTP request completed","meta":{"requestId":"529d45d8-3ced-4d81-b1b8-f302ccc9f391","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":9,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.112Z","level":"info","message":"HTTP request completed","meta":{"requestId":"44aa54ad-651b-4ec2-8675-ada7b05c4e0c","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.127Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ce783b89-e1d4-4fd1-b9a2-a0b64c057bf0","method":"POST","route":"/api/logistics/shipments/5/status","status":200,"durationMs":14,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.134Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8fcbe981-0149-412b-b958-bbc4a1ea7e40","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.149Z","level":"info","message":"HTTP request completed","meta":{"requestId":"666c3dbe-3e76-40dd-af63-9a7431c7c241","method":"POST","route":"/api/logistics/shipments/5/status","status":200,"durationMs":14,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.156Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1fa12a74-f511-4b55-8551-54dbb9a995e7","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.167Z","level":"info","message":"HTTP request completed","meta":{"requestId":"03bd40e2-c3b8-4829-86b9-83b23513ddac","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.174Z","level":"info","message":"HTTP request completed","meta":{"requestId":"17cac14d-d5a0-42ce-8497-ba598fb985fc","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.185Z","level":"info","message":"HTTP request completed","meta":{"requestId":"559e2708-e3ea-42f8-b36a-effacaa2adb2","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":10,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.191Z","level":"info","message":"HTTP request completed","meta":{"requestId":"336472be-f5a1-494b-a7f0-7f8f073e642a","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.203Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a7b352f1-b378-4efe-ad86-821a3cac8c92","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":11,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.209Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9106186e-3c21-4666-804c-c81d68693e14","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.218Z","level":"info","message":"HTTP request completed","meta":{"requestId":"17aef504-ba8e-464c-b993-bdc9e59a6421","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.224Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1f9bc686-c36d-48b0-a2ff-2636cc8a9eb8","method":"GET","route":"/api/csrf-token","status":200,"durationMs":4,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.239Z","level":"info","message":"HTTP request completed","meta":{"requestId":"25ed1ed1-c3f4-4d19-899e-e9dbbdc42465","method":"POST","route":"/api/logistics/shipments/9/status","status":200,"durationMs":13,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.245Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a223602f-fd64-4502-9dba-fb20c8ec1ada","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.255Z","level":"info","message":"HTTP request completed","meta":{"requestId":"d52c2b7b-5dce-4a37-a54d-1507b2576a09","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":9,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.261Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7d649a52-d79b-47d1-810c-a65a09cd9e30","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.276Z","level":"info","message":"HTTP request completed","meta":{"requestId":"433722ae-9043-4645-a6dd-73360e15524c","method":"POST","route":"/api/logistics/shipments/10/status","status":200,"durationMs":14,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.289Z","level":"info","message":"HTTP request completed","meta":{"requestId":"dd5e1aef-5d42-42fa-8dbb-05720d3c6bdb","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":12,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.297Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3fdfcc7b-8af5-45a4-b2c3-785b39b7ea1f","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.304Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8f8a4a6b-2834-46e5-b8bd-3ab6593ca2cb","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.311Z","level":"info","message":"HTTP request completed","meta":{"requestId":"2b9a4257-bf73-4899-884a-c3b7c1d8844a","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.319Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4c3dd945-228b-4d40-82a4-b8af6aebf387","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.327Z","level":"info","message":"HTTP request completed","meta":{"requestId":"507fd9e2-2152-42c5-a539-c16fdb05f0c7","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.342Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7b378290-166b-4e11-99f7-7c712c07fca8","method":"GET","route":"/api/purchase/orders/PO-FQA-001","status":200,"durationMs":14,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.347Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0e37b5f7-eb30-4256-9bd7-7d24ae54d830","method":"GET","route":"/api/csrf-token","status":200,"durationMs":4,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.363Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4d2e9cfb-489b-415f-963a-1a034a08b1f8","method":"POST","route":"/api/logistics/shipments","status":201,"durationMs":15,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.371Z","level":"info","message":"HTTP request completed","meta":{"requestId":"98ebdc2a-2df5-4ebc-af50-f0d9ccfe0b49","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.380Z","level":"info","message":"HTTP request completed","meta":{"requestId":"75e54437-d36e-4b96-9619-04cb8fc61ae2","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.387Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8631a202-3472-4d2e-aed0-b82b47b9945b","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.395Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4332b186-1057-496b-a59d-19295db791e4","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.405Z","level":"info","message":"HTTP request completed","meta":{"requestId":"d3edf71b-3847-4d7b-9465-36e0ab6e776b","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.414Z","level":"info","message":"HTTP request completed","meta":{"requestId":"27f9d395-0d6c-4709-b325-a11b924bae0d","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.423Z","level":"info","message":"HTTP request completed","meta":{"requestId":"d52f1aeb-14da-4bc8-8b5e-f5de3e31ecc9","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.430Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ebe59141-4a68-4287-8804-881180e926d1","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.438Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c8766af6-aec9-44ec-8daa-9e588a51aac3","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.444Z","level":"info","message":"HTTP request completed","meta":{"requestId":"df29924b-25a5-4e6f-a482-ac4e881a8516","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.451Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f8b8e1d6-9ed1-40a0-ad25-02721371125f","method":"DELETE","route":"/api/logistics/shipments/4","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.456Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8f35f94a-1d47-4012-a0b2-0eab29bd35b8","method":"GET","route":"/api/csrf-token","status":200,"durationMs":4,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.464Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4208cd83-a5d7-43a4-9b4a-1db83dadb138","method":"DELETE","route":"/api/logistics/shipments/5","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.471Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b96c15c9-52fc-40e7-b0eb-b6015db43722","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.478Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a76e442a-8374-4ce9-9415-b46034b07663","method":"DELETE","route":"/api/logistics/shipments/6","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.484Z","level":"info","message":"HTTP request completed","meta":{"requestId":"dcb829c9-0751-44ff-92a2-80eb8608967a","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.492Z","level":"info","message":"HTTP request completed","meta":{"requestId":"576e2b03-1000-40fe-84c0-f90dd9130e29","method":"DELETE","route":"/api/logistics/shipments/7","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.499Z","level":"info","message":"HTTP request completed","meta":{"requestId":"934b484f-92dc-4b0e-a005-d821aec0b25f","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.506Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e733302c-0503-44a5-b1f6-2f669e7fdedf","method":"DELETE","route":"/api/logistics/shipments/8","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.512Z","level":"info","message":"HTTP request completed","meta":{"requestId":"45682155-7583-4d16-bf20-2dd9387c11e8","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.519Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4353bf60-7490-4c41-bcf0-343f4df28d1b","method":"DELETE","route":"/api/logistics/shipments/9","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.525Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f3655527-3238-4b7b-b638-9a9d67cb5bcd","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.534Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5d739b39-4d4b-4314-add0-23a9c1dbb7fb","method":"DELETE","route":"/api/logistics/shipments/10","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.541Z","level":"info","message":"HTTP request completed","meta":{"requestId":"eb8a046d-dc3d-4a6d-a71b-11988fc60cda","method":"GET","route":"/api/csrf-token","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:35.548Z","level":"info","message":"HTTP request completed","meta":{"requestId":"02b98722-7cab-467c-a2e1-c53d3a752a1f","method":"DELETE","route":"/api/logistics/shipments/11","status":200,"durationMs":6,"orgId":null,"userId":1,"errorCode":null}}
+test-logistics-filters: all checks passed.
+[E2E] Running npm run test-control-tower-dashboard (server is up)...
+
+
+> rest-express@1.0.0 seed:functional-qa
+> tsx server/seed-functional-qa.ts
+
+{"timestamp":"2026-10-10T21:05:41.921Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+seed-functional-qa: completed
+(node:31096) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{"timestamp":"2026-10-10T21:05:42.697Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b5626ff8-e991-4b96-9b6a-5cdc8499cf9d","method":"GET","route":"/api/ready","status":200,"durationMs":15,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:42.715Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f5f1319d-47ea-4562-95c5-7568c4a5ca64","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:42.804Z","level":"info","message":"HTTP request completed","meta":{"requestId":"db164eca-e098-4f66-b9ac-31b7b74e115e","method":"POST","route":"/api/login","status":200,"durationMs":82,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:42.864Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ca2cb5f9-bea2-41b1-91f3-ff06a3fe258c","method":"GET","route":"/api/dashboard/control-tower","status":200,"durationMs":58,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:42.893Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7d1144c5-0dc5-4c64-93c7-8587b9ee08a5","method":"GET","route":"/api/dashboard/control-tower","status":200,"durationMs":28,"orgId":null,"userId":1,"errorCode":null}}
+test-control-tower-dashboard: all checks passed.
+[E2E] Running npm run test-exceptions-workflow (server is up)...
+
+{"timestamp":"2026-10-10T21:05:44.243Z","level":"info","message":"HTTP request completed","meta":{"requestId":"109f4453-f8f3-4704-b116-417814a9b3aa","method":"GET","route":"/api/ready","status":200,"durationMs":11,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:44.257Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8ecebce2-051f-4efa-897a-94ce7daa8790","method":"GET","route":"/api/csrf-token","status":200,"durationMs":4,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:44.347Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6231d152-c482-41ac-aff4-77cd7038faed","method":"POST","route":"/api/login","status":200,"durationMs":84,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:44.357Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ecea0dd0-3414-4019-b878-b24c57d6d787","method":"GET","route":"/api/exceptions","status":200,"durationMs":8,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:44.366Z","level":"info","message":"HTTP request completed","meta":{"requestId":"584581a2-56d3-42c1-94eb-490714d78742","method":"GET","route":"/api/exceptions/4","status":200,"durationMs":7,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:44.374Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0c42222d-fa9d-42e9-9025-0bcd10a4c64b","method":"GET","route":"/api/csrf-token","status":200,"durationMs":5,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:05:44.407Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3b8cc9c9-06d1-40c2-86a4-1180c9d0dfa6","method":"POST","route":"/api/exceptions/run-checks","status":200,"durationMs":32,"orgId":null,"userId":1,"errorCode":null}}
+test-exceptions-workflow: all checks passed.
+{"timestamp":"2026-10-10T21:05:50.204Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e5d060a9-3c1b-42bd-8c7f-72483c73f27e","method":"GET","route":"/api/ready","status":200,"durationMs":12,"orgId":null,"userId":null,"errorCode":null}}
+
+> rest-express@1.0.0 e2e:prep
+> tsx scripts/e2e-prep-product-onboarding.ts
+
+e2e-prep: product onboarding marked complete where needed (rows=0).
+
+> rest-express@1.0.0 seed:functional-qa
+> tsx server/seed-functional-qa.ts
+
+{"timestamp":"2026-10-10T21:05:59.413Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+seed-functional-qa: completed
+{"timestamp":"2026-10-10T21:06:03.518Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+
+Running 1 test using 1 worker
+
+[1A[2K(node:16640) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1A[2K(node:16640) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K{"timestamp":"2026-10-10T21:06:11.266Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+
+[1A[2K[1/1] [chromium] › e2e\purchase-order-actions.spec.ts:55:3 › Purchase order actions (FQA) › approve, require dispatch recipient, commercial save, locked PO, activity panel, diagnostics marker
+[1A[2K[chromium] › e2e\purchase-order-actions.spec.ts:55:3 › Purchase order actions (FQA) › approve, require dispatch recipient, commercial save, locked PO, activity panel, diagnostics marker
+
+> rest-express@1.0.0 seed:functional-qa
+> tsx server/seed-functional-qa.ts
+
+
+
+
+[1A[2K(node:15488) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1A[2K(node:13904) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1A[2K{"timestamp":"2026-10-10T21:06:15.863Z","level":"info","message":"Database pool initialized","meta":{"runtimeProfile":"test","ssl":false,"disposableTestDatabase":true}}
+
+
+[1A[2Kseed-functional-qa: completed
+
+
+{"timestamp":"2026-10-10T21:06:19.586Z","level":"info","message":"HTTP request completed","meta":{"requestId":"14c092ef-3f9c-43b8-ad6b-2c1e9d8c05cb","method":"GET","route":"/api/ready","status":200,"durationMs":9,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:19.592Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3f2a3416-9b29-47c5-9cb5-0878a86a6e0d","method":"GET","route":"/api/user","status":401,"durationMs":1,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:19.785Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e3cc93fb-485a-4b1a-b1d6-c984df5f8805","method":"GET","route":"/api/runtime-capabilities","status":200,"durationMs":2,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:20.915Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3bfdb77c-eb23-4ec6-91c8-f79cbe1607f0","method":"GET","route":"/api/csrf-token","status":200,"durationMs":3,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:21.074Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6f3508bf-8c4d-4b17-81de-c2683d4f5531","method":"POST","route":"/api/login","status":200,"durationMs":143,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:21.084Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7de77855-6c1d-49cb-b7b7-c04ffb2d0e08","method":"GET","route":"/api/runtime-capabilities","status":200,"durationMs":1,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:21.103Z","level":"info","message":"HTTP request completed","meta":{"requestId":"94105223-acea-4e06-9f80-8f41c71ad10d","method":"GET","route":"/api/ready","status":200,"durationMs":21,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:21.196Z","level":"info","message":"HTTP request completed","meta":{"requestId":"72e39838-037f-44a4-9141-64c2b077b984","method":"GET","route":"/api/release-scope","status":200,"durationMs":29,"orgId":null,"userId":1,"errorCode":null}}
+[SETUP_STATUS] summary requestId=493b36fd-ad1d-4043-99e3-91b379d2c613 userId=1 orgId=1 health=ok firstCode=OK criticalCount=0 warningCount=0
+{"timestamp":"2026-10-10T21:06:21.235Z","level":"info","message":"HTTP request completed","meta":{"requestId":"56a85318-3884-4546-87de-bb9ce505e545","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":70,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:21.236Z","level":"info","message":"HTTP request completed","meta":{"requestId":"493b36fd-ad1d-4043-99e3-91b379d2c613","method":"GET","route":"/api/setup/status","status":200,"durationMs":73,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:21.257Z","level":"info","message":"HTTP request completed","meta":{"requestId":"38e61042-7a7a-472f-8370-a986258d4e29","method":"GET","route":"/api/inventory","status":200,"durationMs":56,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:21.277Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b8744d27-5324-4843-8651-9c89d593db12","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":37,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.011Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9b3fa91b-ab73-4cd8-a101-c9504371038e","method":"GET","route":"/api/user","status":200,"durationMs":14,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.035Z","level":"info","message":"HTTP request completed","meta":{"requestId":"78b76b81-2601-482d-8095-aae8cdf2ff38","method":"GET","route":"/api/ready","status":200,"durationMs":42,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.085Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4348ad6c-01ba-46d0-ba97-dcb111fc844a","method":"GET","route":"/api/release-scope","status":200,"durationMs":15,"orgId":null,"userId":1,"errorCode":null}}
+[SETUP_STATUS] summary requestId=893b1fd3-fdce-4826-9f5f-c0126775cad5 userId=1 orgId=1 health=ok firstCode=OK criticalCount=0 warningCount=0
+{"timestamp":"2026-10-10T21:06:23.136Z","level":"info","message":"HTTP request completed","meta":{"requestId":"27c22f69-e6aa-44a4-a941-8e07c8eeacd6","method":"GET","route":"/api/permissions/me","status":200,"durationMs":65,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.141Z","level":"info","message":"HTTP request completed","meta":{"requestId":"893b1fd3-fdce-4826-9f5f-c0126775cad5","method":"GET","route":"/api/setup/status","status":200,"durationMs":72,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.144Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3cf56800-406f-413d-875b-70a660b63899","method":"GET","route":"/api/suppliers","status":200,"durationMs":50,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.146Z","level":"info","message":"HTTP request completed","meta":{"requestId":"bd50e7dd-5b63-4699-9eb8-dcc5e71a0770","method":"GET","route":"/api/notifications","status":200,"durationMs":64,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.148Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9659af99-fdf5-4901-a019-d8d74db84e22","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":52,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:23.198Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3ada7db3-885b-4412-a75b-81625129721f","method":"GET","route":"/api/inventory","status":200,"durationMs":103,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:24.887Z","level":"info","message":"HTTP request completed","meta":{"requestId":"303eea1d-574c-4d5c-a939-3d820b384aad","method":"GET","route":"/api/settings","status":200,"durationMs":136,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:24.979Z","level":"info","message":"HTTP request completed","meta":{"requestId":"79982f91-d0f0-4500-b951-8f6c1733fdb4","method":"GET","route":"/api/approval-policies","status":200,"durationMs":49,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:24.986Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0b084f26-fd12-4176-9169-b9974a965fc5","method":"GET","route":"/api/procurement/purchase-orders/PO-FQA-001","status":200,"durationMs":231,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.110Z","level":"info","message":"HTTP request completed","meta":{"requestId":"94f9928b-f75b-44c5-84a4-8f043310531b","method":"GET","route":"/api/procurement/purchase-orders/records/2/revisions","status":200,"durationMs":25,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.124Z","level":"info","message":"HTTP request completed","meta":{"requestId":"14bd9fc9-c8dd-4bb0-b077-ab4600a8ed68","method":"GET","route":"/api/activity","status":200,"durationMs":41,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.152Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9f467d21-a8a1-4ce4-9b8e-caa414973d95","method":"GET","route":"/api/procurement/purchase-orders/records/2","status":200,"durationMs":57,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.155Z","level":"info","message":"HTTP request completed","meta":{"requestId":"746f4c0b-ad2b-4b52-8ede-96d1367893c9","method":"GET","route":"/api/v2/procurement/purchase-orders/2/workflow","status":200,"durationMs":40,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.158Z","level":"info","message":"HTTP request completed","meta":{"requestId":"322e312f-36e4-4b42-89c6-591ee94f4120","method":"GET","route":"/api/v2/procurement/purchase-orders/2/supplier-confirmations","status":200,"durationMs":23,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.177Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a3d7d108-3503-4afa-b922-78be3cc5ebc5","method":"GET","route":"/api/approval-suggestions","status":200,"durationMs":21,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.559Z","level":"info","message":"HTTP request completed","meta":{"requestId":"822dc1c7-a199-42be-b156-2622567ed65d","method":"GET","route":"/api/approval-history/purchase_order/2","status":200,"durationMs":466,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.600Z","level":"info","message":"HTTP request completed","meta":{"requestId":"43d7493f-8ead-4cab-91e8-a8a510de8f3d","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":516,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.654Z","level":"info","message":"HTTP request completed","meta":{"requestId":"fcc1e79b-e1bb-4216-b8fb-c81fe7c14679","method":"GET","route":"/api/mdm/defaults/po-context","status":200,"durationMs":899,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.783Z","level":"info","message":"HTTP request completed","meta":{"requestId":"848987a8-1256-4fa0-898c-1f3b6b33d568","method":"GET","route":"/api/csrf-token","status":200,"durationMs":38,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.870Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b74f8047-88bc-492b-b3ea-a3a187453176","method":"POST","route":"/api/purchase-orders/2/approve","status":200,"durationMs":79,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.929Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3d1a856c-2dfb-47cb-8321-105007d99f02","method":"GET","route":"/api/procurement/purchase-orders/PO-FQA-001","status":200,"durationMs":52,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.973Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c10bcf58-b97c-4c79-85a8-fdd5476168a9","method":"GET","route":"/api/procurement/purchase-orders/records/2","status":200,"durationMs":35,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:25.998Z","level":"info","message":"HTTP request completed","meta":{"requestId":"b7b71892-1c54-440d-8c0e-2fc9206dce47","method":"GET","route":"/api/procurement/purchase-orders/PO-FQA-001","status":200,"durationMs":59,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:26.025Z","level":"info","message":"HTTP request completed","meta":{"requestId":"fccf27ad-ebc0-4edd-b20c-865ece899676","method":"GET","route":"/api/notifications","status":200,"durationMs":79,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:26.027Z","level":"info","message":"HTTP request completed","meta":{"requestId":"4a72c8c4-302c-4acb-a84e-f2fa3f13e50d","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":82,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:26.039Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e8f20703-abe4-4785-b422-67aa7d3b1945","method":"GET","route":"/api/inventory","status":200,"durationMs":97,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.038Z","level":"info","message":"HTTP request completed","meta":{"requestId":"fb4a4b70-1606-4196-b683-f3fe36063f0d","method":"GET","route":"/api/user","status":200,"durationMs":12,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.066Z","level":"info","message":"HTTP request completed","meta":{"requestId":"810d1851-6ad1-4418-a3d4-11970209dea0","method":"GET","route":"/api/ready","status":200,"durationMs":45,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.130Z","level":"info","message":"HTTP request completed","meta":{"requestId":"88650f6f-9118-4c91-ac62-5318a4ee2b0c","method":"GET","route":"/api/release-scope","status":200,"durationMs":28,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.142Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1b6ff1fa-dc5e-41c3-b11c-5858201c18f4","method":"GET","route":"/api/permissions/me","status":200,"durationMs":36,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.154Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1af4bbba-ab94-4b9f-a1a4-4fb30e934bad","method":"GET","route":"/api/suppliers","status":200,"durationMs":44,"orgId":null,"userId":1,"errorCode":null}}
+[SETUP_STATUS] summary requestId=6454a148-b82b-45fe-b2cc-2a892a8e63f1 userId=1 orgId=1 health=ok firstCode=OK criticalCount=0 warningCount=0
+{"timestamp":"2026-10-10T21:06:27.173Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6454a148-b82b-45fe-b2cc-2a892a8e63f1","method":"GET","route":"/api/setup/status","status":200,"durationMs":72,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.177Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5e7401fa-c1bd-412e-8f36-833fce62f1e6","method":"GET","route":"/api/notifications","status":200,"durationMs":68,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.193Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ef8e94e1-d878-4435-b640-b2e2a23f5b38","method":"GET","route":"/api/inventory","status":200,"durationMs":81,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:27.201Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9f8b2160-e809-447d-8231-fa5b68809cba","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":62,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.063Z","level":"info","message":"HTTP request completed","meta":{"requestId":"82e63f24-2138-46d6-aec1-566c1a045b79","method":"GET","route":"/api/settings","status":200,"durationMs":138,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.094Z","level":"info","message":"HTTP request completed","meta":{"requestId":"a35b29b1-7b9e-41e7-acf3-31d43bf0c87f","method":"GET","route":"/api/approval-policies","status":200,"durationMs":46,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.094Z","level":"info","message":"HTTP request completed","meta":{"requestId":"64e02a55-80c7-4d9a-bcae-7d6bdbe59993","method":"GET","route":"/api/procurement/purchase-orders/PO-FQA-002","status":200,"durationMs":98,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.122Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c1046995-5851-4484-a600-6ccc0aa85e3e","method":"GET","route":"/api/mdm/defaults/po-context","status":200,"durationMs":123,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.184Z","level":"info","message":"HTTP request completed","meta":{"requestId":"af37fcec-437c-4a4e-8e5b-1039e88c76b7","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":29,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.186Z","level":"info","message":"HTTP request completed","meta":{"requestId":"cc7490ae-782b-45a7-8eaf-115e2d93c272","method":"GET","route":"/api/procurement/purchase-orders/records/3/revisions","status":200,"durationMs":30,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.191Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6629e791-0c5c-4bf2-aa84-0eedd1432f21","method":"GET","route":"/api/activity","status":200,"durationMs":38,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.193Z","level":"info","message":"HTTP request completed","meta":{"requestId":"7602ca52-0f39-457a-b230-ec3f7cff23d6","method":"GET","route":"/api/approval-history/purchase_order/3","status":200,"durationMs":35,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.208Z","level":"info","message":"HTTP request completed","meta":{"requestId":"08dfd7ac-bcdc-467d-97a7-c756968d3f4e","method":"GET","route":"/api/procurement/purchase-orders/records/3","status":200,"durationMs":49,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.221Z","level":"info","message":"HTTP request completed","meta":{"requestId":"eaf1ab4f-cf10-40f2-af6a-915a876b5791","method":"GET","route":"/api/v2/procurement/purchase-orders/3/supplier-confirmations","status":200,"durationMs":30,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:28.255Z","level":"info","message":"HTTP request completed","meta":{"requestId":"8253a485-f252-4031-b197-98647bf8577b","method":"GET","route":"/api/v2/procurement/purchase-orders/3/workflow","status":200,"durationMs":92,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:29.262Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ec38a72b-9795-4ea0-b108-ad4f52b41052","method":"GET","route":"/api/csrf-token","status":200,"durationMs":13,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:29.340Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5c030291-5bed-4847-8ab7-40d0018ae9e2","method":"PATCH","route":"/api/procurement/purchase-orders/records/3/commercial","status":409,"durationMs":35,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.058Z","level":"info","message":"HTTP request completed","meta":{"requestId":"24af837e-df67-4103-8927-b87b6faaf5ef","method":"GET","route":"/api/user","status":200,"durationMs":20,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.061Z","level":"info","message":"HTTP request completed","meta":{"requestId":"af7e9d5b-0aac-4b06-8657-485c3cdafd1d","method":"GET","route":"/api/ready","status":200,"durationMs":28,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.174Z","level":"info","message":"HTTP request completed","meta":{"requestId":"604fe9b6-8766-4d66-9a29-485ddbec6a3b","method":"GET","route":"/api/release-scope","status":200,"durationMs":52,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.175Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c91d7e54-7784-4bdb-83f1-c1b709c12b93","method":"GET","route":"/api/permissions/me","status":200,"durationMs":52,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.196Z","level":"info","message":"HTTP request completed","meta":{"requestId":"832dfb6b-3ab4-4cf8-bb3e-a7cac25dfe56","method":"GET","route":"/api/suppliers","status":200,"durationMs":68,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.212Z","level":"info","message":"HTTP request completed","meta":{"requestId":"38f9415d-92b4-4f92-bea9-dbd9a42293e1","method":"GET","route":"/api/notifications","status":200,"durationMs":88,"orgId":null,"userId":1,"errorCode":null}}
+[SETUP_STATUS] summary requestId=33918d56-e90c-4a7e-a69a-ca6dd598109a userId=1 orgId=1 health=ok firstCode=OK criticalCount=0 warningCount=0
+{"timestamp":"2026-10-10T21:06:30.271Z","level":"info","message":"HTTP request completed","meta":{"requestId":"d9b87436-6cfc-4e5c-9afb-97ce19774e8b","method":"GET","route":"/api/inventory","status":200,"durationMs":141,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.273Z","level":"info","message":"HTTP request completed","meta":{"requestId":"33918d56-e90c-4a7e-a69a-ca6dd598109a","method":"GET","route":"/api/setup/status","status":200,"durationMs":155,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:30.281Z","level":"info","message":"HTTP request completed","meta":{"requestId":"9f5b92fb-4591-4247-9616-2f8df7966621","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":97,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.258Z","level":"info","message":"HTTP request completed","meta":{"requestId":"bac32279-7bfd-4b77-af2a-80b922156de5","method":"GET","route":"/api/settings","status":200,"durationMs":42,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.280Z","level":"info","message":"HTTP request completed","meta":{"requestId":"356975b8-2192-45fa-a0c7-308095bb641f","method":"GET","route":"/api/approval-policies","status":200,"durationMs":58,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.286Z","level":"info","message":"HTTP request completed","meta":{"requestId":"28d40320-1c89-458f-ae8f-950982fa79b3","method":"GET","route":"/api/procurement/purchase-orders/PO-FQA-003","status":200,"durationMs":66,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.364Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1c9046d1-a314-4238-8e0a-7c69fb59d83c","method":"GET","route":"/api/logistics/shipments","status":200,"durationMs":22,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.377Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6b46e3ce-e679-4f07-ba75-aabf89f26bfe","method":"GET","route":"/api/procurement/purchase-orders/records/4/revisions","status":200,"durationMs":34,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.395Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f769ba92-fa54-46dc-aec6-8be1fc69874e","method":"GET","route":"/api/approval-history/purchase_order/4","status":200,"durationMs":49,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.421Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e3d1ce01-4e27-42af-9b81-6c3b90fb5375","method":"GET","route":"/api/activity","status":200,"durationMs":80,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.422Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c0f914f5-0681-41f1-81de-82f5b18d75ad","method":"GET","route":"/api/v2/procurement/purchase-orders/4/supplier-confirmations","status":200,"durationMs":39,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.427Z","level":"info","message":"HTTP request completed","meta":{"requestId":"95a9c27c-ebb2-4ac3-be93-88a4629fdfe8","method":"GET","route":"/api/procurement/purchase-orders/records/4","status":200,"durationMs":80,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.431Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e0f859c8-8d07-4421-9772-0846d5b4fcc9","method":"GET","route":"/api/v2/procurement/purchase-orders/4/workflow","status":200,"durationMs":63,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:31.700Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f70e516b-a25d-4d09-a677-a07d08793c5e","method":"GET","route":"/api/mdm/defaults/po-context","status":200,"durationMs":479,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.024Z","level":"info","message":"HTTP request completed","meta":{"requestId":"d66a73ad-0b6a-4543-b6a6-f017eed1bb69","method":"GET","route":"/api/user","status":200,"durationMs":12,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.025Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1aec5f14-cce3-4e36-ad37-3446b707ac92","method":"GET","route":"/api/ready","status":200,"durationMs":18,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.110Z","level":"info","message":"HTTP request completed","meta":{"requestId":"134f06f5-b1c2-4ced-a2ab-78fb3496604f","method":"GET","route":"/api/release-scope","status":200,"durationMs":28,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.112Z","level":"info","message":"HTTP request completed","meta":{"requestId":"49a19dee-2188-4314-ac91-2ef7cb3d3fbf","method":"GET","route":"/api/permissions/me","status":200,"durationMs":29,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.118Z","level":"info","message":"HTTP request completed","meta":{"requestId":"0ee7716e-4f67-4bdb-9363-5dba8961c6c9","method":"GET","route":"/api/suppliers","status":200,"durationMs":33,"orgId":null,"userId":1,"errorCode":null}}
+[SETUP_STATUS] summary requestId=cdbe5b19-077a-4c06-824f-22db5902ee9f userId=1 orgId=1 health=ok firstCode=OK criticalCount=0 warningCount=0
+{"timestamp":"2026-10-10T21:06:33.150Z","level":"info","message":"HTTP request completed","meta":{"requestId":"cdbe5b19-077a-4c06-824f-22db5902ee9f","method":"GET","route":"/api/setup/status","status":200,"durationMs":75,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.256Z","level":"info","message":"HTTP request completed","meta":{"requestId":"2bc5482b-17ee-41ba-8f6e-99d3c27e8b8d","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":179,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.266Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f9a7f573-cfc0-4d19-a2d4-af87b119ac36","method":"GET","route":"/api/notifications","status":200,"durationMs":182,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.271Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1dc3599a-d6af-4f89-8a71-13ca540f0a41","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":154,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.290Z","level":"info","message":"HTTP request completed","meta":{"requestId":"c0c9cb9a-ee92-400e-9462-fee419caf299","method":"GET","route":"/api/inventory","status":200,"durationMs":174,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.957Z","level":"info","message":"HTTP request completed","meta":{"requestId":"ee891414-223d-4712-9da7-5a2e7fbeaa66","method":"GET","route":"/api/runtime-capabilities","status":200,"durationMs":6,"orgId":null,"userId":null,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:33.979Z","level":"info","message":"HTTP request completed","meta":{"requestId":"88c1e88c-e41d-4051-9ac5-dcfb23b79e8d","method":"GET","route":"/api/ready","status":200,"durationMs":64,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.566Z","level":"info","message":"HTTP request completed","meta":{"requestId":"f9978ab8-5bde-42eb-8e34-412ea0e867a0","method":"GET","route":"/api/user","status":200,"durationMs":15,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.590Z","level":"info","message":"HTTP request completed","meta":{"requestId":"144acc8b-3d20-460c-99cb-4b8e41ee1a78","method":"GET","route":"/api/ready","status":200,"durationMs":50,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.650Z","level":"info","message":"HTTP request completed","meta":{"requestId":"847f8abf-4e33-421a-b52e-f1a1a993567b","method":"GET","route":"/api/release-scope","status":200,"durationMs":33,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.661Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e5219c20-c0ae-4c48-a8ed-5a71c70e1d6d","method":"GET","route":"/api/permissions/me","status":200,"durationMs":42,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.674Z","level":"info","message":"HTTP request completed","meta":{"requestId":"381d2bc2-495e-4a21-8d74-f53b7dd9566b","method":"GET","route":"/api/suppliers","status":200,"durationMs":50,"orgId":null,"userId":1,"errorCode":null}}
+[SETUP_STATUS] summary requestId=6cea528a-f532-4c75-9c81-e36693dfa67f userId=1 orgId=1 health=ok firstCode=OK criticalCount=0 warningCount=0
+{"timestamp":"2026-10-10T21:06:34.705Z","level":"info","message":"HTTP request completed","meta":{"requestId":"92b243bd-e688-44e8-804c-f485c79e770d","method":"GET","route":"/api/notifications","status":200,"durationMs":82,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.706Z","level":"info","message":"HTTP request completed","meta":{"requestId":"6cea528a-f532-4c75-9c81-e36693dfa67f","method":"GET","route":"/api/setup/status","status":200,"durationMs":90,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.708Z","level":"info","message":"HTTP request completed","meta":{"requestId":"5ba1a47f-0644-4b78-8814-1614e9b54360","method":"GET","route":"/api/inventory","status":200,"durationMs":83,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:34.710Z","level":"info","message":"HTTP request completed","meta":{"requestId":"3afb97a1-929f-4307-9971-a68022aaa8d9","method":"GET","route":"/api/onboarding/setup-progress","status":200,"durationMs":47,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:35.371Z","level":"info","message":"HTTP request completed","meta":{"requestId":"1ab0e699-2136-405f-aa14-9152b476a9a4","method":"GET","route":"/api/v2/diagnostics/capability-coverage","status":200,"durationMs":117,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:35.373Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e1d68392-8f08-4b03-91ba-ffb702fe101a","method":"GET","route":"/api/diagnostics/findings","status":200,"durationMs":122,"orgId":null,"userId":1,"errorCode":null}}
+{"timestamp":"2026-10-10T21:06:35.376Z","level":"info","message":"HTTP request completed","meta":{"requestId":"e3d2b460-9d75-4748-800a-cf24deab6f80","method":"GET","route":"/api/diagnostics/summary","status":200,"durationMs":123,"orgId":null,"userId":1,"errorCode":null}}
+[1A[2K  1 passed (46.3s)
+Removed exact test-owned database iss_e2e_test_c8f86520d2cd481b8074f9241057c05d; Playwright reports remain available.
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.21.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.0
+npm notice To update run: npm install -g npm@11.21.0
+npm notice

@@ -1,0 +1,22 @@
+# Weekly dependency bumps (npm + Actions). Alerts still require GitHub "Dependabot alerts" repo setting enabled.
+# Workflow steps now pin immutable SHAs — Dependabot proposes digest bumps weekly (package-ecosystem: github-actions).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - security
+    open-pull-requests-limit: 15
+    versioning-strategy: increase-if-necessary
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - security
+    open-pull-requests-limit: 5

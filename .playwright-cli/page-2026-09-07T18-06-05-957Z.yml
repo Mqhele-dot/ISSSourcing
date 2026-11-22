@@ -1,0 +1,186 @@
+- generic [ref=f3e2]:
+  - generic [ref=f3e4]:
+    - link "Skip to main content" [ref=f3e5] [cursor=pointer]:
+      - /url: "#main-content"
+    - generic [ref=f3e6]:
+      - complementary [ref=f3e7]:
+        - generic [ref=f3e9]:
+          - generic [ref=f3e10]: ISSSourcing
+          - button "Collapse navigation sidebar" [ref=f3e18] [cursor=pointer]
+        - navigation [ref=f3e22]:
+          - generic [ref=f3e23]:
+            - generic [ref=f3e24]:
+              - paragraph [ref=f3e25]: Operations
+              - link "Overview" [ref=f3e26] [cursor=pointer]:
+                - /url: /operations
+                - generic "Overview" [ref=f3e34]
+              - link "Control tower" [ref=f3e35] [cursor=pointer]:
+                - /url: /operations/control-tower
+                - generic "Control tower" [ref=f3e45]
+              - link "Fuel operations" [ref=f3e46] [cursor=pointer]:
+                - /url: /operations/fuel
+                - generic "Fuel operations" [ref=f3e52]
+              - link "Logistics" [ref=f3e53] [cursor=pointer]:
+                - /url: /operations/logistics
+                - generic "Logistics" [ref=f3e61]
+              - link "Exceptions" [ref=f3e62] [cursor=pointer]:
+                - /url: /operations/exceptions
+                - generic "Exceptions" [ref=f3e67]
+            - generic [ref=f3e68]:
+              - paragraph [ref=f3e69]: Inventory
+              - link "Inventory" [ref=f3e70] [cursor=pointer]:
+                - /url: /inventory
+                - generic "Inventory" [ref=f3e76]
+              - link "Warehouse ops" [ref=f3e77] [cursor=pointer]:
+                - /url: /inventory/warehouse-operations
+                - generic "Warehouse ops" [ref=f3e86]
+              - link "Put-away" [ref=f3e87] [cursor=pointer]:
+                - /url: /inventory/put-away
+                - generic "Put-away" [ref=f3e95]
+              - link "Cycle counts" [ref=f3e96] [cursor=pointer]:
+                - /url: /inventory/cycle-counts
+                - generic "Cycle counts" [ref=f3e104]
+              - link "Reorder requests" [ref=f3e105] [cursor=pointer]:
+                - /url: /inventory/reorder
+                - generic "Reorder requests" [ref=f3e111]
+              - link "Barcode scanner" [ref=f3e112] [cursor=pointer]:
+                - /url: /inventory/barcodes
+                - generic "Barcode scanner" [ref=f3e121]
+            - generic [ref=f3e122]:
+              - paragraph [ref=f3e123]: Procurement
+              - link "Procurement overview" [ref=f3e124] [cursor=pointer]:
+                - /url: /procurement/overview
+                - generic "Procurement overview" [ref=f3e132]
+              - link "Sourcing & RFQs" [ref=f3e133] [cursor=pointer]:
+                - /url: /procurement/sourcing
+                - generic "Sourcing & RFQs" [ref=f3e140]
+              - link "Commercial quotations" [ref=f3e141] [cursor=pointer]:
+                - /url: /procurement/commercial-quotations
+                - generic "Commercial quotations" [ref=f3e147]
+              - link "Supplier quotations" [ref=f3e148] [cursor=pointer]:
+                - /url: /procurement/quotations
+                - generic "Supplier quotations" [ref=f3e154]
+              - link "Purchase orders" [ref=f3e155] [cursor=pointer]:
+                - /url: /procurement/orders
+                - generic "Purchase orders" [ref=f3e162]
+              - link "Requisitions" [ref=f3e163] [cursor=pointer]:
+                - /url: /procurement/requisitions
+                - generic "Requisitions" [ref=f3e169]
+              - link "Suppliers" [ref=f3e170] [cursor=pointer]:
+                - /url: /procurement/suppliers
+                - generic "Suppliers" [ref=f3e178]
+              - link "Contracts" [ref=f3e179] [cursor=pointer]:
+                - /url: /procurement/contracts
+                - generic "Contracts" [ref=f3e185]
+              - link "Receiving & returns" [ref=f3e186] [cursor=pointer]:
+                - /url: /procurement/receiving
+                - generic "Receiving & returns" [ref=f3e195]
+              - link "Supplier portal" [ref=f3e196] [cursor=pointer]:
+                - /url: /procurement/supplier-portal
+                - generic "Supplier portal" [ref=f3e204]
+            - generic [ref=f3e205]:
+              - paragraph [ref=f3e206]: Finance
+              - link "General ledger" [ref=f3e207] [cursor=pointer]:
+                - /url: /finance/general-ledger
+                - generic "General ledger" [ref=f3e212]
+              - link "Accounts receivable" [ref=f3e213] [cursor=pointer]:
+                - /url: /finance/accounts-receivable
+                - generic "Accounts receivable" [ref=f3e219]
+              - link "Accounts payable" [ref=f3e220] [cursor=pointer]:
+                - /url: /finance/accounts-payable
+                - generic "Accounts payable" [ref=f3e225]
+              - link "Invoices" [ref=f3e226] [cursor=pointer]:
+                - /url: /finance/invoices
+                - generic "Invoices" [ref=f3e232]
+            - generic [ref=f3e233]:
+              - paragraph [ref=f3e234]: Analytics
+              - link "Overview" [ref=f3e235] [cursor=pointer]:
+                - /url: /analytics/overview
+                - generic "Overview" [ref=f3e239]
+              - link "Reports" [ref=f3e240] [cursor=pointer]:
+                - /url: /analytics/reports
+                - generic "Reports" [ref=f3e246]
+              - link "Saved reports" [ref=f3e247] [cursor=pointer]:
+                - /url: /analytics/saved-reports
+                - generic "Saved reports" [ref=f3e252]
+              - link "Export center" [ref=f3e253] [cursor=pointer]:
+                - /url: /analytics/export-center
+                - generic "Export center" [ref=f3e258]
+            - generic [ref=f3e259]:
+              - paragraph [ref=f3e260]: Admin
+              - link "Company setup" [ref=f3e261] [cursor=pointer]:
+                - /url: /admin/company-setup
+                - generic "Company setup" [ref=f3e268]
+              - link "Settings" [ref=f3e269] [cursor=pointer]:
+                - /url: /admin/settings
+                - generic "Settings" [ref=f3e275]
+              - link "Workflow governance" [ref=f3e276] [cursor=pointer]:
+                - /url: /admin/workflows
+                - generic "Workflow governance" [ref=f3e282]
+              - link "Document extractor" [ref=f3e283] [cursor=pointer]:
+                - /url: /admin/document-extractor
+                - generic "Document extractor" [ref=f3e293]
+              - link "Integrations" [ref=f3e294] [cursor=pointer]:
+                - /url: /admin/integrations
+                - generic "Integrations" [ref=f3e299]
+              - link "Audit logs" [ref=f3e300] [cursor=pointer]:
+                - /url: /admin/audit-logs
+                - generic "Audit logs" [ref=f3e305]
+              - link "Subscription" [ref=f3e306] [cursor=pointer]:
+                - /url: /admin/subscription
+                - generic "Subscription" [ref=f3e311]
+              - generic [ref=f3e312]:
+                - paragraph [ref=f3e313]: Files & recognition
+                - link "Documents" [ref=f3e314] [cursor=pointer]:
+                  - /url: /admin/documents
+                  - generic "Documents" [ref=f3e319]
+                - link "Image recognition" [ref=f3e320] [cursor=pointer]:
+                  - /url: /admin/image-recognition
+                  - generic "Image recognition" [ref=f3e326]
+              - paragraph [ref=f3e328]: People & access
+              - generic [ref=f3e329]:
+                - paragraph [ref=f3e330]: System & profile
+                - link "System diagnostics" [ref=f3e331] [cursor=pointer]:
+                  - /url: /admin/system-diagnostics
+                  - generic "System diagnostics" [ref=f3e341]
+                - link "Profile" [ref=f3e342] [cursor=pointer]:
+                  - /url: /admin/profile
+                  - generic "Profile" [ref=f3e348]
+            - generic [ref=f3e349]:
+              - paragraph [ref=f3e350]: Learning
+              - link "Get Educated" [ref=f3e351] [cursor=pointer]:
+                - /url: /get-educated
+                - generic "Get Educated" [ref=f3e357]
+        - button "Dark Mode" [ref=f3e359] [cursor=pointer]
+      - generic [ref=f3e363]:
+        - banner [ref=f3e364]:
+          - generic [ref=f3e365]:
+            - paragraph [ref=f3e366]: Procurement / Contracts
+            - search [ref=f3e367]:
+              - combobox "Global search" [ref=f3e368]
+          - generic [ref=f3e369]:
+            - button "Jump to..." [ref=f3e370] [cursor=pointer]
+            - generic "System status" [ref=f3e374]: LIVE
+            - generic [ref=f3e375]: DEV
+            - generic [ref=f3e376]: ADMIN
+            - button "Toggle theme" [ref=f3e377] [cursor=pointer]
+            - button "Cycle accent palette" [ref=f3e380] [cursor=pointer]
+            - button "Notifications" [ref=f3e388] [cursor=pointer]
+            - button "SA Open user menu" [ref=f3e393] [cursor=pointer]:
+              - generic [ref=f3e394]: SA
+              - generic [ref=f3e396]: Open user menu
+        - main [ref=f3e397]:
+          - generic [ref=f3e398]:
+            - generic [ref=f3e402]:
+              - text: New here?
+              - strong [ref=f3e403]: Purchase
+              - text: — start with the short lesson on this page, or use the spotlight tour to highlight controls. Skipping onboarding increases mismatched inventory, late POs, and AP errors.
+            - generic [ref=f3e404]:
+              - button "Open lesson" [ref=f3e405] [cursor=pointer]
+              - button "Spotlight tour" [ref=f3e408] [cursor=pointer]
+              - button "Dismiss" [ref=f3e409] [cursor=pointer]
+          - generic [ref=f3e413]: Checking product setup…
+        - button "Help & Tutorials" [ref=f3e418] [cursor=pointer]
+  - button "Diagnostics 5" [ref=f3e424] [cursor=pointer]
+  - region "Notifications (F8)":
+    - list

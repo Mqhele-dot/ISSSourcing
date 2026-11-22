@@ -1,0 +1,4 @@
+[     611ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5000/@fs/C:/Users/USER-PC/OneDrive/Documents/GITHUB%20REPO/ISSSourcing/node_modules/.vite/deps/react-dom-BRJs3cXW.js?v=893a5709:17232
+[ 1854187ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5000/@vite/client:992
+[ 1854194ms] [ERROR] Creating a worker from 'blob:http://127.0.0.1:5000/6ebf3063-97d4-4a86-b559-718eb8274cf6' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked. @ http://127.0.0.1:5000/@vite/client:1062
+[ 1867164ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5000/api/ready:0

@@ -1,0 +1,101 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {mkdtemp,readFile,rm,writeFile,readdir} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {setTimeout as pause} from 'node:timers/promises';
+import {pathToFileURL} from 'node:url';
+import pg from 'pg';
+import ExcelJS from 'exceljs';
+import 'dotenv/config';
+import {assertDisposableDatabaseUrl} from '../server/config/database-safety';
+import {compactFullDetailMigrations,compactPublicationMigrations,compactWorkspaceMigrations,compactCaptureMigrations} from './release-migrations.mjs';
+import {executeCompactOperationalJob as sourceExecute,CompactPipelineFailure as SourceFailure} from '../server/modules/exports/compact-operational-controller';
+import {cancelCompactJob} from '../server/modules/exports/compact-export-leases';
+import {recordCompactCapture} from '../server/modules/exports/compact-capture-evidence';
+import {listCompactCleanupCandidates,cleanupCompactWorkspace} from '../server/modules/exports/compact-workspaces';
+import {initializeCompactAuditFixture} from './runtime-fixtures/compact-audit-fixture';
+import {verifyAuditChainWithClient} from '../server/services/audit-chain-client';
+const implementation=process.env.COMPACT_BUILT_CONTROLLER?await import(pathToFileURL(process.env.COMPACT_BUILT_CONTROLLER).href):{executeCompactOperationalJob:sourceExecute,CompactPipelineFailure:SourceFailure};
+const executeCompactOperationalJob=implementation.executeCompactOperationalJob as typeof sourceExecute,CompactPipelineFailure=implementation.CompactPipelineFailure as typeof SourceFailure;
+if(!process.argv.includes('--local-disposable'))throw new Error('Use --local-disposable; no business database is a mutation target.');
+const configured=process.env.DATABASE_URL||(process.env.PGHOST&&process.env.PGUSER&&process.env.PGPASSWORD?`postgresql://${encodeURIComponent(process.env.PGUSER)}:${encodeURIComponent(process.env.PGPASSWORD)}@${process.env.PGHOST}:${process.env.PGPORT||5432}/postgres`:null);assert.ok(configured);
+const url=new URL(configured);assert.ok(['localhost','127.0.0.1','[::1]'].includes(url.hostname));url.pathname='/postgres';
+const name=`iss_export_test_${randomUUID().replaceAll('-','')}`,owner=new pg.Client({connectionString:url.toString()});let created=false,db:pg.Pool|undefined;
+const root=await mkdtemp(path.join(os.tmpdir(),'iss-compact-controller-')),policy={temporaryBytes:4*1024**2,organizationTemporaryBytes:128*1024**2,totalTemporaryBytes:256*1024**2,organizationRetainedBytes:10_000_000,totalRetainedBytes:50_000_000,retentionDays:7,tokenTtlMinutes:30};
+const input={root,storageId:'controller-test',organizationId:1,serverId:'controller-server',policy,columns:['name']};
+async function enqueue(filters:Record<string,unknown>={},extra:{retryOf?:number;dataset?:string}={}){return Number((await db!.query("INSERT INTO export_jobs(organization_id,created_by,dataset,filters,profile,retry_of_job_id) VALUES(1,1,$1,$2::jsonb,'compact_excel',$3) RETURNING id",[extra.dataset??'suppliers',JSON.stringify(filters),extra.retryOf??null])).rows[0].id);}
+async function job(id:number){return(await db!.query('SELECT * FROM export_jobs WHERE id=$1',[id])).rows[0];}
+async function noPublication(id:number){const saved=await job(id);assert.equal(saved.status,'failed');assert.equal(saved.file_path,null);assert.equal((await db!.query('SELECT count(*)::int n FROM compact_export_publications WHERE job_id=$1',[id])).rows[0].n,0);assert.doesNotMatch(saved.last_error??'',/SELECT|INSERT|postgresql:|stack|SQLSTATE/);}
+try{
+  await owner.connect();await owner.query(`CREATE DATABASE "${name}"`);created=true;console.log(`Created exact test-owned database ${name}.`);url.pathname=`/${name}`;assertDisposableDatabaseUrl(url.toString());db=new pg.Pool({connectionString:url.toString(),max:4,connectionTimeoutMillis:5000});assert.equal((await db.query('SELECT current_database() name')).rows[0].name,name);
+  await initializeCompactAuditFixture(db,name);
+  await db.query(`CREATE TABLE organizations(id int PRIMARY KEY,active boolean);INSERT INTO organizations VALUES(1,true),(2,true);
+    CREATE TABLE users(id int PRIMARY KEY,active boolean,warehouse_id int,preferences jsonb);INSERT INTO users VALUES(1,true,NULL,'{}');
+    CREATE TABLE organization_members(id serial PRIMARY KEY,organization_id int,user_id int,application_role text,active boolean,status text);INSERT INTO organization_members(organization_id,user_id,application_role,active,status) VALUES(1,1,'admin',true,'active');
+    CREATE TABLE suppliers(id int PRIMARY KEY,organization_id int,name text,email text,phone text,default_currency_code text,status text,created_at timestamp);
+    INSERT INTO suppliers SELECT i,1,'Supplier '||i,'supplier'||i||'@example.invalid',NULL,'ZAR','active','2020-01-01' FROM generate_series(1,5000)i;
+    INSERT INTO suppliers SELECT i,2,'FOREIGN_SUPPLIER_SECRET',NULL,NULL,'USD','active','2020-01-01' FROM generate_series(5001,5500)i;
+    CREATE TABLE export_jobs(id serial PRIMARY KEY,organization_id int NOT NULL,created_by int NOT NULL,dataset text NOT NULL,filters jsonb NOT NULL,format text NOT NULL DEFAULT 'excel',status text NOT NULL DEFAULT 'queued',retry_of_job_id int,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz,completed_at timestamptz,started_at timestamptz,attempts int NOT NULL DEFAULT 0,last_error text,file_name text,file_path text,file_size bigint,mime_type text,row_count int,download_token text,download_token_expires_at timestamptz,retention_expires_at timestamptz)`);
+  for(const migration of [...compactFullDetailMigrations,...compactPublicationMigrations,...compactWorkspaceMigrations,...compactCaptureMigrations]){const sql=await readFile(new URL(`../migrations/${migration}`,import.meta.url),'utf8');await db.query(sql);await db.query(sql);}
+  assert.deepEqual(await executeCompactOperationalJob(db,input),{status:'idle'});assert.equal((await readdir(root)).length,0);
+  const first=await enqueue(),tooSmall=new pg.Pool({connectionString:url.toString(),max:1,connectionTimeoutMillis:5000});
+  try{await assert.rejects(executeCompactOperationalJob(tooSmall,input),/at least two/);}finally{await tooSmall.end();}
+  await assert.rejects(executeCompactOperationalJob(db,{...input,policy:{...policy,temporaryBytes:1}}),/valid private/);assert.equal((await job(first)).status,'queued');
+  let reused=false,closedObservation=false;
+  const successful=executeCompactOperationalJob(db,input,{onProgress:async event=>{
+    if(event.stage!=='captured')return;
+    assert.equal((await db!.query("SELECT count(*)::int n FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'")).rows[0].n,0);closedObservation=true;
+    const saved=(await db!.query('SELECT c.*,a.lease_token FROM compact_export_captures c JOIN compact_export_attempts a ON a.id=c.attempt_id WHERE c.id=$1',[event.captureId])).rows[0];
+    const request={jobId:first,captureDirectory:path.join(root,'org-1',`workspace-${event.workspaceId}`,'captures',saved.capture_directory),outputRoot:path.join(root,'org-1',`workspace-${event.workspaceId}`,'outputs'),temporaryQuotaBytes:policy.temporaryBytes-4096,scope:saved.scope,columns:saved.columns};
+    const registration={root,storageId:input.storageId,workspaceId:event.workspaceId!,lease:{organizationId:1,attemptId:String(saved.attempt_id),leaseToken:saved.lease_token},request};
+    const again=await recordCompactCapture(db!,registration);assert.equal(again.id,event.captureId);assert.equal(again.replayed,true);reused=true;
+    await assert.rejects(recordCompactCapture(db!,{...registration,request:{...request,columns:saved.columns.map((column:{label:string})=>({...column,label:'Changed label'}))}}),/cannot be replaced/);
+    await db!.query("UPDATE suppliers SET name='Changed after source capture' WHERE id=1");
+  }});
+  const competing=await executeCompactOperationalJob(db,{...input,serverId:'other-server'});assert.equal(competing.status,'idle');const result=await successful;assert.equal(result.status,'succeeded');if(result.status!=='succeeded')throw new Error('Expected completed pipeline');assert.equal(result.rows,5000);assert.ok(reused&&closedObservation);
+  const saved=await job(first);assert.equal(saved.row_count,5000);assert.ok(Number(saved.file_size)>0&&Number(saved.file_size)<100_000_000);
+  const firstAudit=await db.query("SELECT action,user_id,organization_id,resource_id,details FROM audit_logs WHERE resource_type='export_job' AND resource_id=$1 ORDER BY id",[first]);
+  assert.deepEqual(firstAudit.rows.map(row=>row.action),['COMPACT_CAPTURE_RECORDED','COMPACT_WORKBOOK_PUBLISHED']);assert.ok(firstAudit.rows.every(row=>row.user_id===1&&row.organization_id===1));
+  assert.equal(firstAudit.rows[0].details.captureId,result.captureId);assert.equal(firstAudit.rows[0].details.workspaceId,result.workspaceId);assert.doesNotMatch(JSON.stringify(firstAudit.rows),/leaseToken|downloadToken|file_path|Supplier 1|@example/);
+  const workbook=new ExcelJS.Workbook();await workbook.xlsx.readFile(path.resolve(saved.file_path));const sheet=workbook.getWorksheet('Data 1')!;const text=(value:ExcelJS.CellValue)=>value&&typeof value==='object'&&'richText'in value?value.richText.map(run=>run.text).join(''):value;
+  assert.equal(sheet.rowCount,5001);assert.equal(text(sheet.getCell('A2').value),'Supplier 1');assert.equal(text(sheet.getCell('A5001').value),'Supplier 5000');assert.doesNotMatch(JSON.stringify(sheet.getSheetValues()),/FOREIGN_SUPPLIER_SECRET|Changed after source capture/);
+  await assert.rejects(db.query('UPDATE compact_export_captures SET capture_bytes=1 WHERE id=$1',[result.captureId]),/immutable/);await assert.rejects(db.query('DELETE FROM compact_export_captures WHERE id=$1',[result.captureId]),/immutable/);
+  // Failed evidence insertion cannot continue to compression/publication.
+  await db.query(`CREATE FUNCTION reject_capture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Injected capture failure'; END $$;CREATE TRIGGER reject_capture BEFORE INSERT ON compact_export_captures FOR EACH ROW EXECUTE FUNCTION reject_capture()`);
+  const captureFailure=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(captureFailure);assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_captures WHERE job_id=$1',[captureFailure])).rows[0].n,0);await db.query('DROP TRIGGER reject_capture ON compact_export_captures; DROP FUNCTION reject_capture()');
+  // Final job-write failure rolls back immutable publication proof, not capture.
+  await db.query(`CREATE FUNCTION reject_ready_job() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='succeeded' THEN RAISE EXCEPTION 'Injected publication failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_ready_job BEFORE UPDATE ON export_jobs FOR EACH ROW EXECUTE FUNCTION reject_ready_job()`);
+  const publicationFailure=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(publicationFailure);assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_captures WHERE job_id=$1',[publicationFailure])).rows[0].n,1);await db.query('DROP TRIGGER reject_ready_job ON export_jobs; DROP FUNCTION reject_ready_job()');
+  // Audit failures are failures of the same transaction, not best-effort logging.
+  await db.query(`CREATE FUNCTION reject_capture_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='COMPACT_CAPTURE_RECORDED' THEN RAISE EXCEPTION 'Injected capture audit failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_compact_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_capture_audit()`);
+  const captureAuditFailure=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(captureAuditFailure);
+  assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_captures WHERE job_id=$1',[captureAuditFailure])).rows[0].n,0);assert.equal((await db.query('SELECT count(*)::int n FROM audit_logs WHERE resource_id=$1',[captureAuditFailure])).rows[0].n,0);
+  await db.query('DROP TRIGGER reject_compact_audit ON audit_logs; DROP FUNCTION reject_capture_audit()');
+  await db.query(`CREATE FUNCTION reject_publication_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='COMPACT_WORKBOOK_PUBLISHED' THEN RAISE EXCEPTION 'Injected publication audit failure'; END IF; RETURN NEW; END $$;CREATE TRIGGER reject_compact_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_publication_audit()`);
+  const publicationAuditFailure=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(publicationAuditFailure);
+  assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_captures WHERE job_id=$1',[publicationAuditFailure])).rows[0].n,1);assert.deepEqual((await db.query('SELECT action FROM audit_logs WHERE resource_id=$1',[publicationAuditFailure])).rows.map(row=>row.action),['COMPACT_CAPTURE_RECORDED']);
+  await db.query('DROP TRIGGER reject_compact_audit ON audit_logs; DROP FUNCTION reject_publication_audit()');
+  const denied=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input,{onProgress:async event=>{if(event.stage==='validated')await db!.query('UPDATE organization_members SET active=false WHERE organization_id=1');}}),CompactPipelineFailure);await noPublication(denied);await db.query('UPDATE organization_members SET active=true WHERE organization_id=1');
+  const cancelled=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input,{onProgress:async event=>{if(event.stage==='captured')assert.equal(await cancelCompactJob(db!,{organizationId:1,actorId:1,jobId:event.jobId}),true);}}),CompactPipelineFailure);await noPublication(cancelled);assert.equal((await db.query('SELECT stage FROM compact_export_attempts WHERE job_id=$1',[cancelled])).rows[0].stage,'cancelled');
+  const scoped=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input,{onProgress:async event=>{if(event.stage==='captured')await db!.query("UPDATE export_jobs SET filters='{\"q\":\"changed\"}'::jsonb WHERE id=$1",[event.jobId]);}}),CompactPipelineFailure);await noPublication(scoped);
+  const tampered=await enqueue();await assert.rejects(executeCompactOperationalJob(db,input,{onProgress:async event=>{if(event.stage==='captured'){const capture=(await db!.query('SELECT capture_directory FROM compact_export_captures WHERE id=$1',[event.captureId])).rows[0];await writeFile(path.join(root,'org-1',`workspace-${event.workspaceId}`,'captures',capture.capture_directory,'rows.jsonl'),'{}\n');}}}),CompactPipelineFailure);await noPublication(tampered);
+  const unsupported=await enqueue({unknownFilter:'not ignored'});await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(unsupported);
+  const noncanonical=await enqueue({q:'  Supplier 1  '});await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(noncanonical);assert.equal((await job(noncanonical)).filters.q,'  Supplier 1  ');
+  const retry=await enqueue({}, {retryOf:first});await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(retry);assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_workspaces WHERE job_id=$1',[retry])).rows[0].n,0);
+  const tooLarge=await enqueue();await assert.rejects(executeCompactOperationalJob(db,{...input,policy:{...policy,temporaryBytes:8192}}),CompactPipelineFailure);await noPublication(tooLarge);
+  const revokedBefore=await enqueue();await db.query('UPDATE organization_members SET active=false WHERE organization_id=1');await assert.rejects(executeCompactOperationalJob(db,input),CompactPipelineFailure);await noPublication(revokedBefore);assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_workspaces WHERE job_id=$1',[revokedBefore])).rows[0].n,0);await db.query('UPDATE organization_members SET active=true WHERE organization_id=1');
+  const deadline=await enqueue();let observer:Promise<void>|undefined;
+  await assert.rejects(executeCompactOperationalJob(db,input,{deadlineMs:4000,onProgress:event=>{if(event.stage==='captured'){observer=pause(5000);return observer;}}}),CompactPipelineFailure);assert.ok(observer,'Deadline must interrupt the progress observer, not merely early startup');await observer;await noPublication(deadline);
+  const emptyId=await enqueue({q:'no-supplier-has-this-name'}),empty=await executeCompactOperationalJob(db,input);assert.equal(empty.status,'succeeded');if(empty.status==='succeeded')assert.equal(empty.rows,0);assert.equal((await job(emptyId)).row_count,0);
+  assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_attempts WHERE finished_at IS NULL')).rows[0].n,0);
+  // Governed cleanup handles the recorded failed attempts, preserving the saved workbook.
+  await db.query("UPDATE compact_export_attempts SET finished_at=clock_timestamp()-interval '36 minutes' WHERE finished_at IS NOT NULL");
+  for(const candidate of await listCompactCleanupCandidates(db,input))assert.equal((await cleanupCompactWorkspace(db,{...input,workspaceId:candidate.id,organizationId:candidate.organization_id})).status,'removed');
+  assert.equal((await db.query("SELECT count(*)::int n FROM compact_export_workspaces WHERE state<>'removed'")).rows[0].n,2);assert.equal((await db.query('SELECT count(*)::int n FROM compact_export_publications')).rows[0].n,2);await readFile(path.resolve(saved.file_path));
+  assert.equal((await db.query('SELECT count(*)::int n FROM suppliers WHERE organization_id=2')).rows[0].n,500);
+  const auditor=await db.connect();try{assert.equal((await verifyAuditChainWithClient(auditor,1)).valid,true);assert.equal((await verifyAuditChainWithClient(auditor,2)).checked,0);}finally{auditor.release();}
+  await assert.rejects(db.query('UPDATE audit_logs SET reason=$1 WHERE resource_id=$2',['forged',first]),/APPEND_ONLY/);
+  console.log(JSON.stringify({auditStatus:'passed',checks:['capture and publication events in existing ledger','source/actor/job identity','no duplicate capture event on replay','capture audit failure rolls back capture evidence','publication audit failure rolls back proof/job but preserves earlier capture','tenant-scoped hash verification','no tokens/paths/source values in details','append-only protection']}));
+  console.log(JSON.stringify({status:'passed',mode:process.env.COMPACT_BUILT_CONTROLLER?'built-runtime':'source',testDatabase:name,sourceRows:5000,foreignRowsExcluded:500,actualWorkbookBytes:Number(saved.file_size),checks:['private claim -> owned workspace -> authorized read-only capture -> immutable evidence -> isolated validation -> canonical publication','source transaction closed before worker','same saved capture remains unchanged after source edit','JSONB-restored capture idempotency/immutability','concurrent org claim is idle','bounded pool precondition','capture evidence insert rollback','final publication write rollback','current membership at publication','scoped cancellation','post-capture filter drift','tampered spool denial','unsupported/noncanonical filters not ignored','saved-source retry refuses rather than re-reading','temporary payload quota','revoked actor creates no workspace','deadline interrupts observer','zero-row source produces complete header/evidence workbook','failed owned workspaces clean safely; published workspaces retained'],limitations:'Private operational orchestration only. Public routes/automatic worker/UI, saved capture retry, lifecycle audit integration, frozen financial orchestration, native Excel and release-wide gates remain pending.'}));
+}finally{await db?.end();if(created){await owner.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()',[name]);await owner.query(`DROP DATABASE "${name}"`);console.log(`Removed exact test-owned database ${name}.`);}await owner.end();await rm(root,{recursive:true,force:true});console.log('Removed exact test-owned controller root.');}

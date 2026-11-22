@@ -1,0 +1,157 @@
+/**
+ * Image Recognition Page
+ * 
+ * This page provides a dedicated interface for using AI image recognition 
+ * to add new inventory items by simply uploading images of products.
+ */
+
+import { useQuery } from '@tanstack/react-query';
+import { requestJson } from '@/lib/queryClient';
+import { ImageRecognitionUpload } from '@/components/inventory/image-recognition-upload';
+import ImageRecognitionStatus from '@/components/inventory/image-recognition-status';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Camera, Info, AlertTriangle, Zap, Server, Database, Image } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+
+
+export default function ImageRecognitionPage() {
+  const { toast } = useToast();
+  const { data: recognitionStatus } = useQuery<{ status?: string }>({
+    queryKey: ['/api/image-recognition/status'],
+    queryFn: () => requestJson('GET', '/api/image-recognition/status'),
+    staleTime: 5 * 60 * 1000,
+  });
+  const recognitionMode = recognitionStatus?.status ?? 'checking';
+  const simulationMode = recognitionMode === 'simulation';
+  const unavailable = recognitionMode === 'unavailable';
+
+  return (
+    <div className="container mx-auto px-4 py-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center">
+            <Camera className="mr-2 h-6 w-6" />
+            {unavailable ? 'Image Recognition Setup Required' : simulationMode ? 'Image Recognition Preview' : 'AI Image Recognition'}
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {unavailable
+              ? 'Configure an image-recognition provider before images can be analyzed.'
+              : simulationMode
+              ? 'Preview the workflow with sample catalogue matches; no AI calls or inventory creation occur.'
+              : 'Use AI to identify products and add them to inventory from images.'}
+          </p>
+        </div>
+      </div>
+
+      {/* Service Status - Using our new component */}
+      <ImageRecognitionStatus />
+
+      {/* Main content */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-2">
+          {unavailable ? (
+            <Alert>
+              <Server className="h-4 w-4" />
+              <AlertTitle>Recognition provider not configured</AlertTitle>
+              <AlertDescription>
+                Analysis is disabled so uploaded images cannot produce misleading sample matches. Ask an administrator
+                to configure the provider; explicit demo deployments may enable sample-mode recognition.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <ImageRecognitionUpload standalone={true} simulationMode={simulationMode} />
+          )}
+        </div>
+        
+        <div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center">
+                <Info className="mr-2 h-5 w-5" />
+                How It Works
+              </CardTitle>
+              <CardDescription>
+                {simulationMode
+                  ? 'Understanding the sample recognition workflow'
+                  : 'Understanding AI image recognition for inventory'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-start">
+                  <div className="bg-primary/10 p-2 rounded-full mr-3 mt-0.5">
+                    <Camera className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium">Upload Product Image</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Take a photo or upload an image of your inventory item
+                    </p>
+                  </div>
+                </div>
+                
+                <Separator />
+                
+                <div className="flex items-start">
+                  <div className="bg-primary/10 p-2 rounded-full mr-3 mt-0.5">
+                    <Zap className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium">{simulationMode ? 'Sample Match Is Selected' : 'AI Analyzes Image'}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {simulationMode
+                        ? 'The preview returns a fixed catalogue example without analyzing the image'
+                        : 'Our AI recognizes the product and extracts key attributes'}
+                    </p>
+                  </div>
+                </div>
+                
+                <Separator />
+                
+                <div className="flex items-start">
+                  <div className="bg-primary/10 p-2 rounded-full mr-3 mt-0.5">
+                    <Image className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium">Review Results</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Verify and adjust the identified product information
+                    </p>
+                  </div>
+                </div>
+                
+                <Separator />
+                
+                <div className="flex items-start">
+                  <div className="bg-primary/10 p-2 rounded-full mr-3 mt-0.5">
+                    <Database className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium">{simulationMode ? 'Inventory Creation Stays Disabled' : 'Add to Inventory'}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {simulationMode
+                        ? 'Configure a real provider before identified products can be saved'
+                        : 'Save the identified product to your inventory system'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertTitle>Pro Tip</AlertTitle>
+                <AlertDescription>
+                  For best results, make sure your product is well-lit and the image is clear. Position the product against a simple background.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
