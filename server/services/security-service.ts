@@ -58,7 +58,7 @@ async function runLimiter(
   }
 }
 
-function getSessionCsrfToken(req: Request): string {
+export function getSessionCsrfToken(req: Request): string {
   if (!req.session.csrfToken) {
     req.session.csrfToken = randomBytes(32).toString("base64url");
   }

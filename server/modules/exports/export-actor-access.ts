@@ -1,6 +1,7 @@
 import type {Pool,PoolClient} from 'pg';
 import {exportSourceResources} from '../../../shared/export-source-access';
 import {queryRolePermission,queryUserCustomRoleId,queryCustomRolePermission} from '../../services/permission-query-service';
+import {spendSourceResources} from "@shared/spend-cube";
 
 type Scope={organizationId:number;userId:number;dataset:string;filters?:Record<string,unknown>};
 export class ExportActorAccessError extends Error{
@@ -15,7 +16,16 @@ export async function assertExportActorAccess(database:Pick<Pool,'query'>,input:
   const membership=await database.query(`SELECT m.id,m.application_role::text AS application_role,u.warehouse_id FROM organization_members m JOIN users u ON u.id=m.user_id AND u.active=true JOIN organizations o ON o.id=m.organization_id AND o.active=true WHERE m.organization_id=$1 AND m.user_id=$2 AND m.active=true AND m.status='active'${lock?' FOR SHARE OF m,u,o':''}`,[organizationId,userId]);
   if(membership.rowCount!==1)throw new ExportActorAccessError('EXPORT_MEMBERSHIP_DENIED','The requesting user no longer has active organization access.');
   const actor=membership.rows[0],role=String(actor.application_role),customRoleId=role==='custom'?await queryUserCustomRoleId(database,organizationId,userId,lock):null;
-  for(const [resource,action]of [['reports','read'],['reports','export'],...resources.map(resource=>[resource,'read'])]){
+  let cube=false;const requiredResources=[...resources];
+  if(dataset==='financial_measure'&&typeof input.filters?.runId==='string'){
+    const id=input.filters.runId;
+    if(!/^[a-f0-9-]{36}$/i.test(id))throw new ExportActorAccessError('EXPORT_SOURCE_DENIED','Choose a saved financial observation.');
+    const run=(await database.query("SELECT measure,summary FROM financial_reporting_runs WHERE organization_id=$1 AND id=$2",[organizationId,id])).rows[0];
+    if(!run)throw new ExportActorAccessError('EXPORT_SOURCE_DENIED','The saved observation is unavailable in this organization.');
+    if(run.summary.spendCubeVersion===1){cube=true;requiredResources.push(...spendSourceResources(run.measure));}
+  }
+  if(cube&&actor.warehouse_id!==null)throw new ExportActorAccessError('EXPORT_SOURCE_DENIED','This company-wide Spend Cube observation requires unrestricted warehouse scope.');
+  for(const [resource,action]of [['reports','read'],['reports','export'],...[...new Set(requiredResources)].map(resource=>[resource,'read'])]){
     if(await queryRolePermission(database,role,resource,action,lock))continue;
     if(customRoleId&&await queryCustomRolePermission(database,organizationId,customRoleId,resource,action,lock))continue;
     throw new ExportActorAccessError('EXPORT_SOURCE_DENIED',"The requesting user no longer has access to this export's source records.");

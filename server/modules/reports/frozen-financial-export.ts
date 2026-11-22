@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { financialMeasureDefinitions,type FinancialMeasure } from "../../../shared/financial-measures";
+import {assertSpendRunRead} from "./spend-access";
 
 function cell(value:unknown):string {
   const text=value==null?"":typeof value==="object"?JSON.stringify(value):String(value);
@@ -14,12 +15,15 @@ export async function streamFrozenFinancialCsv(client:PoolClient,organizationId:
     WHERE organization_id=$1 AND id=$2 AND measure=$3`,[organizationId,runId,measure]);
   if(!run.rowCount) return null;
   const saved=run.rows[0];
+  await assertSpendRunRead(client,organizationId,measure,saved.summary);
   const definition=saved.summary.definition??financialMeasureDefinitions[measure as FinancialMeasure];
   if(!definition) return null;
   const basis=[definition.taxBasis,definition.dateBasis,"notice" in definition?definition.notice:""];
-  const metadata=(e:Record<string,unknown>)=>[saved.summary.asOf,saved.summary.timezone,e.balanceEventId,e.baselineId,e.coverageStartsAt,e.historyRecordedAt,e.balanceStatus,e.rateId,e.rateAppliedAt,saved.summary.definition?"frozen":"legacy_current_definition",e.correctionId,e.targetEventId];
+  const metadata=(e:Record<string,unknown>)=>[saved.summary.asOf,saved.summary.timezone,e.balanceEventId,e.baselineId,e.coverageStartsAt,e.historyRecordedAt,e.balanceStatus,e.rateId,e.rateAppliedAt,saved.summary.definition?"frozen":"legacy_current_definition",e.correctionId,e.targetEventId,
+    ...(saved.summary.spendCubeVersion===1?[saved.summary.dimensionNotice,e.dimensions]:[])];
   const columns=["runId","measure","observedAt","calculationVersion","evidenceHash","filters","totalState","totalAmount","reportingCurrency","sourceType","sourceId","originalAmount","originalCurrency","rate","rateVersion","rateEffectiveAt","reportingAmount","exclusion","taxBasis","dateBasis","notice","asOf","timezone","balanceEventId","baselineId","coverageStartsAt","historyRecordedAt","balanceStatus","rateId","rateAppliedAt","definitionProvenance"];
   columns.push("correctionId","targetEventId");
+  if(saved.summary.spendCubeVersion===1)columns.push("dimensionBasis","frozenDimensions");
   const count=await client.query(`SELECT count(*)::text AS count FROM financial_reporting_contributions WHERE organization_id=$1 AND run_id=$2`,[organizationId,runId]);
   const rowCount=Number(count.rows[0].count);
   if(!Number.isSafeInteger(rowCount))throw new Error("The export contains too many rows to count safely.");

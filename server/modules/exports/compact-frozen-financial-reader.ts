@@ -30,6 +30,7 @@ export async function createFrozenFinancialCompactReader(client:PoolClient,input
   const run=await client.query(`SELECT summary,normalized_filters,evidence_hash FROM financial_reporting_runs WHERE organization_id=$1 AND id=$2 AND measure=$3`,[input.organizationId,runId,measure]);
   if(!run.rowCount)throw new Error("The saved financial run is not available in this organization.");
   const saved=run.rows[0],summary=saved.summary;
+  if(summary?.spendCubeVersion===1)throw new Error("Spend Cube dimensions require the frozen CSV export. Compact Excel has not been certified for this observation profile.");
   if(!summary||typeof summary!=='object'||typeof saved.evidence_hash!=='string')throw new Error("The saved financial run has incomplete evidence.");
   const counted=await client.query("SELECT count(*)::text AS count FROM financial_reporting_contributions WHERE organization_id=$1 AND run_id=$2",[input.organizationId,runId]);
   const expectedRows=Number(counted.rows[0].count);

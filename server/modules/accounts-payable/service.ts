@@ -1,11 +1,14 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import { db } from "../../db";
+import { db, pool } from "../../db";
 import { getActiveOrganizationId } from "../../organization-context";
 import { storage } from "../../storage";
 import { emitNotificationToRoles } from "../../services/notification-emitter";
 import { getApprovalSuggestions } from "../../approval-suggestions";
 import { enforceApprovalPolicy } from "./ap-approval-policy";
+import { governanceEnabled } from "../rbac/governance-context";
+import {guardInvoicePayload,requireDraftInvoice,requireDraftInvoiceLine} from "./governed-invoice-payload";
+import { createGovernedPaymentBatch,governedPaymentAction } from "./governed-payment-command";
 import { receiptEvidenceByPoLine } from "./receipt-match-evidence";
 import { writeApAuditLog, type ApAuditAction } from "./ap-audit-log";
 import { resolveSupplierCommercialDefaults } from "../procurement/supplier-defaults";
@@ -48,6 +51,8 @@ type ApprovalActionContext = {
   overrideExplicit?: boolean;
   overrideReason?: string;
   comment?: string;
+  riskAssessmentId?:number;
+  idempotencyKey?:string;
 };
 
 type InvoiceFilters = {
@@ -351,6 +356,7 @@ export async function getInvoiceDetail(invoiceId: number) {
 
 export async function createInvoiceRecord(invoiceData: Record<string, unknown>, userId: number) {
   const orgId = getActiveOrganizationId();
+  const governed=await guardInvoicePayload(orgId,invoiceData);
   const items = Array.isArray(invoiceData.items) ? (invoiceData.items as InsertInvoiceItem[]) : [];
   const supplierId = toNumber(invoiceData.supplierId, 0);
   if (!supplierId) {
@@ -418,6 +424,10 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
   const tax = toNumber(invoiceData.tax ?? invoiceData.totalTax, 0);
   const discount = toNumber(invoiceData.discount, 0);
 
+  if(governed&&Object.hasOwn(invoiceData,"dueAmount")&&Number(invoiceData.dueAmount)!==total){
+    throw new ApStructuredError("INVOICE_PAYMENT_COMMAND_REQUIRED","Opening draft balance must equal its declared total. Recorded payments require the governed payment workflow.",409);
+  }
+
   const invoiceNumber =
     typeof invoiceData.invoiceNumber === "string" && invoiceData.invoiceNumber.trim()
       ? invoiceData.invoiceNumber.trim()
@@ -436,13 +446,13 @@ export async function createInvoiceRecord(invoiceData: Record<string, unknown>, 
       currencyCode,
       issueDate,
       dueDate,
-      status: String(invoiceData.status ?? "DRAFT") as InsertInvoice["status"],
+      status: (governed?"DRAFT":String(invoiceData.status ?? "DRAFT")) as InsertInvoice["status"],
       subtotal,
       tax,
       discount,
       total,
-      dueAmount: toNumber(invoiceData.dueAmount, total),
-      paidAmount: toNumber(invoiceData.paidAmount, 0),
+      dueAmount: governed?total:toNumber(invoiceData.dueAmount, total),
+      paidAmount: governed?0:toNumber(invoiceData.paidAmount, 0),
       notes: typeof invoiceData.notes === "string" ? invoiceData.notes : null,
       termsAndConditions:
         typeof invoiceData.termsAndConditions === "string" ? invoiceData.termsAndConditions : null,
@@ -476,6 +486,17 @@ export async function updateInvoiceRecord(
 ) {
   const existing = await storage.getInvoice(invoiceId);
   if (!existing) return undefined;
+
+  const governed=await guardInvoicePayload(getActiveOrganizationId(),patch,existing);
+  const revision=Number((existing as typeof existing & {governanceRevision?:number|null}).governanceRevision);
+  if(governed&&(!Number.isInteger(revision)||revision<1))throw new ApStructuredError("INVOICE_GOVERNANCE_SETUP_REQUIRED","Install the approved Build 4 invoice revision prerequisite before editing invoices.",503);
+  if(governed){
+    if(Object.hasOwn(patch,"totalAmount")&&!Object.hasOwn(patch,"total"))patch={...patch,total:Number(patch.totalAmount)};
+    const total=Object.hasOwn(patch,"total")?Number(patch.total):Number(existing.total);
+    const balance=Object.hasOwn(patch,"total")?(await pool.query("SELECT ($1::numeric-$2::numeric)::text due",[String(total),String(existing.paidAmount??0)])).rows[0].due:existing.dueAmount;
+    if(Object.hasOwn(patch,"dueAmount")&&Number(patch.dueAmount)!==Number(balance))throw new ApStructuredError("INVOICE_PAYMENT_COMMAND_REQUIRED","The remaining balance is calculated from the invoice total and recorded payments. Use the governed payment workflow.",409);
+    patch={...patch,paidAmount:existing.paidAmount,dueAmount:Number(balance)};
+  }
 
   const nextStatus = String(patch.status ?? existing.status ?? "DRAFT") as NonNullable<InsertInvoice["status"]>;
   const allowsCommercialRelink = ["DRAFT", "PENDING_APPROVAL"].includes(String(existing.status ?? "").toUpperCase());
@@ -610,7 +631,7 @@ export async function updateInvoiceRecord(
     currencyCode,
     issueDate: nextIssueDate ?? undefined,
     dueDate: nextDueDate ?? undefined,
-  });
+  },governed?{expectedRevision:revision,expectedStatus:existing.status}:undefined);
 
   if (updated) {
     await storage.createActivityLog({
@@ -626,12 +647,13 @@ export async function updateInvoiceRecord(
 }
 
 export async function deleteInvoiceRecord(invoiceId: number) {
+  await requireDraftInvoice(getActiveOrganizationId(),invoiceId);
   const existing = await storage.getInvoice(invoiceId);
   if (!existing) return false;
   if (existing.status === "PAID" || existing.status === "PARTIALLY_PAID") {
     throw new Error("Cannot delete a paid invoice. Consider cancelling it instead.");
   }
-  return storage.deleteInvoice(invoiceId);
+  return storage.deleteInvoice(invoiceId,await governanceEnabled(getActiveOrganizationId(),"payment_risk")?{requireDraft:true}:undefined);
 }
 
 export async function updateInvoiceStatus(
@@ -758,6 +780,10 @@ export async function approveInvoice(
   if (!existing) return undefined;
   if (String(existing.status) !== "PENDING_APPROVAL") {
     throw new Error(`Invoice must be PENDING_APPROVAL before approval; current status is ${existing.status}.`);
+  }
+  if(await governanceEnabled(orgId,"payment_risk")&&Number(existing.createdBy)===userId){
+    const {GovernanceError}=await import("../rbac/governance-context");
+    throw new GovernanceError("INVOICE_SELF_APPROVAL_BLOCKED","The invoice creator cannot approve their own invoice. Administrator overrides do not bypass independent approval.",403);
   }
   assertNotSelfInvoiceApproval({
     actorUserId: userId,
@@ -887,6 +913,7 @@ export async function listInvoiceItems(invoiceId: number) {
 }
 
 export async function addInvoiceItemRecord(item: InsertInvoiceItem) {
+  await requireDraftInvoice(getActiveOrganizationId(),item.invoiceId);
   const invoice = await storage.getInvoice(Number(item.invoiceId));
   if (!invoice) {
     throw new ApStructuredError("INVOICE_NOT_FOUND", "Invoice not found.", 404);
@@ -950,10 +977,12 @@ export async function addInvoiceItemRecord(item: InsertInvoiceItem) {
 }
 
 export async function updateInvoiceItemRecord(itemId: number, patch: Partial<InsertInvoiceItem>) {
+  await requireDraftInvoiceLine(getActiveOrganizationId(),itemId,patch.invoiceId);
   return storage.updateInvoiceItem(itemId, patch);
 }
 
 export async function deleteInvoiceItemRecord(itemId: number) {
+  await requireDraftInvoiceLine(getActiveOrganizationId(),itemId);
   return storage.deleteInvoiceItem(itemId);
 }
 
@@ -962,15 +991,25 @@ export async function listPayments(invoiceId?: number) {
 }
 
 export async function createPaymentRecord(payment: InsertPayment) {
+  await requireGovernedPaymentWorkflow();
   return storage.createPayment(payment);
 }
 
 export async function updatePaymentRecord(id: number, patch: Partial<InsertPayment>) {
+  await requireGovernedPaymentWorkflow();
   return storage.updatePayment(id, patch);
 }
 
 export async function deletePaymentRecord(id: number) {
+  await requireGovernedPaymentWorkflow();
   return storage.deletePayment(id);
+}
+
+async function requireGovernedPaymentWorkflow(){
+  if(await governanceEnabled(getActiveOrganizationId(),"payment_risk")){
+    const {GovernanceError}=await import("../rbac/governance-context");
+    throw new GovernanceError("PAYMENT_GOVERNED_BATCH_REQUIRED","Record payments through an independently approved, current-risk payment batch. Corrections require Finance review; no payment was changed.");
+  }
 }
 
 export async function listCaptures(status?: string) {
@@ -1619,10 +1658,11 @@ export async function getOverview() {
 }
 
 export async function createPaymentBatchRecord(
-  input: InsertApPaymentBatch & { invoiceIds?: number[] },
+  input: InsertApPaymentBatch & { invoiceIds?: number[];idempotencyKey?:string },
   userId: number,
 ) {
   const orgId = getActiveOrganizationId();
+  if(await governanceEnabled(orgId,"payment_risk"))return createGovernedPaymentBatch(input,userId,input.idempotencyKey??"");
   const invoiceIds = Array.isArray(input.invoiceIds)
     ? Array.from(new Set(input.invoiceIds.map((id) => Number(id)).filter((id) => id > 0)))
     : [];
@@ -1750,6 +1790,7 @@ export async function approvePaymentBatch(
   context: ApprovalActionContext = { actorRole: "" },
 ) {
   const orgId = getActiveOrganizationId();
+  if(await governanceEnabled(orgId,"payment_risk"))return governedPaymentAction(batchId,userId,"approve",{...context,comment});
   const [existing] = await db
     .select()
     .from(apPaymentBatches)
@@ -1830,6 +1871,7 @@ export async function releasePaymentBatch(
   context: ApprovalActionContext = { actorRole: "" },
 ) {
   const orgId = getActiveOrganizationId();
+  if(await governanceEnabled(orgId,"payment_risk"))return governedPaymentAction(batchId,userId,"release",context);
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT set_config('app.ap_reporting_actor',${String(userId)},true)`);
     await tx.execute(

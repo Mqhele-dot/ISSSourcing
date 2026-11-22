@@ -51,6 +51,31 @@ function safeInternalTargetPath(value: string | undefined): string | null {
   return trimmed;
 }
 
+/** Governed transitions use the same inbox and retry-key register. Eligibility,
+ * deduplication and insertion commit with the source command. No external
+ * delivery runs under its transaction/locks. View routes recheck access. */
+export async function recordGovernanceNotification(client:PoolClient,organizationId:number,
+ payload:{entityType:"sod_conflict"|"sod_exception"|"payment_risk";entityId:number;transitionKey:string;title:string;body:string;targetPath:string;priority?:"high"|"urgent"}){
+ const payment=payload.entityType==="payment_risk";
+ await client.query(`WITH members AS MATERIALIZED(
+  SELECT m.user_id,m.application_role,CASE WHEN m.application_role='custom' AND u.preferences->>'customRoleId' ~ '^[0-9]{1,9}$' THEN (u.preferences->>'customRoleId')::int END custom_id
+  FROM organization_members m JOIN users u ON u.id=m.user_id AND u.active
+  LEFT JOIN notification_preferences np ON np.user_id=u.id
+  WHERE m.organization_id=$1 AND m.active AND m.status='active' AND np.in_app_enabled IS DISTINCT FROM false AND np.approval_request IS DISTINCT FROM false
+ ), role_ids AS MATERIALIZED(SELECT DISTINCT application_role,custom_id FROM members),
+ grants AS MATERIALIZED(SELECT application_role,custom_id,sod_role_permissions($1,application_role,custom_id) keys FROM role_ids),
+ eligible AS(SELECT m.user_id FROM members m JOIN grants p USING(application_role)
+   WHERE p.custom_id IS NOT DISTINCT FROM m.custom_id AND
+   CASE WHEN $2::boolean THEN p.keys@>ARRAY['payments:read','finance:read','invoices:read','suppliers:read'] ELSE p.keys&&ARRAY['custom_roles:manage','custom_roles:admin'] END),
+ claims AS(INSERT INTO notification_delivery_keys(organization_id,user_id,delivery_key)
+  SELECT $1,user_id,$3 FROM eligible ON CONFLICT DO NOTHING RETURNING user_id),
+ inserted AS(INSERT INTO notifications(organization_id,user_id,type,title,body,entity_type,entity_id,target_path,priority,occurrence_count,last_occurred_at)
+  SELECT $1,user_id,'governance_review',$4,$5,$6,$7,$8,$9,1,now() FROM claims RETURNING user_id)
+ UPDATE notification_delivery_keys k SET completed_at=now() FROM inserted i
+ WHERE k.organization_id=$1 AND k.user_id=i.user_id AND k.delivery_key=$3`,
+ [organizationId,payment,payload.transitionKey,payload.title,payload.body,payload.entityType,payload.entityId,safeInternalTargetPath(payload.targetPath),payload.priority??"high"]);
+}
+
 /** An inbox row for a governed outcome commits with the transition, not before
  * or after it. No optional external delivery is run under a business lock. */
 export async function recordRequisitionOutcomeNotification(client: PoolClient, organizationId: number, payload: EmitNotificationPayload) {

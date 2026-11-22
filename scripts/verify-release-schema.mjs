@@ -6,6 +6,17 @@ const client = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL }
 await client.connect();
 try {
   const requirements = [
+    ["sod_conflict_rules","enforcement_mode","immutable_governance_evidence"],
+    ["invoices","governance_revision","invoice_governance_revision"],
+    ["invoice_items","invoice_id","governed_invoice_line_guard"],
+    ["sod_conflict_exceptions","source_evidence",null],
+    ["payment_risk_assessments","source_fingerprint","immutable_governance_evidence"],
+    ["supplier_bank_revisions","beneficiary_fingerprint","immutable_governance_evidence"],
+    ["payment_risk_policy_approvals","source_snapshot","immutable_governance_evidence"],
+    ["payment_risk_policy_revisions","source_snapshot","immutable_governance_evidence"],
+    ["mdm_procurement_policies","config","governed_risk_policy_write_guard"],
+    ["payments","risk_assessment_id","governed_payment_record_guard"],
+    ["custom_role_permissions","id","sod_guard_grant"],
     ["supplier_export_publications","policy_version","supplier_export_publication_guard"],
     ["supplier_compliance_approvals","frozen","supplier_compliance_approval_immutable"],
     ["supplier_compliance_publications","effective_at","supplier_compliance_publication_immutable"],

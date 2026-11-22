@@ -1,5 +1,17 @@
 # Test matrix
 
+## Build 5 — first cube slice verified; savings pending
+
+`e2e/spend-cube.spec.ts` covers 5,005-source shared-total parity, bounded details, all five canonical bases and six dimensions, source-calendar boundaries/reversals, mismatched supplier references, frozen-label/CSV stability, explicit missing FX/evidence, rejected ownership/total/filter inputs, foreign saved runs, warehouse restrictions, concurrent idempotency, audit rollback, revoked permissions through evidence/CSV/jobs/downloads, and capture/deep-link/keyboard/empty/disabled/failure/retry/denied UI states. Nine cube cases plus three frozen-export/financial-consumer regressions passed 12/12 at both sizes on one unchanged candidate, with screenshots inspected and no unexpected normal-session console/page errors. Same-package production smoke and final financial-store/static/security checks passed. STATUS retains identities and earlier real failures. This is the first document-dimension slice, not full Build 5 completion. Savings baseline/revision/Finance/claim and connected-browser tests remain unimplemented; unsupported item/category allocation is explicitly rejected.
+
+## Build 4 — SoD and Payment Risk
+
+`e2e/procurement-governance.spec.ts` exercises role/system/custom/user/proposed effective access; blocked grants/assignment/activation, warning-only changes, existing conflicts, revision races, expiring independent mitigations, audit/retry/rollback and foreign-reference substitutions. It also covers bank/policy approval and application, all four risk levels and deterministic signals over 5,001 synthetic invoices, unknown evidence, material source changes, exact approval binding, independent review/release, bank/release races, immutable history, Inbox, revocation and 5,005-user complete totals/bounded pages. Four connected UI cases cover six views, existing role editor, ordinary-user denial and AP deep links/retry/history at each selected viewport. Migration reapplication runs twice inside a rolled-back disposable transaction.
+
+Affected browser regressions: `role-permission-core-workflow.spec.ts`, `procurement-to-ap-ui-workflow.spec.ts`. Separate `procurement-governance-regression.spec.ts` executes actual RBAC/AP workflow/AP controls/audit-chain commands on its own disposable server. Current results and pending gates live in STATUS; code presence is not runtime acceptance. Reliable bank-country/full-account evidence is unavailable and reported as such; no fictitious country-mismatch clearance. One application role per membership is supported, not invented multi-role assignments.
+
+Enabled invoice-boundary coverage rejects caller-supplied approval/maker/payment-balance evidence on both compatibility APIs, permits a correctly balanced draft, blocks posted monetary/line edits and deletion, and proves strict configured-approver denial. Canonical storage applies an expected revision/state on form updates; PostgreSQL serializes posted-line eligibility. Disabled-capability AP regressions retain their separately labelled legacy override behavior; assigned-user enforcement is also asserted at the canonical independent approval boundary. No failing case was disabled.
+
 All mutation tests require guarded test-owned local databases; no operational fixtures or real delivery.
 
 | Slice | Required evidence | State |

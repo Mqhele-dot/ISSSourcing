@@ -35,6 +35,7 @@ export default function UserRolesPage() {
 
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">User Roles & Permissions</h1>
+        <a className="underline" href="/admin/segregation-of-duties">Review segregation of duties</a>
         <p className="mt-2 text-muted-foreground">
           Review real access assignments and manage the permissions that are active in this organization.
         </p>

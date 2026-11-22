@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import {useRef} from "react";
 import { errorMessageWithRequestId, requestJson } from "@/lib/queryClient";
 import {
   invalidateAfterCaptureWorkflow,
@@ -40,6 +41,8 @@ export function useApWorkspaceMutations(toast: {
   toast: (opts: { title: string; description?: string; variant?: "destructive" }) => void;
 }) {
   const { toast: showToast } = toast;
+  const batchKeys=useRef(new Map<string,string>());
+  const batchKey=(body:unknown)=>{const hash=JSON.stringify(body);let key=batchKeys.current.get(hash);if(!key){key=crypto.randomUUID();if(batchKeys.current.size>=20)batchKeys.current.clear();batchKeys.current.set(hash,key);}return key;};
 
   const createCaptureMutation = useMutation({
     mutationFn: async (payload: ApCapturePayload) =>
@@ -189,9 +192,10 @@ export function useApWorkspaceMutations(toast: {
         paymentMethod: body.paymentMethod,
         scheduledDate: body.scheduledDate,
         invoiceIds: body.invoiceIds,
-      }),
+      },{headers:{"Idempotency-Key":batchKey(body)}}),
     onSuccess: async () => {
       await invalidateAfterPaymentBatch();
+      batchKeys.current.clear();
       showToast({
         title: "Batch created",
         description: "The payment batch is waiting for release approval.",

@@ -2,6 +2,14 @@
 
 Baseline: `609196f`. Updated 11 October 2026. No release is signed off by this document.
 
+## Build 5 audit and first slice — 22 November 2026
+
+Existing shared financial source/calculation/freeze/export authorities are reused. No savings register or prior cube authority was found. New dimension evidence is frozen alongside canonical contributions; live source metadata is not rejoined during saved reads/exports. Current source permissions and tenant membership apply to every alternate delivery path. Six common document dimensions avoid unsupported line allocation. First cube slice passed 12/12 desktop and 12/12 at 390px, final financial-store/static/security checks and same-package production smoke (23,383 ms). Calendar, denied-response and supplier-link defects were fixed and failing runs retained. Eight exact test databases independently absent; no test port/lock/uploads remain. See STATUS for candidate and artifacts. Governed savings and full Build 5 closeout remain incomplete. No production enablement or business migration is authorized by this checkpoint.
+
+## Build 4 — SoD and Payment Risk, 22 November 2026
+
+Complete on disposable acceptance: effective permission analysis and governed access changes, expiring independent mitigations, versioned risk/source evidence, independently approved bank/policy publication, exact-assessment payment authority, invoice payload/posted-line safeguards and existing Inbox/notification/audit connections. Current-candidate desktop and 390px gates each passed 23/23; affected RBAC/AP/audit commands passed 4/4; unchanged-package production smoke passed in 19,665 ms. Static/security gates passed with the existing supplier lint warning. All 18 recorded test database identities were independently absent; upload cleanup and source identity were verified. STATUS retains exact candidate, commands, artifacts and failed attempts. Business migration/enablement and intentional committed-candidate verification remain separate. Build 5 is next, not partially implemented.
+
 ## Build 3 — Smart Procurement Intake, 17 November 2026
 
 Complete on disposable acceptance: deterministic evaluation and controlled conversion reuse canonical requisition, commercial-default, Master Data, sourcing, approval and audit authorities. Current-source revalidation, actor/tenant scope, idempotent retries and atomic audit rollback are exercised, not inferred from UI presence. Recent/repeat starting points never copy approval or old commercial authority; favorites are explicitly browser-local. RFQ and blanket paths remain separate approved workflows after a requisition draft.

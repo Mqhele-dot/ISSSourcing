@@ -32,3 +32,5 @@ export const purchaseBudgetEvidenceMigrations = Object.freeze(["20261109100000_p
 export const purchaseOrderBudgetProvenanceMigrations = Object.freeze(["20261117090000_purchase_order_budget_provenance.sql"]);
 // New release-time provenance is not covered by previous business approvals.
 export const agreementReleaseEvidenceMigrations = Object.freeze(["20261112090000_agreement_release_policy_evidence.sql"]);
+// Build 4 is a separate business approval and activation boundary.
+export const procurementGovernanceMigrations = Object.freeze(["20261117140000_procurement_sod_payment_risk.sql"]);

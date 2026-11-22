@@ -1,5 +1,8 @@
 import { exitTest } from "./test-exit.ts";
-import { pool } from "../server/db";
+import { pool, db } from "../server/db";
+import {randomUUID} from "node:crypto";
+import {assertMatchedDisposableDatabaseUrls} from "../server/config/database-safety";
+import {authorizeApprovalStep} from "../server/services/approval-workflow-service";
 import {
   apiJsonRequest,
   getTestBaseUrl,
@@ -74,6 +77,8 @@ async function createInvoice(cookie: string, supplierId: number, itemId: number,
 }
 
 async function main() {
+  assertMatchedDisposableDatabaseUrls(process.env.DATABASE_URL,process.env.TEST_DATABASE_URL);
+  if((await pool.query("SELECT current_database() name")).rows[0].name!==new URL(process.env.TEST_DATABASE_URL!).pathname.slice(1))throw new Error("Disposable database identity mismatch");
   const baseUrl = getTestBaseUrl();
   console.log("AP controls test (BASE_URL=%s)\n", baseUrl);
 
@@ -200,7 +205,24 @@ async function main() {
     cookie: adminCookie,
     body: { adminOverride: true, overrideReason: "Should still fail policy" },
   });
-  failures += expectPass("Invalid approver blocked by policy", invalidApproverAttempt.status >= 400);
+  // A lower legitimate approval level may succeed but cannot bypass the later
+  // level assigned to the deliberately invalid user or complete this invoice.
+  if(invalidApproverAttempt.status===200){
+    const pending=await pool.query("SELECT status::text FROM invoices WHERE organization_id=1 AND id=$1",[invalidApproverInvoiceId]);
+    failures+=expectPass("Lower approval cannot bypass the pending invalid level",pending.rows[0]?.status==="PENDING_APPROVAL");
+  }
+  // This disabled-capability compatibility API deliberately permits its legacy
+  // administrator override (tested above). Exercise assigned-user enforcement
+  // through the canonical independent boundary used by governed commands, not
+  // by assuming that the legacy override has different semantics.
+  const checker=(await pool.query(`INSERT INTO users(username,email,password,role,active,email_verified,default_organization_id)
+    SELECT $1,$1||'@example.invalid',password,'admin',true,true,1 FROM users WHERE username='admin' RETURNING id`,[`ap-policy-${randomUUID().slice(0,12)}`])).rows[0].id;
+  await pool.query("INSERT INTO organization_members(organization_id,user_id,application_role,active,status) VALUES(1,$1,'admin',true,'active')",[checker]);
+  let deniedCode="";
+  try{await authorizeApprovalStep({organizationId:1,entityType:"invoice",entityId:invalidApproverInvoiceId,amount:11,actorUserId:checker,actorRole:"admin"},db,{independent:true});}
+  catch(error){deniedCode=String((error as {code?:string}).code??"");}
+  failures += expectPass("Invalid approver blocked by independent policy", deniedCode==="APPROVER_USER_REQUIRED");
+  failures += expectPass("Denied final approval preserves pending state",(await pool.query("SELECT status::text FROM invoices WHERE organization_id=1 AND id=$1",[invalidApproverInvoiceId])).rows[0]?.status==="PENDING_APPROVAL");
 
   if (invalidPolicyId > 0) {
     await pool.query(`DELETE FROM approval_policies WHERE id = $1`, [invalidPolicyId]);

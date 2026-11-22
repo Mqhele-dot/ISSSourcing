@@ -67,6 +67,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { NavigationCatalogResponse } from "@shared/rbac-contracts";
+import {useGovernedAccessPreview} from "./governed-access-preview";
 
 // Role and permission types
 type UserRole = {
@@ -112,6 +113,7 @@ const createRoleSchema = z.object({
 });
 
 export function RoleManager() {
+  const governance=useGovernedAccessPreview();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [selectedTab, setSelectedTab] = useState("custom-roles");
@@ -121,6 +123,7 @@ export function RoleManager() {
   const [createRoleOpen, setCreateRoleOpen] = useState(false);
   const [permissionSearch, setPermissionSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  const [userPage,setUserPage]=useState(1),[userPageSize,setUserPageSize]=useState(25);
   const [navigationProfile, setNavigationProfile] = useState<UserProfile | null>(null);
   const [accessProfile, setAccessProfile] = useState<UserProfile | null>(null);
   const [allowedNavPaths, setAllowedNavPaths] = useState<string[]>([]);
@@ -175,9 +178,13 @@ export function RoleManager() {
     queryKey: ["/api/custom-roles"],
   });
 
-  const { data: users = [] } = useQuery<UserProfile[]>({
-    queryKey: ["/api/users", "role-manager"],
+  const { data: profilePage,isLoading:profilesLoading,isError:profilesFailed,refetch:retryProfiles } = useQuery<{items:UserProfile[];total:number}>({
+    queryKey: ["/api/users", "role-manager",governance.enabled,userPage,userPageSize,userSearch],
+    enabled:!governance.loading,
+    queryFn:async()=>governance.enabled?requestJson("GET",`/api/v2/admin/sod/users?page=${userPage}&pageSize=${userPageSize}&q=${encodeURIComponent(userSearch)}`):
+      requestJson<UserProfile[]>("GET","/api/users").then(items=>({items,total:items.length})),
   });
+  const users=useMemo(()=>profilePage?.items??[],[profilePage]);
   const visibleUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase();
     return users
@@ -186,8 +193,8 @@ export function RoleManager() {
         .join(" ")
         .toLowerCase()
         .includes(term))
-      .slice(0, 25);
-  }, [userSearch, users]);
+      .slice(0, governance.enabled?userPageSize:25);
+  }, [userSearch, users,governance.enabled,userPageSize]);
 
   // Fetch permissions for selected role
   const { data: selectedRolePermissions, isLoading: permissionsLoading } = useQuery<Permission[]>({
@@ -257,6 +264,7 @@ export function RoleManager() {
 
   const updateCustomRoleMutation = useMutation({
     mutationFn: async ({ roleId, isActive }: { roleId: number; isActive: boolean }) => {
+      if(governance.enabled){await governance.change({kind:"role",roleId,isActive});return requestJson<UserRole>("GET",`/api/custom-roles/${roleId}`);}
       const res = await apiRequest("PUT", `/api/custom-roles/${roleId}`, {
         isActive,
         reason: isActive ? "Administrator reactivated custom role" : "Administrator deactivated custom role",
@@ -296,6 +304,7 @@ export function RoleManager() {
   // Mutation for adding a permission to a custom role
   const addPermissionMutation = useMutation({
     mutationFn: async ({ roleId, resource, permissionType }: { roleId: number, resource: string, permissionType: string }) => {
+      if(governance.enabled)return governance.change({kind:"grant",roleId,grant:{resource,permissionType},enabled:true});
       const res = await apiRequest("POST", `/api/custom-roles/${roleId}/permissions`, { resource, permissionType });
       return await res.json();
     },
@@ -318,6 +327,7 @@ export function RoleManager() {
   // Mutation for removing a permission from a custom role
   const removePermissionMutation = useMutation({
     mutationFn: async ({ roleId, permissionId }: { roleId: number, permissionId: number }) => {
+      if(governance.enabled){const permission=currentPermissions.find(p=>p.id===permissionId);if(!permission)throw new Error("Refresh the role before removing this permission.");return governance.change({kind:"grant",roleId,grant:{resource:permission.resource,permissionType:permission.permissionType},enabled:false});}
       const res = await apiRequest("DELETE", `/api/custom-roles/${roleId}/permissions/${permissionId}`);
       return await res.json();
     },
@@ -339,6 +349,7 @@ export function RoleManager() {
 
   const assignCustomRoleMutation = useMutation({
     mutationFn: async ({ userId, roleId }: { userId: number; roleId: number | null }) => {
+      if(governance.enabled)return governance.change({kind:"assign",userId,role:roleId?"custom":"viewer",customRoleId:roleId});
       const profile = users.find((candidate) => candidate.id === userId);
       const res = await apiRequest("PUT", `/api/users/${userId}`, {
         role: roleId ? "custom" : "viewer",
@@ -406,7 +417,7 @@ export function RoleManager() {
 
   // Toggle permission for custom role
   const togglePermission = (resource: string, permissionType: string) => {
-    if (!selectedCustomRole) return;
+    if (!selectedCustomRole||governance.loading) return;
     
     const existingPermission = currentPermissions.find(
       (p) => p.resource === resource && p.permissionType === permissionType
@@ -441,6 +452,7 @@ export function RoleManager() {
     <Card className="w-full" data-testid="role-manager-card">
       <CardHeader>
         <CardTitle>Role & Permission Management</CardTitle>
+        {governance.dialog}
         <CardDescription>
           Manage system roles and custom roles with their associated permissions
         </CardDescription>
@@ -457,16 +469,17 @@ export function RoleManager() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <Input
                 value={userSearch}
-                onChange={(event) => setUserSearch(event.target.value)}
+                onChange={(event) => {setUserSearch(event.target.value);setUserPage(1);}}
                 placeholder="Search users, roles, or personas"
                 aria-label="Search user access assignments"
                 className="max-w-sm"
               />
               <span className="text-xs text-muted-foreground">
-                Showing {visibleUsers.length} of {users.length} users
+                Showing {visibleUsers.length} of {profilePage?.total??0} {governance.enabled?"active organization users":"users"}
               </span>
             </div>
-            {users.length === 0 ? (
+            {governance.enabled?<div className="mb-3 flex flex-wrap items-center gap-2"><label>Users per page <select aria-label="Users per page" value={userPageSize} onChange={e=>{setUserPageSize(Number(e.target.value));setUserPage(1);}}>{[25,50,100].map(n=><option key={n}>{n}</option>)}</select></label><Button variant="outline" disabled={userPage===1} onClick={()=>setUserPage(userPage-1)}>Previous users</Button><span>Page {userPage}</span><Button variant="outline" disabled={userPage*userPageSize>=(profilePage?.total??0)} onClick={()=>setUserPage(userPage+1)}>Next users</Button></div>:null}
+            {profilesLoading?<p role="status">Loading user access assignments…</p>:profilesFailed?<p role="alert">User access could not be loaded. <Button onClick={()=>retryProfiles()}>Retry users</Button></p>:users.length === 0 ? (
               <p className="text-sm text-muted-foreground">No users are available for this organization.</p>
             ) : visibleUsers.length === 0 ? (
               <p className="text-sm text-muted-foreground">No users match this search.</p>
@@ -769,21 +782,19 @@ export function RoleManager() {
               <div className="flex justify-between items-center">
                 <div className="w-1/4">
                   <Label>Select Custom Role</Label>
-                  <Select
+                  <select
+                    aria-label="Select custom role"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={selectedCustomRole ? String(selectedCustomRole) : ""}
-                    onValueChange={(value) => setSelectedCustomRole(Number(value))}
+                    onChange={(event) => setSelectedCustomRole(Number(event.target.value))}
                   >
-                    <SelectTrigger aria-label="Select custom role">
-                      <SelectValue placeholder="Select a custom role" />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <option value="" disabled>Select a custom role</option>
                       {customRoles?.map((role) => (
-                        <SelectItem key={role.id} value={String(role.id)}>
+                        <option key={role.id} value={String(role.id)}>
                           {role.name}{role.isActive === false ? " (inactive)" : ""}
-                        </SelectItem>
+                        </option>
                       ))}
-                    </SelectContent>
-                  </Select>
+                  </select>
                 </div>
                 
                 <Dialog open={createRoleOpen} onOpenChange={setCreateRoleOpen}>

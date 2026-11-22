@@ -4,6 +4,7 @@ export type Invoice = {
   invoiceNumber: string | null;
   supplierName?: string | null;
   supplierId: number | null;
+  currencyCode?:string|null;
   status: string;
   dueDate: string | null;
   total: number | null;
@@ -42,6 +43,7 @@ export type MatchException = {
 export type PaymentBatch = {
   id: number;
   batchNumber: string;
+  currencyCode?:string|null;
   status: string;
   totalAmount: number;
   scheduledDate: string | null;

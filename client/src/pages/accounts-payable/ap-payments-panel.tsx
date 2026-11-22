@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState,useEffect } from "react";
 import { Download, Landmark, Printer, Search, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,9 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ApPage, Invoice, PaymentBatch } from "./types";
 import type { ApPaymentBatchApproveInput, ApPaymentBatchPayload } from "./use-ap-workspace-mutations";
-import type { UseMutationResult } from "@tanstack/react-query";
+import {useQuery,type UseMutationResult} from "@tanstack/react-query";
+import {requestJson,errorMessageWithRequestId} from "@/lib/queryClient";
+import {PaymentRiskPanel} from "./payment-risk-panel";
 
 type Props = {
   readyForBatch: Invoice[];
@@ -86,14 +88,22 @@ export function ApPaymentsPanel({
   actorRole,
 }: Props) {
   const [batchSegregationReason, setBatchSegregationReason] = useState<Record<number, string>>({});
+  const readRiskBatch=()=>{const id=Number(new URLSearchParams(window.location.search).get("riskBatch"));return Number.isSafeInteger(id)&&id>0&&id<=2147483647?id:null;};
+  const [riskBatch,setRiskBatch]=useState<number|null>(readRiskBatch);
+  useEffect(()=>{const onPop=()=>setRiskBatch(readRiskBatch());window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop);},[]);
+  const selectRiskBatch=(id:number)=>{setRiskBatch(id);const url=new URL(window.location.href);url.searchParams.set("riskBatch",String(id));window.history.pushState({},"",url);};
+  const governance=useQuery<{enabled:boolean;canCreate:boolean;canApprove:boolean;canRelease:boolean}>({queryKey:["payment-risk-context"],queryFn:()=>requestJson("GET","/api/v2/ap/payment-risk/context"),retry:false});
+  const governed=governance.data?.enabled===true;
 
   const isAdmin = String(actorRole ?? "").toLowerCase() === "admin";
-  const canManagePaymentBatches = ["admin", "finance_manager", "ap_manager"].includes(
+  const canManagePaymentBatches = governed?governance.data?.canCreate===true:["admin", "finance_manager", "ap_manager"].includes(
     String(actorRole ?? "").toLowerCase(),
   );
 
   return (
     <div className="space-y-4">
+      {governance.isError?<p role="alert">{errorMessageWithRequestId(governance.error)} <Button onClick={()=>governance.refetch()}>Retry payment authority</Button></p>:null}
+      {governed&&riskBatch?<PaymentRiskPanel key={riskBatch} batchId={riskBatch} canApprove={governance.data?.canApprove===true} canRelease={governance.data?.canRelease===true}/>:null}
       {paymentBatchErrors.length > 0 ? (
         <Alert variant="destructive">
           <AlertDescription>
@@ -174,7 +184,7 @@ export function ApPaymentsPanel({
                 data-testid="ap-selected-batch-total"
                 data-batch-total-cents={selectedBatchTotalCents}
               >
-                {formatMoney(selectedBatchTotal)}
+                {governed?"Verified by the server on creation; select one original currency.":formatMoney(selectedBatchTotal)}
               </div>
             </div>
           </div>
@@ -216,7 +226,7 @@ export function ApPaymentsPanel({
                     </TableCell>
                     <TableCell>{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}</TableCell>
                     <TableCell className="text-right">
-                      {formatMoney(Number(invoice.dueAmount ?? invoice.total ?? 0))}
+                      {governed?(invoice.currencyCode?`${Number(invoice.dueAmount??invoice.total??0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4})} ${invoice.currencyCode}`:"Unavailable — currency needs review"):formatMoney(Number(invoice.dueAmount ?? invoice.total ?? 0))}
                     </TableCell>
                   </TableRow>
                 );
@@ -234,7 +244,7 @@ export function ApPaymentsPanel({
             type="button"
             data-testid="ap-create-batch-button"
             onClick={onCreateBatch}
-            disabled={invoicesLoadFailed || createBatchMutation.isPending || selectedInvoiceIds.length === 0}
+            disabled={invoicesLoadFailed || createBatchMutation.isPending || selectedInvoiceIds.length === 0||governance.isLoading||governance.isError||!canManagePaymentBatches}
           >
             {createBatchMutation.isPending ? "Creating batch..." : "Create AP payment batch"}
           </Button>
@@ -282,8 +292,8 @@ export function ApPaymentsPanel({
                     batch.createdBy != null &&
                     actorUserId != null &&
                     Number(batch.createdBy) === Number(actorUserId);
-                  const blockSelfApprove = selfBatch && !isAdmin;
-                  const needsAdminOverride = selfBatch && isAdmin;
+                  const blockSelfApprove = selfBatch && (governed||!isAdmin);
+                  const needsAdminOverride = selfBatch && isAdmin&&!governed;
                   const overrideReason = batchSegregationReason[batch.id] ?? "";
 
                   return (
@@ -294,7 +304,7 @@ export function ApPaymentsPanel({
                     </TableCell>
                     <TableCell>{batch.scheduledDate ? new Date(batch.scheduledDate).toLocaleDateString() : "—"}</TableCell>
                     <TableCell>{batch.itemCount}</TableCell>
-                    <TableCell className="text-right">{formatMoney(Number(batch.totalAmount ?? 0))}</TableCell>
+                    <TableCell className="text-right">{governed?(batch.currencyCode?`${Number(batch.totalAmount??0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4})} ${batch.currencyCode}`:"Unavailable — currency needs review"):formatMoney(Number(batch.totalAmount ?? 0))}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex min-w-[220px] flex-col items-end gap-2">
                         {blockSelfApprove ? (
@@ -321,6 +331,7 @@ export function ApPaymentsPanel({
                           </div>
                         ) : null}
                         <div className="flex flex-wrap justify-end gap-2">
+                        {governed?<Button size="sm" variant="outline" onClick={()=>selectRiskBatch(batch.id)}>Review payment risk</Button>:null}
                         {batch.status === "RELEASED" ? (
                           <>
                             <Button size="sm" variant="outline" onClick={() => window.open(`/api/ap/payment-batches/${batch.id}/remittance.pdf`, "_blank", "noopener,noreferrer")}>
@@ -333,7 +344,7 @@ export function ApPaymentsPanel({
                             </Button>
                           </>
                         ) : null}
-                        {batch.status === "PENDING_APPROVAL" ? (
+                        {!governed&&batch.status === "PENDING_APPROVAL" ? (
                           <Button
                             size="sm"
                             variant="outline"
@@ -356,7 +367,7 @@ export function ApPaymentsPanel({
                             Approve
                           </Button>
                         ) : null}
-                        {batch.status === "APPROVED" ? (
+                        {!governed&&batch.status === "APPROVED" ? (
                           <Button
                             size="sm"
                             disabled={

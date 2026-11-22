@@ -8,6 +8,7 @@ import { z } from "zod";
 import { getActiveOrganizationId } from "../../organization-context";
 import { buildAnalyticsInsights } from "./analytics-insights-service";
 import { registerFinancialMeasureRoutes } from "./register-financial-measure-routes";
+import {registerSpendCubeRoutes} from "./register-spend-cube-routes";
 import {resolveAnalyticsReadAccess} from './analytics-read-access';
 
 type AuthBundle = {
@@ -21,6 +22,7 @@ type AuthBundle = {
  */
 export function registerAnalyticsRoutes(app: Express, auth: AuthBundle): void {
   registerFinancialMeasureRoutes(app, auth);
+  registerSpendCubeRoutes(app,auth);
   const masterRead = [auth.ensureAuthenticated, auth.ensurePermission("reports", "read")];
   const masterWrite = [auth.ensureAuthenticated, auth.ensurePermission("reports", "update")];
 

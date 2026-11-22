@@ -2,6 +2,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { appEnv } from "./config/env";
 import { allowDevOnlyRoutes } from "./lib/deployment-behavior";
 import { storage } from "./storage";
+import {getSessionCsrfToken} from "./services/security-service";
 
 /** Matches seeded demo admin in `server/seed.ts` (`ensureAdminUser`). */
 const SEEDED_DEV_ADMIN_USERNAME = "admin";
@@ -119,6 +120,7 @@ export function registerDevTestRoutes(app: Express): void {
           if (user.twoFactorEnabled) {
             req.session.twoFactorAuthenticated = true;
           }
+          getSessionCsrfToken(req);
           res.redirect(302, target);
         });
       } catch (e) {

@@ -37,6 +37,7 @@ export function assertInvoiceTransition(currentStatus: string, nextStatus: strin
   assertTransition(INVOICE_TRANSITIONS, currentStatus, nextStatus, "invoice");
 }
 
-export function assertPaymentBatchTransition(currentStatus: string, nextStatus: string) {
+export function assertPaymentBatchTransition(currentStatus: string, nextStatus: string,options:{riskReassessment?:boolean}={}) {
+  if(options.riskReassessment&&currentStatus==="APPROVED"&&nextStatus==="PENDING_APPROVAL")return;
   assertTransition(PAYMENT_BATCH_TRANSITIONS, currentStatus, nextStatus, "payment batch");
 }

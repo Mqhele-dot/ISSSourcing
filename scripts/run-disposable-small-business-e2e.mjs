@@ -9,7 +9,7 @@ import { mkdtemp, rm, writeFile, rename } from "node:fs/promises";
 import { existsSync, mkdirSync, writeFileSync,readdirSync,statSync } from "node:fs";
 import { assertDisposableE2eEnvironment } from "./e2e-database-guard.mjs";
 import { releaseMigrations, apHistoryMigrations, compactExportMigrations, compactFullDetailMigrations, compactPublicationMigrations, compactWorkspaceMigrations, compactCaptureMigrations, compactRetryMigrations, supplierExportMigrations, supplierObservationMigrations, contractObligationMigrations, purchaseBudgetEvidenceMigrations } from "./release-migrations.mjs";
-import { agreementReleaseEvidenceMigrations, purchaseOrderBudgetProvenanceMigrations } from "./release-migrations.mjs";
+import { agreementReleaseEvidenceMigrations, purchaseOrderBudgetProvenanceMigrations,procurementGovernanceMigrations } from "./release-migrations.mjs";
 import { smokeProductionPackage } from "./production-package-smoke.mjs";
 import { acquireE2eWorkspaceLock } from "./e2e-workspace-lock.mjs";
 import { captureReleaseCandidate } from "./release-candidate-evidence.mjs";
@@ -205,7 +205,7 @@ try {
   // The release FK depends on canonical SQL-only procurement tables, normally
   // installed at development bootstrap. Install them before evidence and fixtures.
   const procurementPrerequisites = ["20260830143000_procurement_completion.sql", "20260907120000_blanket_agreements_completion.sql"];
-  for (const migration of [...procurementPrerequisites,...releaseMigrations,...apHistoryMigrations,...supplierExportMigrations,...supplierObservationMigrations,...contractObligationMigrations,...purchaseBudgetEvidenceMigrations,...agreementReleaseEvidenceMigrations,...purchaseOrderBudgetProvenanceMigrations,...(compactTests?compactExportMigrations:[]),...(fullCompactTests?[...compactFullDetailMigrations,...compactPublicationMigrations,...compactWorkspaceMigrations,...compactCaptureMigrations,...compactRetryMigrations]:[])]) {
+  for (const migration of [...procurementPrerequisites,...releaseMigrations,...apHistoryMigrations,...supplierExportMigrations,...supplierObservationMigrations,...contractObligationMigrations,...purchaseBudgetEvidenceMigrations,...agreementReleaseEvidenceMigrations,...purchaseOrderBudgetProvenanceMigrations,...procurementGovernanceMigrations,...(compactTests?compactExportMigrations:[]),...(fullCompactTests?[...compactFullDetailMigrations,...compactPublicationMigrations,...compactWorkspaceMigrations,...compactCaptureMigrations,...compactRetryMigrations]:[])]) {
     checkpoint(`migration:${migration}`);
     const child = spawnSync(process.execPath, ["scripts/apply-sql-migration.mjs", migration], {
       env,

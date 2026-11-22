@@ -1,3 +1,4 @@
+import type {SpendDimensions} from "./spend-cube";
 export const financialMeasureDefinitions = {
   ordered: { label: "Ordered value", dateBasis: "order_date", taxBasis: "document_gross" },
   open_commitment: { label: "Open PO commitment", dateBasis: "order_date", taxBasis: "line_net" },
@@ -15,6 +16,7 @@ export function financialMeasureResource(measure:FinancialMeasure):"finance"|"pu
 export type FinancialEvidenceState = "complete" | "partial" | "unavailable" | "empty" | "setup_required";
 export type FinancialExclusion = "missing_currency" | "missing_date" | "invalid_amount" | "missing_price_evidence" | "missing_approved_fx" | "missing_balance_history" | "unverified_balance_actor" | "balance_source_deleted" | "unreconciled_balance" | "unknown_invoice_status";
 export interface FinancialContribution {
+  dimensions?:SpendDimensions;
   sourceType: string;
   sourceId: string;
   sourceRevision: string;

@@ -3128,7 +3128,7 @@ export class DatabaseStorage implements IStorage {
   
   async getInvoice(id: number): Promise<Invoice | undefined> {
     const [row] = await db
-      .select()
+      .select({...getTableColumns(invoices),governanceRevision:sql<number|null>`(to_jsonb(${invoices})->>'governance_revision')::int`})
       .from(invoices)
       .where(
         and(
@@ -3208,7 +3208,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
   
-  async updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
+  async updateInvoice(id: number, invoice: Partial<InsertInvoice>, guard?:{expectedRevision:number;expectedStatus:Invoice["status"]}): Promise<Invoice | undefined> {
     if(invoice.organizationId!=null&&invoice.organizationId!==getActiveOrganizationId()) throw new Error("Invoice organization ownership cannot be changed.");
     return withInvoiceReportingContext(async tx=>{
     const [updated] = await tx
@@ -3218,18 +3218,21 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(invoices.id, id),
           eq(invoices.organizationId, getActiveOrganizationId()),
+          ...(guard?[eq(invoices.status,guard.expectedStatus),sql`(to_jsonb(${invoices})->>'governance_revision')::int=${guard.expectedRevision}`]:[]),
         ),
       )
       .returning();
+    if(guard&&!updated)throw Object.assign(new Error("This invoice changed while the edit was being reviewed. Refresh it; no change was applied."),{code:"INVOICE_VERSION_CHANGED",status:409});
     return updated;
     });
   }
   
-  async deleteInvoice(id: number): Promise<boolean> {
+  async deleteInvoice(id: number, guard?:{requireDraft:boolean}): Promise<boolean> {
     const inv = await this.getInvoice(id);
     if (!inv) return false;
     return withInvoiceReportingContext(async tx=>{
-    await tx.select({id:invoices.id}).from(invoices).where(and(eq(invoices.id,id),eq(invoices.organizationId,getActiveOrganizationId()))).for("update");
+    const [locked]=await tx.select({id:invoices.id,status:invoices.status}).from(invoices).where(and(eq(invoices.id,id),eq(invoices.organizationId,getActiveOrganizationId()))).for("update");
+    if(guard?.requireDraft&&locked?.status!=="DRAFT")throw Object.assign(new Error("Use the governed invoice correction workflow for reviewed or posted evidence."),{code:"INVOICE_GOVERNED_CORRECTION_REQUIRED",status:409});
     await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id));
     await tx.delete(payments).where(eq(payments.invoiceId, id));
     const result = await tx

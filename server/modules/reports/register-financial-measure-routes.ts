@@ -13,10 +13,11 @@ import {pipeline} from "node:stream/promises";
 import { exportRateLimiter } from "../../services/security-service";
 import {financialMeasureKeys,financialMeasureResource,isApBalanceMeasure} from "../../../shared/financial-measures";
 import type {Response} from "express";
+import {assertSpendRunRead} from "./spend-access";
 
 function sendScopeError(res:Response,error:unknown) {
   const e=error as {code?:string;status?:number;message?:string};
-  if(e.code?.startsWith("AP_")&&[400,403,409].includes(e.status??0)) {
+  if((e.code?.startsWith("AP_")||e.code?.startsWith("SPEND_"))&&[400,403,409].includes(e.status??0)) {
     sendError(res,e.status!,e.code,e.message??"Review the AP reporting scope.");return true;
   }
   return false;
@@ -66,11 +67,16 @@ export function registerFinancialMeasureRoutes(app:Express,auth:{ensureAuthentic
   app.post("/api/v2/analytics/financial-measures/:measure/export",...access,auth.ensurePermission("reports","export"),exportRateLimiter,async(req,res)=>{
     const parsed=z.object({runId:z.string().uuid()}).strict().safeParse(req.body);
     if(!parsed.success) return sendError(res,400,"INVALID_REPORT_REFERENCE","Choose a saved reporting observation to export.");
-    const run=await pool.query("SELECT id FROM financial_reporting_runs WHERE organization_id=$1 AND id=$2 AND measure=$3",[getActiveOrganizationId(),parsed.data.runId,req.params.measure]);
+    const client=await pool.connect();
+    try{
+    const run=await client.query("SELECT id,summary,measure FROM financial_reporting_runs WHERE organization_id=$1 AND id=$2 AND measure=$3",[getActiveOrganizationId(),parsed.data.runId,req.params.measure]);
     if(!run.rowCount) return sendError(res,404,"REPORT_NOT_FOUND","This report is not available in your organization.");
+    await assertSpendRunRead(client,getActiveOrganizationId(),run.rows[0].measure,run.rows[0].summary);
     const job=await createExportJob({userId:Number((req.user as {id:number}).id),dataset:"financial_measure",format:"csv",
       filters:{runId:parsed.data.runId,measure:req.params.measure},sourcePage:"/analytics",reason:"Frozen financial evidence; no recalculation"});
     return sendOk(res,{jobId:job.id,runId:parsed.data.runId,destination:"/analytics/export-center"},202);
+    }catch(error){if(sendScopeError(res,error))return;recordReportingFailure(error,resolveRequestId(res),"/api/v2/analytics/financial-measures/:measure/export");return sendError(res,503,"FINANCIAL_EXPORT_UNAVAILABLE","The saved observation could not be queued. Retry with this reporting reference.");}
+    finally{client.release();}
   });
   app.get("/api/export/financial_measure/csv",...access,auth.ensurePermission("reports","export"),async(req,res)=>{
     const parsed=z.object({runId:z.string().uuid(),measure:measureSchema}).strict().safeParse(req.query);
@@ -84,6 +90,11 @@ export function registerFinancialMeasureRoutes(app:Express,auth:{ensureAuthentic
       res.setHeader("X-Export-Row-Count",String(result.rowCount));
       res.setHeader("Cache-Control","private, no-store");
       await pipeline(Readable.from(result.chunks),res);
+    } catch(error){
+      if(!res.headersSent&&sendScopeError(res,error))return;
+      if(res.headersSent){res.destroy();return;}
+      recordReportingFailure(error,resolveRequestId(res),"/api/export/financial_measure/csv");
+      return sendError(res,503,"FINANCIAL_EXPORT_UNAVAILABLE","The saved evidence could not be downloaded. Retry or contact Finance with this request ID.");
     } finally {client.release();}
   });
   const snapshotAccess:RequestHandler=(req,res,next)=>{
@@ -152,6 +163,7 @@ export function registerFinancialMeasureRoutes(app:Express,auth:{ensureAuthentic
       res.setHeader("Cache-Control","private, no-store");
       return sendOk(res,result);
     } catch (error) {
+      if(sendScopeError(res,error)) return;
       recordReportingFailure(error, resolveRequestId(res), "/api/v2/analytics/financial-measures/:measure/evidence");
       return sendError(res,503,"FINANCIAL_EVIDENCE_UNAVAILABLE","The report evidence could not be loaded.",{hint:"Retry or contact your administrator with the request ID."});
     } finally {client?.release();}

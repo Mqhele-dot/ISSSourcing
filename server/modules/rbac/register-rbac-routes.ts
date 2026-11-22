@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm";
 import type { EffectiveAccessResponse, EffectivePermission, RoleCatalogEntry } from "@shared/rbac-contracts";
 import { governedApprovalEntityTypes, isGovernedApprovalEntityType } from "../../services/approval-workflow-service";
 import { approvalWorkflowCatalog, navigationAccessCatalog, workflowBlueprintCatalog } from "@shared/authority-catalogs";
+import {registerGovernanceRoutes} from "./register-governance-routes";
 
 type AuthBundle = {
   ensureAuthenticated: RequestHandler;
@@ -22,6 +23,7 @@ type AuthBundle = {
  * System roles, custom roles, and permission checks — extracted from `routes.ts` orchestrator.
  */
 export function registerRbacRoutes(app: Express, auth: AuthBundle): void {
+  registerGovernanceRoutes(app,auth);
   app.get(
     "/api/rbac/navigation-catalog",
     auth.ensureAuthenticated,

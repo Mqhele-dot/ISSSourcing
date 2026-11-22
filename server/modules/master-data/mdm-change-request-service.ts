@@ -2,6 +2,9 @@ import { pool } from "../../db";
 import { approveReportingFx, applyReportingFx } from "./governed-fx-service";
 import { approveSupplierCompliance, applySupplierCompliance } from "./governed-supplier-compliance";
 import { fulfillInventoryItemRequest } from "../inventory/item-request-service";
+import { governanceEnabled } from "../rbac/governance-context";
+import { governSupplierBank } from "./governed-supplier-bank";
+import { governPaymentRiskPolicy, isPaymentRiskPolicyRequest } from "./governed-payment-risk-policy";
 import {
   createMdmDomainRecord,
   isMdmDomain,
@@ -147,6 +150,8 @@ export async function approveMdmChangeRequest(input: {
   if (!row) return null;
   if(row.domain==='exchange-rates') return approveReportingFx(input);
   if(row.domain==='supplier-documents') return approveSupplierCompliance(input);
+  if(['supplier-bank-accounts','supplier-banks'].includes(String(row.domain))&&await governanceEnabled(input.organizationId,'payment_risk')) return governSupplierBank(input,'approve');
+  if(await governanceEnabled(input.organizationId,'payment_risk')&&await isPaymentRiskPolicyRequest(input.organizationId,row)) return governPaymentRiskPolicy(input,'approve');
   if (Number(row.submitted_by) === input.actorId && input.allowAdminOverride !== true) {
     throw new MdmApprovalError(
       "MDM_MAKER_CANNOT_APPROVE",
@@ -236,6 +241,8 @@ export async function applyMdmChangeRequest(input: {
 }) {
   const row = await findChangeRequest(input.organizationId, input.id);
   if (!row) return null;
+  if(['supplier-bank-accounts','supplier-banks'].includes(String(row.domain))&&await governanceEnabled(input.organizationId,'payment_risk')) return governSupplierBank(input,'apply');
+  if(await governanceEnabled(input.organizationId,'payment_risk')&&await isPaymentRiskPolicyRequest(input.organizationId,row)) return governPaymentRiskPolicy(input,'apply');
   if(row.domain==='exchange-rates') return applyReportingFx(input);
   if(row.domain==='supplier-documents') return applySupplierCompliance(input);
   if (String(row.status) === "applied") {

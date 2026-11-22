@@ -41,6 +41,8 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
       ...((await has("invoices")) || (await has("invoices", "approve")) ? ["invoice", "capture", "payment_batch", "match_result"] : []),
       ...(await has("inventory") ? ["inventory", "inventory_item", "stock", "shipment", "gas_asset_profile", "putaway_task"] : []),
       ...(await has("suppliers") ? ["supplier"] : []),
+      ...((await has("custom_roles","manage"))||(await has("custom_roles","admin"))?["sod_conflict","sod_exception"]:[]),
+      ...((await has("payments"))&&(await has("finance"))&&(await has("invoices"))&&(await has("suppliers"))?["payment_risk"]:[]),
     ];
   };
 
@@ -60,7 +62,10 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout='5s'");
       const {rows:[schema]}=await client.query(`SELECT to_regclass('public.diagnostic_persistent_findings') IS NOT NULL AS diagnostics,
-        to_regclass('public.contract_obligation_versions') IS NOT NULL AS obligations`);
+        to_regclass('public.contract_obligation_versions') IS NOT NULL AS obligations,
+        to_regclass('public.sod_conflict_findings') IS NOT NULL AS sod,to_regclass('public.payment_risk_assessments') IS NOT NULL AS risk`);
+      const canReadSod=schema.sod&&(entityTypes===null||entityTypes.includes("sod_conflict"));
+      const canReadPaymentRisk=schema.risk&&(entityTypes===null||entityTypes.includes("payment_risk"));
       const diagnosticStorage=schema.diagnostics===true;
       let canReadObligations=false;
       if(schema.obligations && (entityTypes===null || entityTypes.includes("contract"))) {
@@ -91,7 +96,7 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
         LEFT JOIN invoices inv ON n.entity_type='invoice' AND inv.organization_id=n.organization_id AND inv.id=n.entity_id
         LEFT JOIN inventory_items item ON n.entity_type IN ('inventory','inventory_item','stock') AND item.organization_id=n.organization_id AND item.id=n.entity_id
         LEFT JOIN inventory_putaway_tasks task ON n.entity_type='putaway_task' AND task.organization_id=n.organization_id AND task.id=n.entity_id
-        WHERE n.organization_id=$1 AND n.user_id=$2 AND n.type <> 'putaway_reminder'
+        WHERE n.organization_id=$1 AND n.user_id=$2 AND n.type NOT IN ('putaway_reminder','governance_review')
           AND ($3::text[] IS NULL OR n.entity_type IS NULL OR n.entity_type=ANY($3::text[]))
         UNION ALL
         SELECT ('putaway:'||t.id),('Put-away '||t.task_number),
@@ -113,7 +118,26 @@ export function registerNotificationRoutes(app: Express, auth: AuthBundle): void
         WHERE v.organization_id=$1 AND v.owner_user_id=$2 AND NOT EXISTS (
           SELECT 1 FROM contract_obligation_versions newer WHERE newer.organization_id=v.organization_id
           AND newer.contract_id=v.contract_id AND newer.obligation_id=v.obligation_id AND newer.revision>v.revision
-        )`:""})`;
+        )`:""}
+        ${canReadSod?`UNION ALL
+        SELECT 'sod:'||f.id,r.name,('Access conflict for '||f.subject_key||'. '||r.mitigation),'sod_conflict','sod_conflict',f.id,
+         '/admin/segregation-of-duties?view=conflicts','high',NULL::timestamp,NULL::timestamp,NULL::timestamp,f.last_checked_at::timestamp,1,NULL::text,
+         CASE WHEN f.status='RESOLVED' THEN 'completed' ELSE 'open' END
+        FROM sod_conflict_findings f JOIN sod_conflict_rules r ON r.id=f.rule_id
+        WHERE f.organization_id=$1 AND r.severity='CRITICAL' AND build4_enabled($1,'sod')
+        UNION ALL
+        SELECT 'sod-exception:'||e.id,'Access mitigation needs review',('Review independent approval or expiry: '||e.subject_key),'sod_exception','sod_exception',e.id,
+         '/admin/segregation-of-duties?view=exceptions','high',e.expires_at::timestamp,NULL::timestamp,NULL::timestamp,e.requested_at::timestamp,1,NULL::text,
+         CASE WHEN e.status='PENDING' OR e.status='APPROVED' AND e.expires_at<now()+interval '7 days' THEN 'open' ELSE 'completed' END
+        FROM sod_conflict_exceptions e WHERE e.organization_id=$1 AND build4_enabled($1,'sod')`:""}
+        ${canReadPaymentRisk?`UNION ALL
+        SELECT 'payment-risk:'||a.batch_id,'Payment evidence needs Finance review',('Batch '||b.batch_number||': '||a.risk_level||'. Recheck current evidence before approval or release.'),
+         'payment_risk','payment_risk',a.batch_id,('/finance/accounts-payable/payments?riskBatch='||a.batch_id),'high',NULL::timestamp,NULL::timestamp,NULL::timestamp,
+         coalesce(a.stale_at,a.assessed_at)::timestamp,1,NULL::text,
+         CASE WHEN b.status IN ('RELEASED','CANCELLED') OR a.status='APPROVED_RISK' THEN 'completed' ELSE 'open' END
+        FROM payment_risk_assessments a JOIN ap_payment_batches b ON b.id=a.batch_id AND b.organization_id=a.organization_id
+        WHERE a.organization_id=$1 AND build4_enabled($1,'payment_risk') AND (a.risk_level IN ('HIGH','CRITICAL') OR a.status='STALE')
+        AND NOT EXISTS(SELECT 1 FROM payment_risk_assessments n WHERE n.organization_id=a.organization_id AND n.batch_id=a.batch_id AND n.version>a.version)` :""})`;
       const filter = state === "all" ? "" : ` WHERE state ${state === "active" ? "=" : "<>"} 'open'`;
       const params = [org, userId, entityTypes, canReadInventory];
       const count = await client.query(`${base} SELECT count(*)::int AS total FROM inbox${filter}`, params);

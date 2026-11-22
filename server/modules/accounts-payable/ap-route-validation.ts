@@ -44,6 +44,7 @@ export const apApprovalActionBodySchema = z
     adminOverride: z.boolean().optional(),
     overrideReason: z.string().trim().max(4000).optional(),
     comment: z.string().trim().max(4000).optional(),
+    riskAssessmentId:z.number().int().positive().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -58,14 +59,14 @@ export const apApprovalActionBodySchema = z
 
 /** POST /api/ap/payment-batches */
 export const apPaymentBatchCreateSchema = z.object({
-  batchNumber: z.string().optional(),
+  batchNumber: z.string().trim().max(100).optional(),
   status: z.string().optional(),
   scheduledDate: z
     .preprocess((v) => (v === "" || v === null ? undefined : v), z.union([z.string(), z.undefined()]).optional()),
   paymentMethod: z.enum(PAYMENT_METHODS),
   exportMetadata: z.unknown().optional(),
-  notes: z.string().optional(),
-  invoiceIds: z.array(z.coerce.number().int().positive()).min(1, "Select at least one invoice"),
+  notes: z.string().max(4000).optional(),
+  invoiceIds: z.array(z.coerce.number().int().positive()).min(1, "Select at least one invoice").max(500),
 });
 
 /** POST /api/invoices/:invoiceId/items */

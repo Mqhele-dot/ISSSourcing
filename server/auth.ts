@@ -12,6 +12,7 @@ import {
   clearLoginRateLimit,
   detectSuspiciousActivity,
   issueCsrfToken,
+  getSessionCsrfToken,
   loginRateLimiter,
   registerRateLimiter,
   emailVerificationRateLimiter,
@@ -801,6 +802,11 @@ export function setupAuth(app: Express) {
           if (rememberMe && req.session) {
             req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
           }
+
+          // Passport regenerates the session. Persist its new random token
+          // before login returns, so simultaneous first authenticated forms
+          // cannot each initialize a different token and race the store.
+          getSessionCsrfToken(req);
 
           void clearLoginRateLimit(req).catch(() => undefined);
 

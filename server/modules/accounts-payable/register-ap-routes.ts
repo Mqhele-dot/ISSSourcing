@@ -13,6 +13,8 @@ import { getActiveOrganizationId,getTenantContext } from "../../organization-con
 import { generateGenericPdf } from "../../services/document-generator-service";
 import { getOrganizationDocumentBranding } from "../../services/organization-document-branding";
 import { pool } from "../../db";
+import { GovernanceError,governanceEnabled,governanceTransaction } from "../rbac/governance-context";
+import { paymentActor } from "./payment-risk";
 import { incrementMetric } from "../../observability/metrics";
 import { storage } from "../../storage";
 import { resolveRequestActor } from "../../auth/request-user";
@@ -67,11 +69,22 @@ import {
 } from "./ap-route-validation";
 
 function sendApStructuredError(res: Response, error: unknown) {
+  const fault=error as {code?:unknown;status?:unknown;message?:unknown};
+  if(fault&&["INVOICE_VERSION_CHANGED","INVOICE_GOVERNED_CORRECTION_REQUIRED","INVOICE_LINE_IDENTITY_IMMUTABLE"].includes(String(fault.code??fault.message)))
+    return sendError(res,409,String(fault.code??fault.message),"This invoice changed or requires governed Finance review. Refresh its current state; reviewed and posted evidence cannot be edited through a form.");
+  if(fault&&typeof fault.code==="string"&&/^(APPROV|INDEPENDENT_APPROVER)/.test(fault.code)&&[403,409].includes(Number(fault.status)))
+    return sendError(res,Number(fault.status),fault.code,"Your current approval authority does not permit this step. Ask the configured independent approver; an administrator override cannot replace that authority.");
+  if(error instanceof GovernanceError)return sendError(res,error.status,error.code,error.message,{details:error.details});
   if (error instanceof ApStructuredError) {
     return sendError(res, error.status, error.code, error.message, {
       hint: error.hint,
       details: error.details,
     });
+  }
+  if(res.locals.governedPaymentRisk&&!(error instanceof ZodError)){
+    const e=error as {code?:unknown;status?:unknown;message?:unknown};
+    if(typeof e.code==="string"&&/^(APPROV|INDEPENDENT_APPROVER)/.test(e.code)&&[403,409].includes(Number(e.status)))return sendError(res,Number(e.status),e.code,"Your current approval authority does not permit this step. Refresh the approval policy and ask an authorized independent approver.");
+    return sendError(res,503,"PAYMENT_COMMAND_UNAVAILABLE","The payment command could not be completed. No partial change was applied. Retry with the same command key or contact Finance with this request ID.");
   }
   return null;
 }
@@ -154,6 +167,7 @@ function apInvoiceListDto(row: DbRow) {
     id,
     invoiceNumber: typeof row.invoice_number === "string" && row.invoice_number.trim() ? row.invoice_number : null,
     supplierId: positiveInteger(row.supplier_id),
+    currencyCode:typeof row.currency_code==="string"?row.currency_code:null,
     supplierName: typeof row.supplierName === "string" ? row.supplierName : null,
     status: typeof row.status === "string" ? row.status : "UNKNOWN",
     issueDate: isoDate(row.issue_date),
@@ -174,6 +188,7 @@ function apPaymentBatchDto(row: DbRow) {
   return {
     id,
     batchNumber: typeof row.batch_number === "string" && row.batch_number.trim() ? row.batch_number : `Batch #${id}`,
+    currencyCode:typeof row.currency_code==="string"?row.currency_code:null,
     status: typeof row.status === "string" ? row.status : "UNKNOWN",
     scheduledDate: isoDate(row.scheduled_date),
     approvedAt: isoDate(row.approved_at),
@@ -256,7 +271,16 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
   const apRead = [auth.ensureAuthenticated];
   const apWrite = [auth.ensureAuthenticated, auth.ensureRole(["manager", "admin"])];
   const apHighRiskWrite = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["admin"])];
-  const apHighRiskManagerWrite = [auth.ensureAuthenticated, auth.ensureTwoFactorAuthenticated, auth.ensureRole(["manager", "admin"])];
+  const paymentAccess=(action:"read"|"create"|"approve"|"execute"):RequestHandler=>async(req,res,next)=>{
+    try{
+      if(await governanceEnabled(getActiveOrganizationId(),"payment_risk")){
+        res.locals.governedPaymentRisk=true;
+        await governanceTransaction(c=>paymentActor(c,getActiveOrganizationId(),Number(req.user?.id),action));return next();
+      }
+      if(action==="read")return next();
+      return auth.ensureRole(["manager","admin"])(req,res,next);
+    }catch(error){return sendApStructuredError(res,error)||sendError(res,503,"PAYMENT_ACCESS_UNAVAILABLE","Payment access could not be verified. Retry.");}
+  };
 
   app.get("/api/ap/overview", ...apRead, async (_req: Request, res: Response) => {
     try {
@@ -546,7 +570,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/v2/ap/payment-batches", ...apRead, async (req: Request, res: Response) => {
+  app.get("/api/v2/ap/payment-batches", ...apRead,paymentAccess("read"), async (req: Request, res: Response) => {
     const parsed = paymentBatchPageSchema.safeParse(req.query);
     if (!parsed.success) return invalidApQuery(res, parsed.error);
     const query = parsed.data;
@@ -576,7 +600,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/v2/ap/payment-batches/:id", ...apRead, async (req: Request, res: Response) => {
+  app.get("/api/v2/ap/payment-batches/:id", ...apRead,paymentAccess("read"), async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return sendError(res, 400, "INVALID_PAYMENT_BATCH_ID", "Payment batch ID must be a positive integer");
     const result = await pool.query(
@@ -665,6 +689,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!deleted) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, { success: true });
     } catch (error) {
+      if(sendApStructuredError(res,error))return;
       if (trySendDbConstraintError(res, error)) return;
       console.error("Error deleting AP invoice:", error);
       return sendError(res, 400, "DELETE_INVOICE_FAILED", error instanceof Error ? error.message : "Failed to delete invoice");
@@ -752,6 +777,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, { details: error.flatten() });
       }
       const message = error instanceof Error ? error.message : "Failed to approve invoice";
+      const structured=sendApStructuredError(res,error);if(structured)return structured;
       const policyErr = apPolicyHttpStatus(message);
       if (policyErr) {
         return sendError(res, policyErr.status, policyErr.code, message);
@@ -818,7 +844,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/ap/payment-batches", ...apRead, async (_req: Request, res: Response) => {
+  app.get("/api/ap/payment-batches", ...apRead,paymentAccess("read"), async (_req: Request, res: Response) => {
     try {
       return sendOk(res, await listPaymentBatches());
     } catch (error) {
@@ -827,7 +853,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/payment-batches", ...apWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/payment-batches", auth.ensureAuthenticated,auth.ensureTwoFactorAuthenticated,paymentAccess("create"), async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       let validated: z.infer<typeof apPaymentBatchCreateSchema>;
@@ -860,6 +886,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
           exportMetadata,
           notes: validated.notes,
           invoiceIds: validated.invoiceIds,
+          idempotencyKey:req.get("Idempotency-Key"),
         },
         actor.userId,
       );
@@ -871,11 +898,12 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       return sendOk(res, batch, 201);
     } catch (error) {
       console.error("Error creating payment batch:", error);
+      const governed=sendApStructuredError(res,error);if(governed)return governed;
       return sendError(res, 400, "PAYMENT_BATCH_CREATE_FAILED", error instanceof Error ? error.message : "Failed to create payment batch");
     }
   });
 
-  app.post("/api/ap/payment-batches/:id/approve", ...apHighRiskManagerWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/payment-batches/:id/approve", auth.ensureAuthenticated,auth.ensureTwoFactorAuthenticated,paymentAccess("approve"), async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "batch ID");
@@ -886,7 +914,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
         id,
         actor.userId,
         body.comment,
-        parseApprovalContext(req, actor.role),
+        {...parseApprovalContext(req, actor.role),riskAssessmentId:body.riskAssessmentId,idempotencyKey:req.get("Idempotency-Key")},
       );
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
       logApFinanceEvent("ap.payment_batch.approved", { batchId: batch.id, userId: actor.userId });
@@ -894,6 +922,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     } catch (error) {
       recordApprovalFailure();
       console.error("Error approving payment batch:", error);
+      const governed=sendApStructuredError(res,error);if(governed)return governed;
       if (error instanceof ZodError) {
         return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, { details: error.flatten() });
       }
@@ -916,20 +945,21 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.post("/api/ap/payment-batches/:id/release", ...apHighRiskManagerWrite, async (req: Request, res: Response) => {
+  app.post("/api/ap/payment-batches/:id/release", auth.ensureAuthenticated,auth.ensureTwoFactorAuthenticated,paymentAccess("execute"), async (req: Request, res: Response) => {
     try {
       const actor = requestActor(req);
       const id = parseRouteId(res, req.params.id, "batch ID");
       if (id === null) return;
       const body = apApprovalActionBodySchema.parse(req.body ?? {});
       req.body = body;
-      const batch = await releasePaymentBatch(id, actor.userId, parseApprovalContext(req, actor.role));
+      const batch = await releasePaymentBatch(id, actor.userId, {...parseApprovalContext(req, actor.role),riskAssessmentId:body.riskAssessmentId,idempotencyKey:req.get("Idempotency-Key")});
       if (!batch) return sendError(res, 404, "PAYMENT_BATCH_NOT_FOUND", "Payment batch not found");
       logApFinanceEvent("ap.payment_batch.released", { batchId: batch.id, userId: actor.userId });
       return sendOk(res, batch);
     } catch (error) {
       recordReleaseFailure();
       console.error("Error releasing payment batch:", error);
+      const governed=sendApStructuredError(res,error);if(governed)return governed;
       if (error instanceof ZodError) {
         return sendError(res, 400, "VALIDATION_ERROR", fromZodError(error).message, { details: error.flatten() });
       }
@@ -1034,7 +1064,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/ap/payment-batches/:id/remittance.pdf", ...apRead, async (req: Request, res: Response) => {
+  app.get("/api/ap/payment-batches/:id/remittance.pdf", ...apRead,paymentAccess("read"), async (req: Request, res: Response) => {
     try {
       const id = parseRouteId(res, req.params.id, "batch ID");
       if (id === null) return;
@@ -1084,6 +1114,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!deleted) return sendError(res, 404, "INVOICE_NOT_FOUND", "Invoice not found");
       return sendOk(res, { success: true });
     } catch (error) {
+      if(sendApStructuredError(res,error))return;
       if (trySendDbConstraintError(res, error)) return;
       return sendError(
         res,
@@ -1232,6 +1263,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       }
       return sendOk(res, await updateInvoiceItemRecord(itemId, patch));
     } catch (error) {
+      if(sendApStructuredError(res,error))return;
       return sendError(res, 500, "UPDATE_INVOICE_ITEM_FAILED", "Failed to update invoice item");
     }
   });
@@ -1249,12 +1281,13 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       await deleteInvoiceItemRecord(itemId);
       return sendOk(res, { success: true });
     } catch (error) {
+      if(sendApStructuredError(res,error))return;
       if (trySendDbConstraintError(res, error)) return;
       return sendError(res, 500, "DELETE_INVOICE_ITEM_FAILED", "Failed to delete invoice item");
     }
   });
 
-  app.get("/api/payments", ...apRead, async (_req: Request, res: Response) => {
+  app.get("/api/payments", ...apRead,paymentAccess("read"), async (_req: Request, res: Response) => {
     try {
       return sendOk(res, await listPayments());
     } catch (error) {
@@ -1287,7 +1320,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
     }
   });
 
-  app.get("/api/invoices/:invoiceId/payments", ...apRead, async (req: Request, res: Response) => {
+  app.get("/api/invoices/:invoiceId/payments", ...apRead,paymentAccess("read"), async (req: Request, res: Response) => {
     try {
       const invoiceId = parseRouteId(res, req.params.invoiceId, "invoice ID");
       if (invoiceId === null) return;
@@ -1321,7 +1354,8 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
           details: error.flatten(),
         });
       }
-      return sendError(res, 500, "CREATE_PAYMENT_FAILED", error instanceof Error ? error.message : "Failed to create payment");
+      if(sendApStructuredError(res,error))return;
+      return sendError(res, 500, "CREATE_PAYMENT_FAILED", "The payment could not be recorded. Retry or contact Finance.");
     }
   });
 
@@ -1333,6 +1367,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!payment) return sendError(res, 404, "PAYMENT_NOT_FOUND", "Payment not found");
       return sendOk(res, payment);
     } catch (error) {
+      if(sendApStructuredError(res,error))return;
       return sendError(res, 500, "UPDATE_PAYMENT_FAILED", "Failed to update payment");
     }
   });
@@ -1345,6 +1380,7 @@ export function registerApRoutes(app: Express, auth: AuthBundle): void {
       if (!deleted) return sendError(res, 404, "PAYMENT_NOT_FOUND", "Payment not found");
       return sendOk(res, { success: true });
     } catch (error) {
+      if(sendApStructuredError(res,error))return;
       return sendError(res, 500, "DELETE_PAYMENT_FAILED", "Failed to delete payment");
     }
   });

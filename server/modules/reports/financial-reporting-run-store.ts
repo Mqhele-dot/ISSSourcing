@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { FinancialMeasure } from "../../../shared/financial-measures";
 import type { buildDatedReportingEvidence } from "../../lib/dated-reporting-evidence";
+import {assertSpendRunRead} from "./spend-access";
 
 type ReportingResult = ReturnType<typeof buildDatedReportingEvidence>;
 
@@ -32,6 +33,7 @@ export async function readFinancialReportingEvidence(client: PoolClient, organiz
   const run = await client.query(`SELECT id,measure,normalized_filters AS "normalizedFilters",summary,evidence_hash AS "evidenceHash"
     FROM financial_reporting_runs WHERE organization_id=$1 AND id=$2`,[organizationId,runId]);
   if (!run.rowCount) return null;
+  await assertSpendRunRead(client,organizationId,run.rows[0].measure,run.rows[0].summary);
   const rows = await client.query(`SELECT evidence FROM financial_reporting_contributions
     WHERE organization_id=$1 AND run_id=$2 ORDER BY ordinal LIMIT $3 OFFSET $4`,[organizationId,runId,pageSize,(page-1)*pageSize]);
   return { ...run.rows[0], items:rows.rows.map(row=>row.evidence),page,pageSize,

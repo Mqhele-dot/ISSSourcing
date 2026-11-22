@@ -29,6 +29,8 @@ const SettingsPage = lazy(() => import("@/pages/settings"));
 const WorkflowGovernancePage = lazy(() => import("@/pages/workflow-governance"));
 const CompanySetupPage = lazy(() => import("@/pages/company-setup-page"));
 const UserRolesPage = lazy(() => import("@/pages/user-roles"));
+const SegregationOfDutiesPage = lazy(() => import("@/pages/segregation-of-duties"));
+const SpendCubePage=lazy(()=>import("@/pages/spend-cube"));
 const SubscriptionPage = lazy(() => import("@/pages/subscription"));
 const ReorderPage = lazy(() => import("@/pages/reorder"));
 const ActionInboxPage = lazy(() => import("@/pages/action-inbox"));
@@ -150,6 +152,7 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.training.getEducated} component={GetEducatedPage} />
 
         <ProtectedRoute path={APP_ROUTES.analytics.overview} component={AnalyticsWorkspacePage} />
+        <ProtectedRoute path="/analytics/spend-cube" component={SpendCubePage}/>
         <ProtectedRoute path={APP_ROUTES.analytics.inventory} component={ProductionInventoryAnalyticsPage} />
         <ProtectedRoute path={APP_ROUTES.analytics.procurement} component={AnalyticsWorkspacePage} />
         <ProtectedRoute path={APP_ROUTES.analytics.finance} component={ProductionFinanceAnalyticsPage} />
@@ -250,7 +253,8 @@ export function AppRouter() {
         <ProtectedRoute path={APP_ROUTES.admin.workflows} component={WorkflowGovernancePage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.settings} component={SettingsPage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.settingsSection(":section")} component={SettingsPage} allowedRoles={["admin"]} />
-        <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} allowedRoles={["admin"]} />
+        <ProtectedRoute path={APP_ROUTES.admin.userRoles} component={UserRolesPage} />
+        <ProtectedRoute path="/admin/segregation-of-duties" component={SegregationOfDutiesPage} />
         <ProtectedRoute path={APP_ROUTES.admin.subscription} component={SubscriptionPage} allowedRoles={["admin"]} />
         <ProtectedRoute path={APP_ROUTES.admin.profile} component={ProfilePage} />
         <ProtectedRoute path={APP_ROUTES.admin.employeeProfiles} component={EmployeeProfilesPage} allowedRoles={["manager", "admin"]} />
